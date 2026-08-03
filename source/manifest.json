@@ -1,0 +1,51 @@
+{
+  "manifest_version": 3,
+  "name": "DEFLECTION",
+  "version": "0.1.0",
+  "description": "Pixel-sorts every video and image on the live web through a WebGL2 shader with temporal feedback. An installation piece by New Media Nashville.",
+  "permissions": ["storage", "declarativeNetRequest"],
+  "host_permissions": ["<all_urls>"],
+  "background": {
+    "service_worker": "background/service-worker.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content/bootstrap.js"],
+      "run_at": "document_idle",
+      "all_frames": true
+    }
+  ],
+  "declarative_net_request": {
+    "rule_resources": [
+      {
+        "id": "cors-media",
+        "enabled": false,
+        "path": "rules/cors-media.json"
+      }
+    ]
+  },
+  "web_accessible_resources": [
+    {
+      "resources": ["content/*.js", "gl/*.js", "gl/shaders/*.js"],
+      "matches": ["<all_urls>"]
+    }
+  ],
+  "action": {},
+  "commands": {
+    "toggle-effect": {
+      "suggested_key": { "default": "Ctrl+Shift+D" },
+      "description": "Toggle the effect on/off"
+    },
+    "open-panel": {
+      "suggested_key": { "default": "Ctrl+Shift+P" },
+      "description": "Open the control panel"
+    }
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}
