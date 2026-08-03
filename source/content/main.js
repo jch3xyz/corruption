@@ -1,22 +1,23 @@
-// Orchestrator. Phase 0: prove the plumbing — module load, params, frame
-// gating — with a boot log. Registry/observers/jobs arrive in Phase 1.
+// Orchestrator. Phase 1: params + registry driving per-video 2D mirror
+// jobs. The GL pipeline replaces the mirror in Phase 2.
 
 import { loadParams, onParamsChanged } from './params.js';
+import { Registry } from './registry.js';
 
 const isTopFrame = window === window.top;
 
-// Ad-sized and invisible iframes are never worth instrumenting. A sweep can
-// still promote a frame later if real media shows up; for now, just bail.
+// Ad-sized and invisible iframes are never worth instrumenting.
 const MIN_FRAME_W = 200;
 const MIN_FRAME_H = 150;
-if (!isTopFrame && (innerWidth < MIN_FRAME_W || innerHeight < MIN_FRAME_H)) {
-  // Intentionally silent — tiny frames are the common case on ad-heavy pages.
-} else {
+
+if (isTopFrame || (innerWidth >= MIN_FRAME_W && innerHeight >= MIN_FRAME_H)) {
   boot();
 }
 
 async function boot() {
   const params = await loadParams();
+  const registry = new Registry(params);
+  registry.start();
 
   console.log(
     '[DEFLECTION] boot',
@@ -30,6 +31,9 @@ async function boot() {
 
   onParamsChanged((next) => {
     Object.assign(params, next);
-    console.log('[DEFLECTION] params changed', JSON.stringify(next));
+    registry.refresh();
   });
+
+  // Inspectable from the extension's isolated world in DevTools.
+  self.__deflection = { params, registry };
 }
