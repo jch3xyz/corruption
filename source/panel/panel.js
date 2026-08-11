@@ -21,19 +21,10 @@ const DEFS = [
   { key: 'maxVideos', label: 'max videos', min: 1, max: 16, step: 1 },
   { key: 'imageFps', label: 'image fps', min: 1, max: 30, step: 1 },
   { key: 'imageAnimCap', label: 'image anim cap', min: 0, max: 24, step: 1 },
-  { key: 'audioEnabled', label: 'audio', type: 'toggle' },
-  { key: 'audioAlgorithm', label: 'audio algo', type: 'select', options: ['spectral', 'granular'] },
-  { key: 'audioMix', label: 'audio mix', min: 0, max: 1, step: 0.01 },
-  { key: 'audioThreshold', label: 'audio thresh', min: 0, max: 1, step: 0.01 },
-  { key: 'audioSortPasses', label: 'audio passes', min: 0, max: 64, step: 1 },
-  { key: 'audioGrainMs', label: 'grain ms', min: 20, max: 100, step: 5 },
-  { key: 'audioWindowS', label: 'window s', min: 0.25, max: 2, step: 0.25 },
-  { key: 'audioMaxTaps', label: 'max taps', min: 1, max: 8, step: 1 },
 ];
 
 // These only shape the effect while feedback is on; gray them out otherwise.
-// (Straight-sort stills are static, so the image ticker params are moot too.
-// The audio feedback accumulator rides the same toggle.)
+// (Straight-sort stills are static, so the image ticker params are moot too.)
 const FEEDBACK_ONLY = [
   'decay',
   'driftX',
@@ -43,19 +34,6 @@ const FEEDBACK_ONLY = [
   'imageFps',
   'imageAnimCap',
 ];
-
-// Audio rows gray out when the audio master toggle is off; the granular
-// rows additionally require the granular algorithm.
-const AUDIO_ONLY = [
-  'audioAlgorithm',
-  'audioMix',
-  'audioThreshold',
-  'audioSortPasses',
-  'audioGrainMs',
-  'audioWindowS',
-  'audioMaxTaps',
-];
-const GRANULAR_ONLY = ['audioGrainMs', 'audioWindowS'];
 
 const hasChrome = typeof chrome !== 'undefined' && !!chrome.storage?.local;
 const shim = { data: { ...DEFAULTS }, listeners: [] };
@@ -85,11 +63,8 @@ const inputs = {};
 const valueEls = {};
 const learnEls = {};
 
-const fmt = (def, v) => {
-  if (def.type === 'toggle') return v ? 'on' : 'off';
-  if (def.type === 'select') return String(v);
-  return Number(v).toFixed(decimals(def.step));
-};
+const fmt = (def, v) =>
+  def.type === 'toggle' ? (v ? 'on' : 'off') : Number(v).toFixed(decimals(def.step));
 const decimals = (step) => {
   const s = String(step ?? 1);
   return s.includes('.') ? s.split('.')[1].length : 0;
@@ -106,14 +81,6 @@ for (const def of DEFS) {
   if (def.type === 'toggle') {
     input = document.createElement('input');
     input.type = 'checkbox';
-  } else if (def.type === 'select') {
-    input = document.createElement('select');
-    for (const opt of def.options) {
-      const o = document.createElement('option');
-      o.value = opt;
-      o.textContent = opt;
-      input.appendChild(o);
-    }
   } else {
     input = document.createElement('input');
     input.type = 'range';
@@ -122,16 +89,10 @@ for (const def of DEFS) {
     input.step = def.step;
   }
   input.addEventListener('input', () => {
-    const v =
-      def.type === 'toggle'
-        ? input.checked
-        : def.type === 'select'
-          ? input.value
-          : Number(input.value);
+    const v = def.type === 'toggle' ? input.checked : Number(input.value);
     queueWrite(def.key, v);
     valueEls[def.key].textContent = fmt(def, v);
     if (def.key === 'feedback') syncFeedbackUI(input.checked);
-    if (def.key === 'audioEnabled' || def.key === 'audioAlgorithm') syncAudioUI();
   });
 
   const value = document.createElement('span');
@@ -157,23 +118,12 @@ function setUI(key, v) {
   else inputs[key].value = v;
   valueEls[key].textContent = fmt(def, v);
   if (key === 'feedback') syncFeedbackUI(!!v);
-  if (key === 'audioEnabled' || key === 'audioAlgorithm') syncAudioUI();
 }
 
 function syncFeedbackUI(on) {
   for (const key of FEEDBACK_ONLY) {
     inputs[key].disabled = !on;
     inputs[key].closest('.row').classList.toggle('inert', !on);
-  }
-}
-
-function syncAudioUI() {
-  const on = inputs.audioEnabled.checked;
-  const granular = inputs.audioAlgorithm.value === 'granular';
-  for (const key of AUDIO_ONLY) {
-    const inert = !on || (GRANULAR_ONLY.includes(key) && !granular);
-    inputs[key].disabled = inert;
-    inputs[key].closest('.row').classList.toggle('inert', inert);
   }
 }
 
@@ -258,8 +208,6 @@ initMIDI({
     let v;
     if (def.type === 'toggle') {
       v = value >= 64;
-    } else if (def.type === 'select') {
-      v = def.options[Math.round((value / 127) * (def.options.length - 1))];
     } else {
       v = def.min + (value / 127) * (def.max - def.min);
       if (def.step >= 1) v = Math.round(v);

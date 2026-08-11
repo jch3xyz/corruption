@@ -28,7 +28,7 @@
   },
   "web_accessible_resources": [
     {
-      "resources": ["content/*.js", "gl/*.js", "gl/shaders/*.js", "audio/*.js"],
+      "resources": ["content/*.js", "gl/*.js", "gl/shaders/*.js"],
       "matches": ["<all_urls>"]
     }
   ],

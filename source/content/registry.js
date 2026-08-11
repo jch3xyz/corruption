@@ -5,7 +5,6 @@
 
 import { VideoJob } from './video-job.js';
 import { ImageJob } from './image-job.js';
-import { AudioJob } from './audio-job.js';
 
 const SCAN_DEBOUNCE_MS = 100;
 const SWEEP_MS = 2000;
@@ -15,7 +14,6 @@ export class Registry {
   constructor(params) {
     this.params = params;
     this.jobs = new Map(); // element → VideoJob | ImageJob
-    this.audioJobs = new Map(); // element → AudioJob (videos carry both)
     this.visibleArea = new Map(); // element → px² in viewport
     this.routeStats = { direct: 0, cors: 0, sw: 0, failed: 0 };
     this.scanTimer = 0;
@@ -69,9 +67,6 @@ export class Registry {
 
     document.addEventListener('fullscreenchange', () => this.syncAll());
 
-    // Playback starting anywhere re-ranks the audio taps promptly.
-    document.addEventListener('playing', () => this.rebalanceAudio(), true);
-
     // YouTube announces SPA navigation; sweep immediately instead of waiting.
     window.addEventListener('yt-navigate-finish', () => this.sweep());
 
@@ -88,27 +83,20 @@ export class Registry {
 
   // Discover new media, purge disconnected elements, re-rank.
   scan() {
-    for (const el of document.querySelectorAll('video, img, audio')) {
-      const tag = el.tagName;
-      if (tag !== 'AUDIO' && !this.jobs.has(el)) {
-        if (tag === 'IMG') {
-          // Undersized now ≠ undersized forever (lazy placeholders); later
-          // sweeps re-evaluate once layout gives them real size.
-          if (el.clientWidth >= IMG_MIN_SIZE && el.clientHeight >= IMG_MIN_SIZE) {
-            this.jobs.set(el, new ImageJob(el, this.params, this.routeStats));
-            this.io.observe(el);
-            this.ro.observe(el);
-          }
-        } else {
-          this.jobs.set(el, new VideoJob(el, this.params));
-          this.io.observe(el);
-          this.ro.observe(el);
+    for (const el of document.querySelectorAll('video, img')) {
+      if (this.jobs.has(el)) continue;
+      if (el.tagName === 'IMG') {
+        // Undersized now ≠ undersized forever (lazy placeholders); later
+        // sweeps re-evaluate once layout gives them real size.
+        if (el.clientWidth < IMG_MIN_SIZE || el.clientHeight < IMG_MIN_SIZE) {
+          continue;
         }
+        this.jobs.set(el, new ImageJob(el, this.params, this.routeStats));
+      } else {
+        this.jobs.set(el, new VideoJob(el, this.params));
       }
-      // Videos and audio elements both get an audio tap job.
-      if (tag !== 'IMG' && !this.audioJobs.has(el)) {
-        this.audioJobs.set(el, new AudioJob(el, this.params));
-      }
+      this.io.observe(el);
+      this.ro.observe(el);
     }
     for (const [el, job] of this.jobs) {
       if (!el.isConnected) {
@@ -117,12 +105,6 @@ export class Registry {
         this.ro.unobserve(el);
         this.jobs.delete(el);
         this.visibleArea.delete(el);
-      }
-    }
-    for (const [el, job] of this.audioJobs) {
-      if (!el.isConnected) {
-        job.destroy();
-        this.audioJobs.delete(el);
       }
     }
     this.rebalance();
@@ -148,7 +130,6 @@ export class Registry {
   rebalance() {
     if (!this.params.enabled) {
       for (const job of this.jobs.values()) job.suspend();
-      for (const job of this.audioJobs.values()) job.suspend();
       this.ensureImageTicker();
       return;
     }
@@ -177,28 +158,12 @@ export class Registry {
     }
 
     this.ensureImageTicker();
-    this.rebalanceAudio();
-  }
-
-  // Audio taps are playback-ranked, not visibility-ranked: most recently
-  // started sound wins a slot, up to audioMaxTaps.
-  rebalanceAudio() {
-    const playing = [];
-    for (const j of this.audioJobs.values()) {
-      if (j.abandoned || j.destroyed) continue;
-      if (j.playing()) playing.push(j);
-      else j.setAllowed(false);
-    }
-    playing.sort((a, b) => b.lastPlayingAt - a.lastPlayingAt);
-    const cap = Math.max(1, this.params.audioMaxTaps ?? 4);
-    playing.forEach((j, i) => j.setAllowed(i < cap));
   }
 
   // Called on chrome.storage changes: re-rank, and if an effect-shaping
   // param moved, re-render stills (debounced — panel drags write at 30 Hz).
   paramsChanged(changed) {
     this.rebalance();
-    for (const j of this.audioJobs.values()) j.applyParams();
     const effectKeys = ['threshold', 'passes', 'streak', 'feedback', 'maxRes'];
     if (Object.keys(changed).some((k) => effectKeys.includes(k))) {
       clearTimeout(this.imageDirtyTimer);
@@ -259,12 +224,6 @@ export class Registry {
       if (j.abandoned) abandoned++;
       if (j.kind === 'image') imageJobs++;
     }
-    let audioEngaged = 0;
-    let audioAbandoned = 0;
-    for (const j of this.audioJobs.values()) {
-      if (j.tap?.engaged) audioEngaged++;
-      if (j.abandoned) audioAbandoned++;
-    }
     return {
       tracked: this.jobs.size,
       active,
@@ -272,11 +231,6 @@ export class Registry {
       abandoned,
       imageJobs,
       images: { ...this.routeStats },
-      audio: {
-        taps: this.audioJobs.size,
-        engaged: audioEngaged,
-        abandoned: audioAbandoned,
-      },
     };
   }
 }

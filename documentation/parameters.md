@@ -20,14 +20,6 @@ Kill switch: Ctrl+Shift+D toggles `enabled` without the panel.
 | `driftY` | +0.0015 | ±0.01 | *Feedback only.* Vertical smear. **Positive = upward** (texture v grows toward the video's bottom). |
 | `resetMinS` / `resetMaxS` | 4 / 10 | 1–30 / 2–60 | *Feedback only.* Keyframe rhythm: the accumulator resets to a clean frame at a random interval in this window. |
 | `maxRes` | 1920 | 480–1920 | Processing resolution cap, long axis. Lower it on weak GPUs; output upscales through the overlay. |
-| `audioEnabled` | on | on/off | Master switch for the audio pipeline (effective only while `enabled` is also on — the kill switch restores everything). |
-| `audioAlgorithm` | **spectral** | spectral / granular | Spectral: STFT magnitude spectrum gets the stride-ladder sort, phases stay — smeared, organ-like, ~43 ms latency. Granular: 20–100 ms grains reordered by loudness within a window — stuttered, shuffled, latency = the window. |
-| `audioMix` | 1 | 0–1 | Wet/dry. Under granular latency, mid values read as an echo against the original rather than a blend. |
-| `audioThreshold` | 0 | 0–1 | Loudness gate (normalized per window/frame). Quiet grains/bins are barriers, like dark pixels. 0 = everything participates. |
-| `audioSortPasses` | 8 | 0–64 | Stride-ladder passes over grains or spectral bins. 0 = passthrough (latency only). |
-| `audioGrainMs` | 60 | 20–100 | *Granular only.* Grain length. |
-| `audioWindowS` | 1 | 0.25–2 | *Granular only.* Sort window — equals the added audio latency, so A/V desync ≈ this. The window boundary is the audio keyframe rhythm. |
-| `audioMaxTaps` | 4 | 1–8 | Concurrent processed elements, most-recently-playing first. |
 | `maxVideos` | 8 | 1–16 | Concurrent video jobs, biggest visible first. Paused videos count too — they get a one-shot sorted still (rVFC never fires for them). |
 | `imageFps` | 12 | 1–30 | *Feedback only.* Tick rate for animated images. Straight-sort stills don't animate at all. |
 | `imageAnimCap` | 12 | 0–24 | *Feedback only.* Max concurrently animated images (≥200 px side, biggest visible first); the rest stay stills. |
@@ -50,44 +42,6 @@ All three fail → the image is left untouched. The page's own `<img>` src is
 never mutated. Videos also carry a black-output probe: 2 consecutive black
 reads (2 s apart) while playback advances → the original shows through;
 recovers automatically when real content returns.
-
-## Audio pipeline
-
-Every `<video>` and `<audio>` element gets an audio job; playing elements
-are tapped via `createMediaElementSource` into one shared AudioContext and
-routed through the DEFLECTION worklet (an `AudioWorkletProcessor` — the
-fragment shader for sound). Sorting semantics mirror the video shader:
-stride-ladder compare-exchange, loud rises toward the start/low end, quiet
-material is a barrier.
-
-**The feedback toggle is audiovisual.** When `feedback` is on, audio gains a
-decaying, slowly drifting delay line (`decay` → feedback gain, `|driftY|` →
-drift depth) that hard-clears on the same jittered `resetMinS`/`resetMaxS`
-keyframe rhythm as the video accumulator.
-
-Rules the implementation lives by:
-
-- **Taps are permanent** (a Web Audio limitation): disable is a click-free
-  wet/dry bypass inside the graph. Bypassed processors idle at ~zero cost.
-- **CORS silence is predicted, never repaired**: tapping a cross-origin
-  element without proper CORS silences it unrecoverably (both wet AND dry),
-  so unsafe elements are never tapped — their original audio plays
-  untouched. Safe: same-origin, `blob:`/`data:`/MediaStream (YouTube's MSE
-  is `blob:`), or `crossorigin="anonymous"`. Everything else stays clean.
-- **DRM (`mediaKeys`/`encrypted`) is never tapped.** If a tapped element
-  later swaps to a DRM source, that title's audio is lost until the next
-  src swap — logged, unrecoverable, rare.
-- **Autoplay policy**: the context may start suspended; engagement queues
-  until the first user gesture. The kiosk flag
-  `--autoplay-policy=no-user-gesture-required` removes the wait entirely.
-- A page that runs its own Web Audio on an element wins: the tap attempt
-  throws, we abandon with `page-web-audio`, sound stays intact.
-- Element `volume`/`muted` sit upstream of the tap — page mute buttons keep
-  working through our chain.
-
-Latency: spectral ≈ 43 ms (imperceptible); granular = `audioWindowS`
-(0.25–2 s of A/V desync — the displaced soundtrack reads as part of the
-corruption; lower the window if it bothers you).
 
 ## Shader mapping
 
