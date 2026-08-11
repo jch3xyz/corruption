@@ -4,9 +4,9 @@
 export const DEFAULTS = {
   enabled: true,
   feedback: false,   // off = straight per-frame pixel sorting; on = temporal feedback
-  threshold: 0.55,   // luma above this is eligible for sorting/feedback
-  passes: 12,        // sort passes per frame (a full 32→1 stride ladder)
-  streak: 32,        // max compare-exchange stride: longer = longer ribbons
+  threshold: 0,      // luma above this is eligible; 0 = the whole frame sorts
+  passes: 64,        // sort passes per frame (~3.5 cycles of a 256→1 ladder)
+  streak: 256,       // max compare-exchange stride: longer = longer ribbons
   decay: 0.96,       // feedback only: accumulator retention per frame
   driftX: 0.0,       // feedback only: smear direction, UV units per frame
   driftY: 0.0015,    // feedback only: positive = upward smear

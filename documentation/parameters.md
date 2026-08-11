@@ -12,9 +12,9 @@ Kill switch: Ctrl+Shift+D toggles `enabled` without the panel.
 |---|---|---|---|
 | `enabled` | on | on/off | Master switch. Off restores every video/image untouched. |
 | `feedback` | **off** | on/off | Off = straight per-frame pixel sorting (each frame sorted independently). On = temporal feedback: smear accumulates, drifts, decays, clears at keyframe resets. |
-| `threshold` | 0.55 | 0–1 | Luma above this is eligible for sorting (and feedback). 0 = whole frame corrupts; 1 = untouched. The single most expressive knob. |
-| `passes` | 12 | 0–64 | Sort passes per frame. 12 covers one full 32→1 stride ladder. More = deeper, more settled sorting per frame. |
-| `streak` | 32 | 1–256 | Longest compare-exchange stride (rounded down to a power of two). Directly sets how far pixels can travel per frame — the ribbon-length knob. 1 = classic single-step odd-even. |
+| `threshold` | **0** | 0–1 | Luma above this is eligible for sorting (and feedback). 0 = whole frame corrupts; 1 = untouched. The single most expressive knob. |
+| `passes` | **64** | 0–64 | Sort passes per frame. A full 256→1 stride ladder is 18 passes, so 64 runs ~3.5 settling cycles. |
+| `streak` | **256** | 1–256 | Longest compare-exchange stride (rounded down to a power of two). Directly sets how far pixels can travel per frame — the ribbon-length knob. 1 = classic single-step odd-even. |
 | `decay` | 0.96 | 0.8–0.999 | *Feedback only.* Accumulator retention per frame. Higher = smear lingers longer. |
 | `driftX` | 0 | ±0.01 | *Feedback only.* Horizontal smear, UV units per frame. |
 | `driftY` | +0.0015 | ±0.01 | *Feedback only.* Vertical smear. **Positive = upward** (texture v grows toward the video's bottom). |
