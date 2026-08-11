@@ -4,3 +4,4 @@ exports/*.zip
 *.pem
 node_modules/
 .claude/
+source/_metadata/

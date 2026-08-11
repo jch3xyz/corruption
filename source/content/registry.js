@@ -73,7 +73,7 @@ export class Registry {
   scan() {
     for (const video of document.querySelectorAll('video')) {
       if (!this.jobs.has(video)) {
-        this.jobs.set(video, new VideoJob(video));
+        this.jobs.set(video, new VideoJob(video, this.params));
         this.io.observe(video);
         this.ro.observe(video);
       }

@@ -1,17 +1,23 @@
-// Per-video job. Phase 1 renders a plain 2D mirror of each decoded frame —
-// proving discovery, overlay geometry, lifecycle, and DRM gating before any
-// WebGL exists. The rVFC loop and state machine carry over unchanged when
-// the GL pipeline replaces drawImage.
+// Per-video job. Phase 2 routes every decoded frame through the shared
+// WebGL2 pipeline — upload, passthrough into the float accumulator
+// ping-pong, present, then a same-task drawImage into the overlay canvas.
+// Output is still a pixel-exact mirror; the sorting and feedback shaders
+// replace the passthrough stage in Phase 3.
 
 import { Overlay, objectFitRect } from './overlay.js';
+import { acquireGL } from '../gl/context.js';
+import { createBundle, destroyBundle } from '../gl/pipeline.js';
 
 export class VideoJob {
-  constructor(video) {
+  constructor(video, params) {
     this.video = video;
+    this.params = params;
     this.overlay = null;
     this.ctx = null;
+    this.glc = null;
+    this.bundle = null;
     this.active = false;
-    this.abandoned = false; // DRM or unattachable: leave the element alone
+    this.abandoned = false; // DRM, taint, or unattachable: leave it alone
     this.destroyed = false;
     this.mirrored = false; // original hidden, canvas showing
     this.rvfcId = 0;
@@ -22,6 +28,10 @@ export class VideoJob {
     this.fitRect = null;
 
     this.onFrame = this.onFrame.bind(this);
+    // GPU objects die with the context; drop them and realloc next frame.
+    this.onGLRestore = () => {
+      this.bundle = null;
+    };
     this.onEncrypted = () => this.abandon('drm');
     video.addEventListener('encrypted', this.onEncrypted);
   }
@@ -32,6 +42,12 @@ export class VideoJob {
     if (video.mediaKeys) return this.abandon('drm');
     if (!('requestVideoFrameCallback' in video)) return this.abandon('no-rvfc');
     if (video.videoWidth === 0) return; // retried on loadedmetadata / sweep
+
+    if (!this.glc) {
+      this.glc = acquireGL();
+      if (!this.glc) return this.abandon('no-webgl2');
+      this.glc.onRestore(this.onGLRestore);
+    }
     if (!this.ensureOverlay()) return;
 
     this.active = true;
@@ -45,6 +61,8 @@ export class VideoJob {
     this.video.cancelVideoFrameCallback(this.rvfcId);
     this.active = false;
     this.unmirror();
+    // GPU bundle is kept: suspended jobs resume cheaply (plan: allocate
+    // once, reuse). Disconnected elements release it via destroy().
   }
 
   ensureOverlay() {
@@ -75,6 +93,12 @@ export class VideoJob {
 
     if (video.mediaKeys) return this.abandon('drm');
 
+    // Context lost: keep the loop alive but do no GL work until restore.
+    if (this.glc.lost) {
+      this.scheduleFrame();
+      return;
+    }
+
     // Src/quality swaps change resolution in place (YouTube reuses its
     // <video> across SPA navigations) — recompute, don't tear down.
     if (video.videoWidth !== this.natW || video.videoHeight !== this.natH) {
@@ -84,16 +108,60 @@ export class VideoJob {
     }
 
     if (this.natW > 0 && this.fitRect) {
-      const { x, y, w, h } = this.fitRect;
       try {
-        this.ctx.drawImage(video, x, y, w, h);
+        this.renderFrame(video);
         if (!this.mirrored) this.mirror();
-      } catch {
-        // Decoder hiccup; skip the frame, keep the loop alive.
+      } catch (err) {
+        if (err && err.name === 'SecurityError') {
+          // Cross-origin source without CORS taints the upload. Phase 4
+          // adds the DNR-backed recovery; until then, leave it alone.
+          return this.abandon('tainted-source');
+        }
+        // Transient GL/decoder hiccup: skip the frame, keep the loop alive.
       }
     }
 
     this.scheduleFrame();
+  }
+
+  renderFrame(video) {
+    const glc = this.glc;
+    const gl = glc.gl;
+
+    // Processing resolution: native capped at maxRes on the long axis.
+    const maxRes = this.params.maxRes || 1920;
+    const scale = Math.min(1, maxRes / Math.max(this.natW, this.natH));
+    const procW = Math.max(1, Math.round(this.natW * scale));
+    const procH = Math.max(1, Math.round(this.natH * scale));
+
+    let b = this.bundle;
+    if (!b || b.srcW !== this.natW || b.srcH !== this.natH || b.w !== procW || b.h !== procH) {
+      if (b) destroyBundle(gl, b);
+      b = this.bundle = createBundle(gl, this.natW, this.natH, procW, procH);
+    }
+
+    const p = glc.pipeline;
+    p.uploadFrame(b, video);
+    p.runPassthrough(b);
+    glc.ensureSize(procW, procH);
+    p.present(b);
+
+    // Same-task copy out of the shared GL canvas — valid without
+    // preserveDrawingBuffer because nothing composites in between. The
+    // present lands at the bottom-left of the (grow-only) canvas, which in
+    // drawImage's top-left coordinates starts at canvas.height - procH.
+    const { x, y, w, h } = this.fitRect;
+    this.ctx.drawImage(
+      glc.canvas,
+      0,
+      glc.canvas.height - procH,
+      procW,
+      procH,
+      x,
+      y,
+      w,
+      h
+    );
   }
 
   syncGeometry() {
@@ -143,10 +211,21 @@ export class VideoJob {
     }
   }
 
+  releaseGL() {
+    if (!this.glc) return;
+    this.glc.offRestore(this.onGLRestore);
+    if (this.bundle && !this.glc.lost) {
+      destroyBundle(this.glc.gl, this.bundle);
+    }
+    this.bundle = null;
+    this.glc = null;
+  }
+
   abandon(reason) {
     if (this.abandoned) return;
     this.suspend();
     this.abandoned = true;
+    this.releaseGL();
     if (this.overlay) {
       this.overlay.destroy();
       this.overlay = null;
@@ -159,6 +238,7 @@ export class VideoJob {
     this.suspend();
     this.destroyed = true;
     this.video.removeEventListener('encrypted', this.onEncrypted);
+    this.releaseGL();
     if (this.overlay) {
       this.overlay.destroy();
       this.overlay = null;

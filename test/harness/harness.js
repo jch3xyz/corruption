@@ -7,6 +7,7 @@
 // The page must stay visible: a hidden tab stops rendering, which stops
 // frames, rVFC, and IntersectionObserver, and tests will time out.
 import { Registry } from '../../source/content/registry.js';
+import { DEFAULTS } from '../../source/content/params.js';
 
 const status = document.getElementById('status');
 let passCount = 0;
@@ -69,7 +70,7 @@ function makeVideo(label, hue) {
 
 async function run() {
   // Boot the registry FIRST so all videos arrive via MutationObserver.
-  const params = { enabled: true };
+  const params = { ...DEFAULTS, enabled: true };
   const registry = new Registry(params);
   registry.start();
   window.__deflection = { params, registry };
@@ -135,6 +136,26 @@ async function run() {
     'static parents patched to relative',
     activeJobs().every(
       (j) => getComputedStyle(j.video.parentElement).position === 'relative'
+    )
+  );
+
+  // --- Shared GL context (Phase 2) ---
+  const glcs = new Set(activeJobs().map((j) => j.glc));
+  const glc = [...glcs][0];
+  check(
+    'all jobs share one WebGL2 context',
+    glcs.size === 1 && !!glc && glc.gl instanceof WebGL2RenderingContext
+  );
+  check('GL canvas is detached from the DOM', !!glc && !glc.canvas.isConnected);
+  check(
+    'bundles allocated at processing resolution',
+    activeJobs().every(
+      (j) =>
+        j.bundle &&
+        j.bundle.srcW === 320 &&
+        j.bundle.srcH === 180 &&
+        j.bundle.w === 320 &&
+        j.bundle.h === 180
     )
   );
 
@@ -211,6 +232,45 @@ async function run() {
     )
   );
   window.scrollTo(0, 0);
+
+  // --- Context loss / restore (Phase 2) ---
+  const mirroredJob = () =>
+    [...registry.jobs.values()].find((j) => j.active && j.mirrored);
+  await waitFor(() => registry.stats().active === 4 && !!mirroredJob());
+  const lossGlc = mirroredJob()?.glc;
+  const loseExt = lossGlc?.gl.getExtension('WEBGL_lose_context');
+  if (!loseExt) {
+    check('WEBGL_lose_context available for recovery test', false);
+  } else {
+    loseExt.loseContext();
+    check('context loss detected', await waitFor(() => lossGlc.lost, 4000));
+    loseExt.restoreContext();
+    check(
+      'context restored, pipeline rebuilt',
+      await waitFor(() => !lossGlc.lost, 4000)
+    );
+    const j = mirroredJob();
+    const sample = () => {
+      const c = j.overlay.canvas;
+      const row = Math.floor(c.height / 2);
+      const d = j.ctx.getImageData(0, row, c.width, 1).data;
+      let s = '';
+      for (let i = 0; i < d.length; i += 48) s += d[i] + ',';
+      return s;
+    };
+    // Content must CHANGE and be NON-BLACK: a restore bug (e.g. extension
+    // enables resetting with the context) renders black, which a plain
+    // change-detection check would wrongly pass.
+    const before = sample();
+    const nonBlack = (s) => s.split(',').some((v) => Number(v) > 20);
+    check(
+      'frames render real content after restore (bundle realloc)',
+      await waitFor(() => {
+        const now = sample();
+        return now !== before && nonBlack(now);
+      })
+    );
+  }
 
   const done = document.createElement('div');
   done.id = 'done';
