@@ -3,12 +3,14 @@
 
 export const DEFAULTS = {
   enabled: true,
+  feedback: false,   // off = straight per-frame pixel sorting; on = temporal feedback
   threshold: 0.55,   // luma above this is eligible for sorting/feedback
-  decay: 0.96,       // accumulator retention per frame
-  driftX: 0.0,       // smear direction, UV units per frame
-  driftY: 0.0015,    // positive = upward smear (texture v grows downward)
-  passes: 4,         // odd-even transposition passes per frame
-  resetMinS: 4,      // accumulator "keyframe" reset window
+  passes: 12,        // sort passes per frame (a full 32→1 stride ladder)
+  streak: 32,        // max compare-exchange stride: longer = longer ribbons
+  decay: 0.96,       // feedback only: accumulator retention per frame
+  driftX: 0.0,       // feedback only: smear direction, UV units per frame
+  driftY: 0.0015,    // feedback only: positive = upward smear
+  resetMinS: 4,      // feedback only: accumulator "keyframe" reset window
   resetMaxS: 10,
   maxRes: 1920,      // processing resolution cap, long axis
   imageFps: 12,      // animated image tick rate

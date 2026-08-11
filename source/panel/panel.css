@@ -35,6 +35,8 @@ h2 {
 
 .row label { color: #9a9aa2; }
 
+.row.inert { opacity: 0.35; }
+
 .row .value {
   text-align: right;
   color: #fff;

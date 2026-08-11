@@ -41,6 +41,7 @@ export function createPipeline(gl) {
   const sort = buildProgram(gl, VERT_FULLSCREEN, FRAG_SORT, [
     'uTex',
     'uParity',
+    'uStride',
     'uThreshold',
   ]);
 
@@ -105,17 +106,28 @@ export function createPipeline(gl) {
       bundle.read = write;
     },
 
-    // K odd-even transposition passes ping-ponging over the accumulator.
-    runSortPasses(bundle, passes, threshold) {
+    // K compare-exchange passes ping-ponging over the working buffer.
+    // Schedule: a descending stride ladder (largest power of two ≤ streak
+    // down to 1, two passes per level for both parities), cycled until the
+    // pass budget is spent. Long strides move pixels far fast; stride 1
+    // settles the local order.
+    runSortPasses(bundle, passes, threshold, streak) {
       if (passes <= 0) return;
+      let top = 1;
+      while (top * 2 <= Math.max(1, streak || 1)) top *= 2;
+      const schedule = [];
+      for (let s = top; s >= 1; s >>= 1) schedule.push([s, 0], [s, 1]);
+
       gl.useProgram(sort.handle);
       gl.uniform1f(sort.uniforms.uThreshold, threshold);
       gl.uniform1i(sort.uniforms.uTex, 0);
       gl.activeTexture(gl.TEXTURE0);
       for (let i = 0; i < passes; i++) {
+        const [stride, parity] = schedule[i % schedule.length];
         const write = bindWrite(bundle);
         gl.bindTexture(gl.TEXTURE_2D, bundle.accum[bundle.read].tex);
-        gl.uniform1f(sort.uniforms.uParity, i % 2);
+        gl.uniform1f(sort.uniforms.uStride, stride);
+        gl.uniform1f(sort.uniforms.uParity, parity);
         drawQuad();
         bundle.read = write;
       }

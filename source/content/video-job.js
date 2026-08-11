@@ -150,10 +150,15 @@ export class VideoJob {
     const p = glc.pipeline;
     p.uploadFrame(b, video);
 
-    // Keyframe rhythm: every resetMinS..resetMaxS seconds (with jitter) the
-    // accumulator is overwritten with a clean frame and the damage clears,
-    // the way codec corruption clears at a keyframe.
-    if (now >= this.nextResetAt) {
+    if (!params.feedback) {
+      // Straight pixel sorting: every frame starts from a clean copy of
+      // itself — no history, no drift, no keyframe rhythm. All the motion
+      // comes from the stride-ladder sort below.
+      p.runReset(b);
+    } else if (now >= this.nextResetAt) {
+      // Keyframe rhythm: every resetMinS..resetMaxS seconds (with jitter)
+      // the accumulator is overwritten with a clean frame and the damage
+      // clears, the way codec corruption clears at a keyframe.
       p.runReset(b);
       const minS = params.resetMinS ?? 4;
       const maxS = Math.max(minS, params.resetMaxS ?? 10);
@@ -168,8 +173,9 @@ export class VideoJob {
     }
     p.runSortPasses(
       b,
-      this.governor.effectivePasses(params.passes ?? 4),
-      params.threshold ?? 0.55
+      this.governor.effectivePasses(params.passes ?? 12),
+      params.threshold ?? 0.55,
+      params.streak ?? 32
     );
 
     glc.ensureSize(procW, procH);

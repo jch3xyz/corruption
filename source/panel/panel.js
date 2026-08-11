@@ -8,15 +8,20 @@ import { initMIDI } from './midi.js';
 
 const DEFS = [
   { key: 'enabled', label: 'enabled', type: 'toggle' },
+  { key: 'feedback', label: 'feedback', type: 'toggle' },
   { key: 'threshold', label: 'threshold', min: 0, max: 1, step: 0.01 },
+  { key: 'passes', label: 'sort passes', min: 0, max: 64, step: 1 },
+  { key: 'streak', label: 'streak', min: 1, max: 256, step: 1 },
   { key: 'decay', label: 'decay', min: 0.8, max: 0.999, step: 0.001 },
   { key: 'driftX', label: 'drift x', min: -0.01, max: 0.01, step: 0.0005 },
   { key: 'driftY', label: 'drift y', min: -0.01, max: 0.01, step: 0.0005 },
-  { key: 'passes', label: 'sort passes', min: 0, max: 16, step: 1 },
   { key: 'resetMinS', label: 'reset min s', min: 1, max: 30, step: 1 },
   { key: 'resetMaxS', label: 'reset max s', min: 2, max: 60, step: 1 },
   { key: 'maxRes', label: 'max res', min: 480, max: 1920, step: 160 },
 ];
+
+// These only shape the effect while feedback is on; gray them out otherwise.
+const FEEDBACK_ONLY = ['decay', 'driftX', 'driftY', 'resetMinS', 'resetMaxS'];
 
 const hasChrome = typeof chrome !== 'undefined' && !!chrome.storage?.local;
 const shim = { data: { ...DEFAULTS }, listeners: [] };
@@ -75,6 +80,7 @@ for (const def of DEFS) {
     const v = def.type === 'toggle' ? input.checked : Number(input.value);
     queueWrite(def.key, v);
     valueEls[def.key].textContent = fmt(def, v);
+    if (def.key === 'feedback') syncFeedbackUI(input.checked);
   });
 
   const value = document.createElement('span');
@@ -99,6 +105,14 @@ function setUI(key, v) {
   if (def.type === 'toggle') inputs[key].checked = !!v;
   else inputs[key].value = v;
   valueEls[key].textContent = fmt(def, v);
+  if (key === 'feedback') syncFeedbackUI(!!v);
+}
+
+function syncFeedbackUI(on) {
+  for (const key of FEEDBACK_ONLY) {
+    inputs[key].disabled = !on;
+    inputs[key].closest('.row').classList.toggle('inert', !on);
+  }
 }
 
 // --- Throttled writes (~30 Hz) so knob sweeps don't flood storage ---

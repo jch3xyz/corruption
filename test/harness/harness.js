@@ -70,7 +70,9 @@ function makeVideo(label, hue) {
 
 async function run() {
   // Boot the registry FIRST so all videos arrive via MutationObserver.
-  const params = { ...DEFAULTS, enabled: true };
+  // feedback:true so the trail test exercises the temporal path; a later
+  // check flips it off and asserts straight sorting leaves no trail.
+  const params = { ...DEFAULTS, enabled: true, feedback: true };
   const registry = new Registry(params);
   registry.start();
   window.__deflection = { params, registry };
@@ -137,20 +139,34 @@ async function run() {
   // decaying trail, so a row through the bar carries far more bright
   // pixels than the bar's own ~40px width. v1 (hue 55, yellow) sits well
   // above the default luma threshold; its background sits below it.
+  const brightRowCount = () => {
+    const j = registry.jobs.get(videos[1]);
+    if (!j?.active || !j.mirrored) return -1;
+    const c = j.overlay.canvas;
+    const d = j.ctx.getImageData(0, Math.floor(c.height / 3), c.width, 1).data;
+    let bright = 0;
+    for (let i = 0; i < d.length; i += 4) {
+      if (d[i] > 100 || d[i + 1] > 100 || d[i + 2] > 100) bright++;
+    }
+    return bright;
+  };
   check(
     'temporal feedback leaves trails',
+    await waitFor(() => brightRowCount() > 55)
+  );
+
+  // Straight-sort mode: no history, so the trail must vanish and the row
+  // returns to roughly the bar's own width. (The bar is uniform brightness,
+  // so sorting it is invisible — this isolates the absence of feedback.)
+  params.feedback = false;
+  check(
+    'straight sort mode leaves no trail',
     await waitFor(() => {
-      const j = registry.jobs.get(videos[1]);
-      if (!j?.active || !j.mirrored) return false;
-      const c = j.overlay.canvas;
-      const d = j.ctx.getImageData(0, Math.floor(c.height / 3), c.width, 1).data;
-      let bright = 0;
-      for (let i = 0; i < d.length; i += 4) {
-        if (d[i] > 100 || d[i + 1] > 100 || d[i + 2] > 100) bright++;
-      }
-      return bright > 55;
+      const n = brightRowCount();
+      return n > 20 && n < 55;
     })
   );
+  params.feedback = true;
   check(
     'static parents patched to relative',
     activeJobs().every(
