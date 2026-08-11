@@ -7,6 +7,7 @@
 import { Overlay, objectFitRect } from './overlay.js';
 import { acquireGL } from '../gl/context.js';
 import { createBundle, destroyBundle } from '../gl/pipeline.js';
+import { FrameGovernor } from './metrics.js';
 
 export class VideoJob {
   constructor(video, params) {
@@ -26,6 +27,8 @@ export class VideoJob {
     this.natW = 0;
     this.natH = 0;
     this.fitRect = null;
+    this.governor = new FrameGovernor();
+    this.nextResetAt = 0;
 
     this.onFrame = this.onFrame.bind(this);
     // GPU objects die with the context; drop them and realloc next frame.
@@ -52,6 +55,7 @@ export class VideoJob {
 
     this.active = true;
     this.natW = 0; // force fit-rect recompute on first frame
+    this.nextResetAt = 0; // first frame after (re)activation is a clean keyframe
     this.syncGeometry();
     this.scheduleFrame();
   }
@@ -86,10 +90,11 @@ export class VideoJob {
     this.rvfcId = this.video.requestVideoFrameCallback(this.onFrame);
   }
 
-  onFrame() {
+  onFrame(now, metadata) {
     if (!this.active || this.destroyed) return;
     const video = this.video;
     this.lastFrameAt = performance.now();
+    this.governor.sample(now, metadata);
 
     if (video.mediaKeys) return this.abandon('drm');
 
@@ -109,7 +114,7 @@ export class VideoJob {
 
     if (this.natW > 0 && this.fitRect) {
       try {
-        this.renderFrame(video);
+        this.renderFrame(video, now);
         if (!this.mirrored) this.mirror();
       } catch (err) {
         if (err && err.name === 'SecurityError') {
@@ -124,12 +129,14 @@ export class VideoJob {
     this.scheduleFrame();
   }
 
-  renderFrame(video) {
+  renderFrame(video, now) {
     const glc = this.glc;
     const gl = glc.gl;
+    const params = this.params;
 
-    // Processing resolution: native capped at maxRes on the long axis.
-    const maxRes = this.params.maxRes || 1920;
+    // Processing resolution: native capped at maxRes on the long axis,
+    // further scaled down by the governor when the pipeline falls behind.
+    const maxRes = (params.maxRes || 1920) * this.governor.resScale();
     const scale = Math.min(1, maxRes / Math.max(this.natW, this.natH));
     const procW = Math.max(1, Math.round(this.natW * scale));
     const procH = Math.max(1, Math.round(this.natH * scale));
@@ -142,7 +149,29 @@ export class VideoJob {
 
     const p = glc.pipeline;
     p.uploadFrame(b, video);
-    p.runPassthrough(b);
+
+    // Keyframe rhythm: every resetMinS..resetMaxS seconds (with jitter) the
+    // accumulator is overwritten with a clean frame and the damage clears,
+    // the way codec corruption clears at a keyframe.
+    if (now >= this.nextResetAt) {
+      p.runReset(b);
+      const minS = params.resetMinS ?? 4;
+      const maxS = Math.max(minS, params.resetMaxS ?? 10);
+      this.nextResetAt = now + 1000 * (minS + Math.random() * (maxS - minS));
+    } else {
+      p.runComposite(b, {
+        driftX: params.driftX ?? 0,
+        driftY: params.driftY ?? 0,
+        decay: params.decay ?? 0.96,
+        threshold: params.threshold ?? 0.55,
+      });
+    }
+    p.runSortPasses(
+      b,
+      this.governor.effectivePasses(params.passes ?? 4),
+      params.threshold ?? 0.55
+    );
+
     glc.ensureSize(procW, procH);
     p.present(b);
 

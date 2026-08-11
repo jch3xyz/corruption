@@ -1,9 +1,16 @@
 // Programs, geometry, and per-job GPU resource bundles. Allocate-once
 // discipline lives here: bundles are created via texStorage2D and reused
 // every frame — the rVFC path performs zero GPU allocations.
+//
+// Per-frame order (correction #3 in the build plan): composite the incoming
+// frame INTO the accumulator, then run K sort passes ON the accumulator, so
+// sort progress genuinely accumulates across frames. A reset replaces the
+// composite with a clean copy of the frame — the keyframe rhythm.
 
 import { VERT_FULLSCREEN } from './shaders/common.js';
 import { FRAG_PASSTHROUGH } from './shaders/passthrough.js';
+import { FRAG_COMPOSITE } from './shaders/composite.js';
+import { FRAG_SORT } from './shaders/sort.js';
 
 export function createPipeline(gl) {
   // Fullscreen triangle.
@@ -24,17 +31,30 @@ export function createPipeline(gl) {
     'uTex',
     'uFlipY',
   ]);
+  const composite = buildProgram(gl, VERT_FULLSCREEN, FRAG_COMPOSITE, [
+    'uFrame',
+    'uAccum',
+    'uDrift',
+    'uDecay',
+    'uThreshold',
+  ]);
+  const sort = buildProgram(gl, VERT_FULLSCREEN, FRAG_SORT, [
+    'uTex',
+    'uParity',
+    'uThreshold',
+  ]);
 
-  function draw(program, tex, flipY, w, h) {
-    gl.viewport(0, 0, w, h);
-    gl.useProgram(program.handle);
-    gl.activeTexture(gl.TEXTURE0);
-    gl.bindTexture(gl.TEXTURE_2D, tex);
-    gl.uniform1i(program.uniforms.uTex, 0);
-    gl.uniform1f(program.uniforms.uFlipY, flipY);
+  function drawQuad() {
     gl.bindVertexArray(vao);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
     gl.bindVertexArray(null);
+  }
+
+  function bindWrite(bundle) {
+    const write = 1 - bundle.read;
+    gl.bindFramebuffer(gl.FRAMEBUFFER, bundle.accum[write].fbo);
+    gl.viewport(0, 0, bundle.w, bundle.h);
+    return write;
   }
 
   return {
@@ -55,27 +75,70 @@ export function createPipeline(gl) {
       );
     },
 
-    // Phase 2 stand-in for the composite pass: frame → write accumulator,
-    // then swap. Exercises the float FBO chain the feedback loop will use.
-    runPassthrough(bundle) {
-      const write = 1 - bundle.read;
-      gl.bindFramebuffer(gl.FRAMEBUFFER, bundle.accum[write].fbo);
-      draw(passthrough, bundle.frameTex, 0, bundle.w, bundle.h);
+    // Keyframe: overwrite the accumulator with a clean copy of the frame.
+    runReset(bundle) {
+      const write = bindWrite(bundle);
+      gl.useProgram(passthrough.handle);
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, bundle.frameTex);
+      gl.uniform1i(passthrough.uniforms.uTex, 0);
+      gl.uniform1f(passthrough.uniforms.uFlipY, 0);
+      drawQuad();
       bundle.read = write;
+    },
+
+    // Feedback: incoming frame composited against the drifted, decaying
+    // accumulator (the proposal's shader).
+    runComposite(bundle, { driftX, driftY, decay, threshold }) {
+      const write = bindWrite(bundle);
+      gl.useProgram(composite.handle);
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, bundle.frameTex);
+      gl.activeTexture(gl.TEXTURE1);
+      gl.bindTexture(gl.TEXTURE_2D, bundle.accum[bundle.read].tex);
+      gl.uniform1i(composite.uniforms.uFrame, 0);
+      gl.uniform1i(composite.uniforms.uAccum, 1);
+      gl.uniform2f(composite.uniforms.uDrift, driftX, driftY);
+      gl.uniform1f(composite.uniforms.uDecay, decay);
+      gl.uniform1f(composite.uniforms.uThreshold, threshold);
+      drawQuad();
+      bundle.read = write;
+    },
+
+    // K odd-even transposition passes ping-ponging over the accumulator.
+    runSortPasses(bundle, passes, threshold) {
+      if (passes <= 0) return;
+      gl.useProgram(sort.handle);
+      gl.uniform1f(sort.uniforms.uThreshold, threshold);
+      gl.uniform1i(sort.uniforms.uTex, 0);
+      gl.activeTexture(gl.TEXTURE0);
+      for (let i = 0; i < passes; i++) {
+        const write = bindWrite(bundle);
+        gl.bindTexture(gl.TEXTURE_2D, bundle.accum[bundle.read].tex);
+        gl.uniform1f(sort.uniforms.uParity, i % 2);
+        drawQuad();
+        bundle.read = write;
+      }
     },
 
     // Draw the current accumulator to the default framebuffer (bottom-left
     // region of the shared canvas), flipped upright for canvas display.
     present(bundle) {
       gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-      draw(passthrough, bundle.accum[bundle.read].tex, 1, bundle.w, bundle.h);
+      gl.viewport(0, 0, bundle.w, bundle.h);
+      gl.useProgram(passthrough.handle);
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, bundle.accum[bundle.read].tex);
+      gl.uniform1i(passthrough.uniforms.uTex, 0);
+      gl.uniform1f(passthrough.uniforms.uFlipY, 1);
+      drawQuad();
     },
   };
 }
 
 // Per-job GPU resources. frameTex holds the upload at native video size;
 // the RGBA16F accumulator pair runs at processing resolution (maxRes cap),
-// so the first pass doubles as the downscale.
+// so the composite doubles as the downscale.
 export function createBundle(gl, srcW, srcH, w, h) {
   const frameTex = createTex(gl, gl.RGBA8, srcW, srcH);
   const accum = [0, 1].map(() => {

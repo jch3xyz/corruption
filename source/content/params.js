@@ -6,7 +6,7 @@ export const DEFAULTS = {
   threshold: 0.55,   // luma above this is eligible for sorting/feedback
   decay: 0.96,       // accumulator retention per frame
   driftX: 0.0,       // smear direction, UV units per frame
-  driftY: -0.0015,
+  driftY: 0.0015,    // positive = upward smear (texture v grows downward)
   passes: 4,         // odd-even transposition passes per frame
   resetMinS: 4,      // accumulator "keyframe" reset window
   resetMaxS: 10,

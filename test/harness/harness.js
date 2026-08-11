@@ -132,6 +132,25 @@ async function run() {
     'offscreen video untouched',
     !registry.jobs.get(far).active && far.style.opacity !== '0'
   );
+
+  // --- Temporal feedback (Phase 3): the moving bright bar leaves a
+  // decaying trail, so a row through the bar carries far more bright
+  // pixels than the bar's own ~40px width. v1 (hue 55, yellow) sits well
+  // above the default luma threshold; its background sits below it.
+  check(
+    'temporal feedback leaves trails',
+    await waitFor(() => {
+      const j = registry.jobs.get(videos[1]);
+      if (!j?.active || !j.mirrored) return false;
+      const c = j.overlay.canvas;
+      const d = j.ctx.getImageData(0, Math.floor(c.height / 3), c.width, 1).data;
+      let bright = 0;
+      for (let i = 0; i < d.length; i += 4) {
+        if (d[i] > 100 || d[i + 1] > 100 || d[i + 2] > 100) bright++;
+      }
+      return bright > 55;
+    })
+  );
   check(
     'static parents patched to relative',
     activeJobs().every(
