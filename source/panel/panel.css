@@ -68,6 +68,16 @@ input[type='checkbox'] {
   accent-color: #e8e864;
 }
 
+select {
+  background: #1e1e24;
+  color: #d8d8dc;
+  border: 1px solid #2e2e36;
+  border-radius: 4px;
+  font-family: inherit;
+  font-size: 11px;
+  padding: 3px 4px;
+}
+
 .learn {
   width: 26px;
   height: 22px;

@@ -14,6 +14,14 @@ export const DEFAULTS = {
   resetMaxS: 10,
   maxRes: 1920,      // processing resolution cap, long axis
   maxVideos: 8,      // concurrent video jobs, biggest visible first
+  audioEnabled: true,      // master switch for the audio pipeline
+  audioAlgorithm: 'spectral', // 'spectral' | 'granular'
+  audioMix: 1,             // wet/dry; mid values read as echo under granular latency
+  audioThreshold: 0,       // normalized RMS/magnitude gate; 0 = everything participates
+  audioSortPasses: 8,      // stride-ladder passes (grains or spectral bins)
+  audioGrainMs: 60,        // granular: grain length
+  audioWindowS: 1,         // granular: sort window = added latency (seconds)
+  audioMaxTaps: 4,         // concurrent engaged audio taps
   imageFps: 12,      // animated image tick rate
   imageAnimCap: 12,  // max concurrently animated images
   textSwap: false,

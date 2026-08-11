@@ -1,0 +1,25 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>DEFLECTION audio harness</title>
+<style>
+  body { background: #1a1a1c; color: #ddd; font-family: monospace; margin: 20px; }
+  #status div { padding: 2px 0; }
+  .pass { color: #7fd97f; }
+  .fail { color: #ff7070; font-weight: bold; }
+  button { background: #1e1e24; color: #b8b8c0; border: 1px solid #2e2e36;
+           border-radius: 4px; padding: 8px 14px; cursor: pointer;
+           font-family: inherit; font-size: 12px; margin-top: 14px; }
+</style>
+</head>
+<body>
+<h3>DEFLECTION audio harness</h3>
+<p>Tier 1 (pure DSP) and tier 2 (OfflineAudioContext) run automatically and
+are immune to pane visibility. Tier 3 taps a live element and needs the
+button click as its user gesture.</p>
+<div id="status"><div>running…</div></div>
+<button id="live">run live tap tests</button>
+<script type="module" src="./audio-harness.js"></script>
+</body>
+</html>
