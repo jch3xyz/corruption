@@ -19,10 +19,21 @@ const DEFS = [
   { key: 'resetMaxS', label: 'reset max s', min: 2, max: 60, step: 1 },
   { key: 'maxRes', label: 'max res', min: 480, max: 1920, step: 160 },
   { key: 'maxVideos', label: 'max videos', min: 1, max: 16, step: 1 },
+  { key: 'imageFps', label: 'image fps', min: 1, max: 30, step: 1 },
+  { key: 'imageAnimCap', label: 'image anim cap', min: 0, max: 24, step: 1 },
 ];
 
 // These only shape the effect while feedback is on; gray them out otherwise.
-const FEEDBACK_ONLY = ['decay', 'driftX', 'driftY', 'resetMinS', 'resetMaxS'];
+// (Straight-sort stills are static, so the image ticker params are moot too.)
+const FEEDBACK_ONLY = [
+  'decay',
+  'driftX',
+  'driftY',
+  'resetMinS',
+  'resetMaxS',
+  'imageFps',
+  'imageAnimCap',
+];
 
 const hasChrome = typeof chrome !== 'undefined' && !!chrome.storage?.local;
 const shim = { data: { ...DEFAULTS }, listeners: [] };

@@ -21,7 +21,7 @@
     "rule_resources": [
       {
         "id": "cors-media",
-        "enabled": false,
+        "enabled": true,
         "path": "rules/cors-media.json"
       }
     ]

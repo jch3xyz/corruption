@@ -78,7 +78,8 @@ async function run() {
   registry.start();
   window.__deflection = { params, registry };
 
-  const activeJobs = () => [...registry.jobs.values()].filter((j) => j.active);
+  const activeJobs = () =>
+    [...registry.jobs.values()].filter((j) => j.active && j.kind !== 'image');
 
   // 6 visible videos (one with a 4:3 box to test object-fit letterboxing),
   // 1 offscreen video far below the fold.
@@ -168,6 +169,96 @@ async function run() {
     })
   );
   params.feedback = true;
+
+  // --- Images (Phase 4): route resolution + sorted stills ---
+  // Direct route: a data-URL image (origin-clean by definition).
+  const srcCanvas = document.createElement('canvas');
+  srcCanvas.width = 240;
+  srcCanvas.height = 160;
+  const sctx = srcCanvas.getContext('2d');
+  sctx.fillStyle = '#1c1c22';
+  sctx.fillRect(0, 0, 240, 160);
+  for (let i = 0; i < 12; i++) {
+    sctx.fillStyle = `hsl(${i * 30} 90% 65%)`;
+    sctx.fillRect(10 + i * 19, 20 + (i % 4) * 30, 12, 60);
+  }
+  const sameImg = document.createElement('img');
+  sameImg.src = srcCanvas.toDataURL('image/png');
+  sameImg.style.width = '240px';
+  const sameCell = document.createElement('div');
+  sameCell.className = 'cell';
+  sameCell.appendChild(sameImg);
+  grid.appendChild(sameCell);
+
+  // Tiny image: must never get a job.
+  const tinyImg = document.createElement('img');
+  tinyImg.src = srcCanvas.toDataURL('image/png');
+  tinyImg.style.width = '24px';
+  tinyImg.style.height = '24px';
+  grid.appendChild(tinyImg);
+
+  check(
+    'same-origin image sorted via direct route',
+    await waitFor(() => {
+      const j = registry.jobs.get(sameImg);
+      if (!j?.mirrored || j.route !== 'direct') return false;
+      const c = j.overlay.canvas;
+      const d = j.ctx.getImageData((c.width / 2) | 0, (c.height / 2) | 0, 1, 1).data;
+      return d[3] > 0;
+    })
+  );
+  check('route counter: direct >= 1', registry.stats().images.direct >= 1);
+  check(
+    'tiny image ignored',
+    await waitFor(() => !registry.jobs.has(tinyImg) && registry.jobs.has(sameImg))
+  );
+
+  // CORS route: same file served from another port = cross-origin. Needs a
+  // second dev server: python3 test/serve.py 8439 (it sends ACAO like the
+  // extension's DNR rule does). Skipped gracefully when it isn't running.
+  let xoUp = false;
+  try {
+    await fetch('http://localhost:8439/source/manifest.json', { method: 'HEAD' });
+    xoUp = true;
+  } catch {
+    line('note: :8439 not running — skipping cross-origin image route test');
+  }
+  if (xoUp) {
+    const xoImg = document.createElement('img');
+    xoImg.src = 'http://localhost:8439/source/icons/icon128.png';
+    xoImg.style.width = '128px';
+    const xoCell = document.createElement('div');
+    xoCell.className = 'cell';
+    xoCell.appendChild(xoImg);
+    grid.appendChild(xoCell);
+    check(
+      'cross-origin image sorted via CORS route',
+      await waitFor(() => {
+        const j = registry.jobs.get(xoImg);
+        return !!j?.mirrored && j.route === 'cors';
+      }, 10000)
+    );
+    check('route counter: cors >= 1', registry.stats().images.cors >= 1);
+  }
+
+  // Params change re-renders stills (debounced 200 ms).
+  {
+    const j = registry.jobs.get(sameImg);
+    const snap = j.ctx.getImageData(0, ((j.overlay.canvas.height / 2) | 0), j.overlay.canvas.width, 1).data.join();
+    params.threshold = 0.05; // sort nearly everything → different output
+    registry.paramsChanged({ threshold: 0.05 });
+    check(
+      'param change re-renders image stills',
+      await waitFor(() => {
+        const now = j.ctx.getImageData(0, ((j.overlay.canvas.height / 2) | 0), j.overlay.canvas.width, 1).data.join();
+        return now !== snap;
+      })
+    );
+    params.threshold = DEFAULTS.threshold;
+    registry.paramsChanged({ threshold: params.threshold });
+  }
+
+
   check(
     'static parents patched to relative',
     activeJobs().every(
@@ -250,6 +341,7 @@ async function run() {
     await waitFor(
       () =>
         registry.stats().active === 0 &&
+        registry.stats().activeImages === 0 &&
         [...registry.jobs.values()].every((j) => j.video.style.opacity !== '0') &&
         [...document.querySelectorAll('canvas[data-deflection]')].every(
           (c) => c.style.display === 'none'

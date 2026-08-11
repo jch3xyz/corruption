@@ -21,6 +21,27 @@ Kill switch: Ctrl+Shift+D toggles `enabled` without the panel.
 | `resetMinS` / `resetMaxS` | 4 / 10 | 1–30 / 2–60 | *Feedback only.* Keyframe rhythm: the accumulator resets to a clean frame at a random interval in this window. |
 | `maxRes` | 1920 | 480–1920 | Processing resolution cap, long axis. Lower it on weak GPUs; output upscales through the overlay. |
 | `maxVideos` | 8 | 1–16 | Concurrent video jobs, biggest visible first. Paused videos count too — they get a one-shot sorted still (rVFC never fires for them). |
+| `imageFps` | 12 | 1–30 | *Feedback only.* Tick rate for animated images. Straight-sort stills don't animate at all. |
+| `imageAnimCap` | 12 | 0–24 | *Feedback only.* Max concurrently animated images (≥200 px side, biggest visible first); the rest stay stills. |
+
+## Image pipeline (Phase 4)
+
+Every on-screen `<img>` ≥48 px gets a sorted still (re-rendered when the
+effect params change; the panel debounces at ~200 ms). The texture source
+resolves through three routes, counted in `__deflection.registry.stats().images`:
+
+1. **direct** — same-origin or already CORS-clean (Wikipedia, YouTube
+   thumbnails).
+2. **cors** — a detached `crossorigin` re-fetch; works because the
+   extension's declarativeNetRequest rule sets `Access-Control-Allow-Origin: *`
+   on image/media responses **browser-wide while the extension is enabled**.
+3. **sw** — bytes fetched by the service worker, returned as a base64 data
+   URL (rare; signed CDNs that reject Origin-bearing requests).
+
+All three fail → the image is left untouched. The page's own `<img>` src is
+never mutated. Videos also carry a black-output probe: 2 consecutive black
+reads (2 s apart) while playback advances → the original shows through;
+recovers automatically when real content returns.
 
 ## Shader mapping
 

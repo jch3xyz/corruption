@@ -43,3 +43,32 @@ chrome.commands.onCommand.addListener((command) => {
 });
 
 chrome.action.onClicked.addListener(() => openPanel());
+
+// Image-path fallback (route 3): host permissions let the SW fetch what
+// page CORS won't allow. MV3 messaging JSON-serializes, so bytes travel as
+// a base64 data URL — ugly but universal, and rare (the DNR header rule
+// handles most cases as route 2).
+const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
+
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (msg?.type !== 'fetch-image') return;
+  (async () => {
+    try {
+      const resp = await fetch(msg.url, { credentials: 'omit' });
+      if (!resp.ok) throw new Error(`http ${resp.status}`);
+      const buf = await resp.arrayBuffer();
+      if (buf.byteLength > MAX_IMAGE_BYTES) throw new Error('too large');
+      const type = resp.headers.get('content-type') || 'image/jpeg';
+      const bytes = new Uint8Array(buf);
+      let binary = '';
+      const CHUNK = 0x8000;
+      for (let i = 0; i < bytes.length; i += CHUNK) {
+        binary += String.fromCharCode.apply(null, bytes.subarray(i, i + CHUNK));
+      }
+      sendResponse({ ok: true, dataUrl: `data:${type};base64,${btoa(binary)}` });
+    } catch (err) {
+      sendResponse({ ok: false, error: String(err) });
+    }
+  })();
+  return true; // async response
+});

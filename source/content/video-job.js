@@ -11,6 +11,7 @@ import { FrameGovernor } from './metrics.js';
 
 export class VideoJob {
   constructor(video, params) {
+    this.kind = 'video';
     this.video = video;
     this.params = params;
     this.overlay = null;
@@ -29,6 +30,12 @@ export class VideoJob {
     this.fitRect = null;
     this.governor = new FrameGovernor();
     this.nextResetAt = 0;
+    // Black-output net (DRM that slips past the EME gate, broken pipelines).
+    this.nextProbeAt = 0;
+    this.probeTime = -1;
+    this.blackStreak = 0;
+    this.blackOut = false;
+    this.probeBuf = null;
 
     this.onFrame = this.onFrame.bind(this);
     // GPU objects die with the context; drop them and realloc next frame.
@@ -122,6 +129,9 @@ export class VideoJob {
     // Context lost: do no GL work until restore rebuilds the pipeline.
     if (this.glc.lost) return;
 
+    // While blacked out, drop to probe cadence only.
+    if (this.blackOut && now < this.nextProbeAt) return;
+
     // Src/quality swaps change resolution in place (YouTube reuses its
     // <video> across SPA navigations) — recompute, don't tear down.
     if (video.videoWidth !== this.natW || video.videoHeight !== this.natH) {
@@ -132,8 +142,7 @@ export class VideoJob {
 
     if (this.natW > 0 && this.fitRect) {
       try {
-        this.renderFrame(video, now);
-        if (!this.mirrored) this.mirror();
+        if (this.renderFrame(video, now) && !this.mirrored) this.mirror();
       } catch (err) {
         if (err && err.name === 'SecurityError') {
           // Cross-origin source without CORS taints the upload. Phase 4
@@ -197,6 +206,31 @@ export class VideoJob {
     glc.ensureSize(procW, procH);
     p.present(b);
 
+    // Black-output net: the EME gate catches declared DRM, but some
+    // protected or broken pipelines upload as pure black while the element
+    // itself shows content. Probe the rendered output every 2 s; two
+    // consecutive black probes while playback advances → show the original
+    // instead. Recovers on its own when content returns, so a legitimate
+    // fade-to-black only ever swaps between two black rectangles.
+    if (now >= this.nextProbeAt) {
+      this.nextProbeAt = now + 2000;
+      const black = this.probeBlack(gl, b);
+      const advancing = video.currentTime > this.probeTime + 0.25;
+      this.probeTime = video.currentTime;
+      if (black && advancing) {
+        this.blackStreak++;
+        if (this.blackStreak >= 2 && !this.blackOut) {
+          this.blackOut = true;
+          this.unmirror();
+          console.log('[DEFLECTION] black output, showing original video');
+        }
+      } else if (!black) {
+        this.blackStreak = 0;
+        this.blackOut = false;
+      }
+    }
+    if (this.blackOut) return false;
+
     // Same-task copy out of the shared GL canvas — valid without
     // preserveDrawingBuffer because nothing composites in between. The
     // present lands at the bottom-left of the (grow-only) canvas, which in
@@ -213,6 +247,24 @@ export class VideoJob {
       w,
       h
     );
+    return true;
+  }
+
+  probeBlack(gl, b) {
+    this.probeBuf ||= new Uint8Array(8 * 8 * 4);
+    const x = Math.max(0, (b.w >> 1) - 4);
+    const y = Math.max(0, (b.h >> 1) - 4);
+    gl.readPixels(x, y, 8, 8, gl.RGBA, gl.UNSIGNED_BYTE, this.probeBuf);
+    for (let i = 0; i < this.probeBuf.length; i += 4) {
+      if (
+        this.probeBuf[i] > 3 ||
+        this.probeBuf[i + 1] > 3 ||
+        this.probeBuf[i + 2] > 3
+      ) {
+        return false;
+      }
+    }
+    return true;
   }
 
   syncGeometry() {

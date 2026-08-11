@@ -18,6 +18,9 @@ class NoStoreHandler(http.server.SimpleHTTPRequestHandler):
 
     def end_headers(self):
         self.send_header('Cache-Control', 'no-store')
+        # Mirrors what the extension's DNR rule does in the real browser, so
+        # the harness can exercise the crossorigin image route across ports.
+        self.send_header('Access-Control-Allow-Origin', '*')
         super().end_headers()
 
     def log_message(self, *args):

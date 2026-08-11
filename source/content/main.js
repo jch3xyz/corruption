@@ -31,7 +31,7 @@ async function boot() {
 
   onParamsChanged((next) => {
     Object.assign(params, next);
-    registry.refresh();
+    registry.paramsChanged(next);
   });
 
   // Inspectable from the extension's isolated world in DevTools.
