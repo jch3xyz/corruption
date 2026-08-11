@@ -17,6 +17,18 @@ export const DEFAULTS = {
   imageFps: 12,      // animated image tick rate
   imageAnimCap: 12,  // max concurrently animated images
   textSwap: false,
+
+  // --- audio (two engines under live A/B; the loser is removed) ---
+  audioEnabled: true,
+  audioMode: 'body', // 'body' = struck resonant body · 'timebase' = bent clock
+  audioMix: 1,       // wet/dry in the tap graph, not DSP
+  audioMaxTaps: 4,   // concurrent taps, most recently playing first
+  audioSustain: 6,   // body: T60 at the lowest fundamental, seconds
+  audioDrive: 0.5,   // body: strike force into the resonators
+  audioExciter: 'gated', // body: 'gated' strikes on onsets · 'continuous' drives always
+  audioDepth: 0.8,   // timebase: lag bend, octaves of the field's swing
+  audioFieldRate: 1, // timebase: deflection field speed multiplier
+  audioTail: 1.5,    // timebase: seconds the heads may speak after input stops
 };
 
 export async function loadParams() {

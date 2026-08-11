@@ -5,6 +5,7 @@
 
 import { VideoJob } from './video-job.js';
 import { ImageJob } from './image-job.js';
+import { AudioJob } from './audio-job.js';
 
 const SCAN_DEBOUNCE_MS = 100;
 const SWEEP_MS = 2000;
@@ -14,6 +15,7 @@ export class Registry {
   constructor(params) {
     this.params = params;
     this.jobs = new Map(); // element → VideoJob | ImageJob
+    this.audioJobs = new Map(); // element → AudioJob (videos carry both)
     this.visibleArea = new Map(); // element → px² in viewport
     this.routeStats = { direct: 0, cors: 0, sw: 0, failed: 0 };
     this.scanTimer = 0;
@@ -65,6 +67,10 @@ export class Registry {
       true
     );
 
+    // Audio activation is playback-driven; 'playing' captures through the
+    // document even though media events don't bubble.
+    document.addEventListener('playing', () => this.rebalanceAudio(), true);
+
     document.addEventListener('fullscreenchange', () => this.syncAll());
 
     // YouTube announces SPA navigation; sweep immediately instead of waiting.
@@ -83,7 +89,15 @@ export class Registry {
 
   // Discover new media, purge disconnected elements, re-rank.
   scan() {
-    for (const el of document.querySelectorAll('video, img')) {
+    for (const el of document.querySelectorAll('video, img, audio')) {
+      // Audio taps: a <video> carries one alongside its visual job, an
+      // <audio> carries only the tap. Neither is IO/RO-observed — audio
+      // activation is playback-driven, not visibility-driven (a
+      // display:none <audio> playing music is exactly the target).
+      if (el.tagName !== 'IMG' && !this.audioJobs.has(el)) {
+        this.audioJobs.set(el, new AudioJob(el, this.params));
+      }
+      if (el.tagName === 'AUDIO') continue;
       if (this.jobs.has(el)) continue;
       if (el.tagName === 'IMG') {
         // Undersized now ≠ undersized forever (lazy placeholders); later
@@ -105,6 +119,12 @@ export class Registry {
         this.ro.unobserve(el);
         this.jobs.delete(el);
         this.visibleArea.delete(el);
+      }
+    }
+    for (const [el, job] of this.audioJobs) {
+      if (!el.isConnected) {
+        job.destroy(); // the tap survives in the graph's WeakMap by design
+        this.audioJobs.delete(el);
       }
     }
     this.rebalance();
@@ -130,6 +150,7 @@ export class Registry {
   rebalance() {
     if (!this.params.enabled) {
       for (const job of this.jobs.values()) job.suspend();
+      for (const job of this.audioJobs.values()) job.suspend();
       this.ensureImageTicker();
       return;
     }
@@ -158,11 +179,27 @@ export class Registry {
     }
 
     this.ensureImageTicker();
+    this.rebalanceAudio();
+  }
+
+  // Audio ranks by most-recently-started playback, not visible area — the
+  // asymmetry that keeps audio jobs out of the visual slot loop.
+  rebalanceAudio() {
+    const playing = [];
+    for (const j of this.audioJobs.values()) {
+      if (j.abandoned || j.destroyed) continue;
+      if (j.playing()) playing.push(j);
+      else j.setAllowed(false);
+    }
+    playing.sort((a, b) => b.lastPlayingAt - a.lastPlayingAt);
+    const cap = Math.max(1, this.params.audioMaxTaps ?? 4);
+    playing.forEach((j, i) => j.setAllowed(i < cap));
   }
 
   // Called on chrome.storage changes: re-rank, and if an effect-shaping
   // param moved, re-render stills (debounced — panel drags write at 30 Hz).
   paramsChanged(changed) {
+    for (const j of this.audioJobs.values()) j.applyParams();
     this.rebalance();
     const effectKeys = ['threshold', 'passes', 'streak', 'feedback', 'maxRes'];
     if (Object.keys(changed).some((k) => effectKeys.includes(k))) {
@@ -224,6 +261,12 @@ export class Registry {
       if (j.abandoned) abandoned++;
       if (j.kind === 'image') imageJobs++;
     }
+    let audioEngaged = 0;
+    let audioAbandoned = 0;
+    for (const j of this.audioJobs.values()) {
+      if (j.tap?.engaged) audioEngaged++;
+      if (j.abandoned) audioAbandoned++;
+    }
     return {
       tracked: this.jobs.size,
       active,
@@ -231,6 +274,11 @@ export class Registry {
       abandoned,
       imageJobs,
       images: { ...this.routeStats },
+      audio: {
+        taps: this.audioJobs.size,
+        engaged: audioEngaged,
+        abandoned: audioAbandoned,
+      },
     };
   }
 }

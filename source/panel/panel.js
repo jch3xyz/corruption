@@ -21,6 +21,16 @@ const DEFS = [
   { key: 'maxVideos', label: 'max videos', min: 1, max: 16, step: 1 },
   { key: 'imageFps', label: 'image fps', min: 1, max: 30, step: 1 },
   { key: 'imageAnimCap', label: 'image anim cap', min: 0, max: 24, step: 1 },
+  { key: 'audioEnabled', label: 'audio', type: 'toggle' },
+  { key: 'audioMode', label: 'audio mode', type: 'select', options: ['body', 'timebase'] },
+  { key: 'audioMix', label: 'audio mix', min: 0, max: 1, step: 0.01 },
+  { key: 'audioMaxTaps', label: 'max taps', min: 1, max: 8, step: 1 },
+  { key: 'audioSustain', label: 'sustain s', min: 2, max: 12, step: 0.5 },
+  { key: 'audioDrive', label: 'drive', min: 0, max: 1, step: 0.01 },
+  { key: 'audioExciter', label: 'exciter', type: 'select', options: ['gated', 'continuous'] },
+  { key: 'audioDepth', label: 'depth', min: 0, max: 1.5, step: 0.01 },
+  { key: 'audioFieldRate', label: 'field rate', min: 0.25, max: 4, step: 0.25 },
+  { key: 'audioTail', label: 'tail s', min: 0, max: 5, step: 0.1 },
 ];
 
 // These only shape the effect while feedback is on; gray them out otherwise.
@@ -34,6 +44,22 @@ const FEEDBACK_ONLY = [
   'imageFps',
   'imageAnimCap',
 ];
+
+// Audio rows gray out when the audio master toggle is off; the engine
+// knobs additionally require their engine to be the selected mode.
+const AUDIO_ONLY = [
+  'audioMode',
+  'audioMix',
+  'audioMaxTaps',
+  'audioSustain',
+  'audioDrive',
+  'audioExciter',
+  'audioDepth',
+  'audioFieldRate',
+  'audioTail',
+];
+const BODY_ONLY = ['audioSustain', 'audioDrive', 'audioExciter'];
+const TIMEBASE_ONLY = ['audioDepth', 'audioFieldRate', 'audioTail'];
 
 const hasChrome = typeof chrome !== 'undefined' && !!chrome.storage?.local;
 const shim = { data: { ...DEFAULTS }, listeners: [] };
@@ -63,8 +89,11 @@ const inputs = {};
 const valueEls = {};
 const learnEls = {};
 
-const fmt = (def, v) =>
-  def.type === 'toggle' ? (v ? 'on' : 'off') : Number(v).toFixed(decimals(def.step));
+const fmt = (def, v) => {
+  if (def.type === 'toggle') return v ? 'on' : 'off';
+  if (def.type === 'select') return String(v);
+  return Number(v).toFixed(decimals(def.step));
+};
 const decimals = (step) => {
   const s = String(step ?? 1);
   return s.includes('.') ? s.split('.')[1].length : 0;
@@ -81,6 +110,14 @@ for (const def of DEFS) {
   if (def.type === 'toggle') {
     input = document.createElement('input');
     input.type = 'checkbox';
+  } else if (def.type === 'select') {
+    input = document.createElement('select');
+    for (const opt of def.options) {
+      const o = document.createElement('option');
+      o.value = opt;
+      o.textContent = opt;
+      input.appendChild(o);
+    }
   } else {
     input = document.createElement('input');
     input.type = 'range';
@@ -89,10 +126,16 @@ for (const def of DEFS) {
     input.step = def.step;
   }
   input.addEventListener('input', () => {
-    const v = def.type === 'toggle' ? input.checked : Number(input.value);
+    const v =
+      def.type === 'toggle'
+        ? input.checked
+        : def.type === 'select'
+          ? input.value
+          : Number(input.value);
     queueWrite(def.key, v);
     valueEls[def.key].textContent = fmt(def, v);
     if (def.key === 'feedback') syncFeedbackUI(input.checked);
+    if (def.key === 'audioEnabled' || def.key === 'audioMode') syncAudioUI();
   });
 
   const value = document.createElement('span');
@@ -118,12 +161,26 @@ function setUI(key, v) {
   else inputs[key].value = v;
   valueEls[key].textContent = fmt(def, v);
   if (key === 'feedback') syncFeedbackUI(!!v);
+  if (key === 'audioEnabled' || key === 'audioMode') syncAudioUI();
 }
 
 function syncFeedbackUI(on) {
   for (const key of FEEDBACK_ONLY) {
     inputs[key].disabled = !on;
     inputs[key].closest('.row').classList.toggle('inert', !on);
+  }
+}
+
+function syncAudioUI() {
+  const on = inputs.audioEnabled.checked;
+  const mode = inputs.audioMode.value;
+  for (const key of AUDIO_ONLY) {
+    const inert =
+      !on ||
+      (BODY_ONLY.includes(key) && mode !== 'body') ||
+      (TIMEBASE_ONLY.includes(key) && mode !== 'timebase');
+    inputs[key].disabled = inert;
+    inputs[key].closest('.row').classList.toggle('inert', inert);
   }
 }
 
@@ -208,6 +265,8 @@ initMIDI({
     let v;
     if (def.type === 'toggle') {
       v = value >= 64;
+    } else if (def.type === 'select') {
+      v = def.options[Math.round((value / 127) * (def.options.length - 1))];
     } else {
       v = def.min + (value / 127) * (def.max - def.min);
       if (def.step >= 1) v = Math.round(v);

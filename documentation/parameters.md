@@ -23,6 +23,40 @@ Kill switch: Ctrl+Shift+D toggles `enabled` without the panel.
 | `maxVideos` | 8 | 1–16 | Concurrent video jobs, biggest visible first. Paused videos count too — they get a one-shot sorted still (rVFC never fires for them). |
 | `imageFps` | 12 | 1–30 | *Feedback only.* Tick rate for animated images. Straight-sort stills don't animate at all. |
 | `imageAnimCap` | 12 | 0–24 | *Feedback only.* Max concurrently animated images (≥200 px side, biggest visible first); the rest stay stills. |
+| `audioEnabled` | on | on/off | Audio master. Off ramps every tap to dry — the tap itself is permanent by design. |
+| `audioMode` | **body** | body / timebase | Which engine speaks. **The bake-off knob**: switches live with a 100 ms crossfade, so A/B the two on the same material. |
+| `audioMix` | 1 | 0–1 | Wet/dry in the tap graph (30 ms ramps). 0 = the internet as transmitted. |
+| `audioMaxTaps` | 4 | 1–8 | Concurrent engaged taps, most recently playing first. |
+| `audioSustain` | 6 | 2–12 | *Body only.* T60 at the lowest string (55 Hz), seconds. Higher modes always die faster ((55/f)^0.7) — the ring-length knob. |
+| `audioDrive` | 0.5 | 0–1 | *Body only.* Strike force into the resonators. Per-mode caps bound runaway, so drive shapes attack more than loudness. |
+| `audioExciter` | **gated** | gated / continuous | *Body only.* Gated = onsets open a 60 ms window and the body is *struck*. Continuous = the stream drives it always — the honest drone test, bounded but relentless. |
+| `audioDepth` | 0.8 | 0–1.5 | *Timebase only.* Octaves of lag bend under the field. 0 = a transparent multi-tap of the actual browsing; up = heads fan across time. |
+| `audioFieldRate` | 1 | 0.25–4 | *Timebase only.* Deflection field speed. The field never repeats (four incommensurate periods, 40 s–47 min at 1×). |
+| `audioTail` | 1.5 | 0–5 | *Timebase only.* Seconds the heads may keep speaking after input stops — the silence-semantics knob. 0 = strict silence-in/silence-out. |
+
+## Audio engines (bake-off)
+
+Two complete engines live in one worklet; `audioMode` crossfades between
+them (100 ms, equal-power). The loser is removed after the live verdict.
+
+- **body** — a fixed resonant body struck by the stream: 48 modal
+  resonators, three just-intonation fundamentals (55/82.5/137.5 Hz) × 16
+  stretched partials (`f_k = k·f₀·√(1+4e-4k²)`) — the stretch is what makes
+  it read as an object, not a comb. Identity lives in the apparatus: tuning
+  is fixed in source and never on a knob. Latency ≈ 0 — the strike
+  coincides with the visual event.
+- **timebase** — the clock is deformed, not the signal: a 45 s reservoir
+  written at 1× and read by five heads (base lags 0.15/1/4/12/30 s) whose
+  lags bend under a shaped never-repeating field. Lag is the controlled
+  variable; its slope is clamped to ±0.75 s/s so read rates stay inside
+  [0.25×, 1.75×]. Latency is the material, by construction.
+
+Rules the implementation lives by: safety is predicted before tapping
+(same-origin / blob / data / MediaStream / `crossorigin="anonymous"` only);
+taps are permanent, disable is a gain bypass; every input sample is
+finiteness-checked before recursive state; the output gate snaps to exact
+zeros once input is absent and the engines reach the floor; `process()`
+never throws (a dead processor is permanently silent media).
 
 ## Image pipeline (Phase 4)
 
@@ -77,4 +111,5 @@ always shows your requested values.
 3. Toggle params (`enabled`) treat CC value ≥64 as on.
 
 Any class-compliant controller works. Suggested performance set: threshold,
-decay, driftY, passes.
+decay, driftY, passes. For the audio bake-off: `audioMode` on a CC (≥64 =
+timebase) plus `audioMix`, `audioSustain`, `audioDepth`.
