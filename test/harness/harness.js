@@ -72,7 +72,8 @@ async function run() {
   // Boot the registry FIRST so all videos arrive via MutationObserver.
   // feedback:true so the trail test exercises the temporal path; a later
   // check flips it off and asserts straight sorting leaves no trail.
-  const params = { ...DEFAULTS, enabled: true, feedback: true };
+  // maxVideos pinned to 4 so the cap/promotion tests stay meaningful.
+  const params = { ...DEFAULTS, enabled: true, feedback: true, maxVideos: 4 };
   const registry = new Registry(params);
   registry.start();
   window.__deflection = { params, registry };
@@ -174,6 +175,22 @@ async function run() {
     )
   );
 
+  // Raising maxVideos live should activate every visible video. (Runs
+  // after the overlay-count check: suspended jobs keep their hidden
+  // canvases by design, so this permanently adds two to the DOM.)
+  params.maxVideos = 8;
+  registry.refresh();
+  check(
+    'raised maxVideos activates all 6 visible',
+    await waitFor(() => registry.stats().active === 6)
+  );
+  params.maxVideos = 4;
+  registry.refresh();
+  check(
+    'lowered maxVideos suspends back to 4',
+    await waitFor(() => registry.stats().active === 4)
+  );
+
   // --- Shared GL context (Phase 2) ---
   const glcs = new Set(activeJobs().map((j) => j.glc));
   const glc = [...glcs][0];
@@ -267,6 +284,24 @@ async function run() {
     )
   );
   window.scrollTo(0, 0);
+
+  // --- Paused video gets a one-shot sorted still (no rVFC fires) ---
+  await waitFor(() => registry.stats().active === 4);
+  const pausedVid = videos[2];
+  params.enabled = false;
+  registry.refresh();
+  await waitFor(() => registry.stats().active === 0);
+  pausedVid.pause();
+  params.enabled = true;
+  registry.refresh();
+  check(
+    'paused video mirrored via one-shot render',
+    await waitFor(() => {
+      const j = registry.jobs.get(pausedVid);
+      return !!j?.active && j.mirrored;
+    })
+  );
+  pausedVid.play();
 
   // --- Context loss / restore (Phase 2) ---
   const mirroredJob = () =>

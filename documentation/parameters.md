@@ -20,6 +20,7 @@ Kill switch: Ctrl+Shift+D toggles `enabled` without the panel.
 | `driftY` | +0.0015 | ±0.01 | *Feedback only.* Vertical smear. **Positive = upward** (texture v grows toward the video's bottom). |
 | `resetMinS` / `resetMaxS` | 4 / 10 | 1–30 / 2–60 | *Feedback only.* Keyframe rhythm: the accumulator resets to a clean frame at a random interval in this window. |
 | `maxRes` | 1920 | 480–1920 | Processing resolution cap, long axis. Lower it on weak GPUs; output upscales through the overlay. |
+| `maxVideos` | 8 | 1–16 | Concurrent video jobs, biggest visible first. Paused videos count too — they get a one-shot sorted still (rVFC never fires for them). |
 
 ## Shader mapping
 

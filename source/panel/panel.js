@@ -18,6 +18,7 @@ const DEFS = [
   { key: 'resetMinS', label: 'reset min s', min: 1, max: 30, step: 1 },
   { key: 'resetMaxS', label: 'reset max s', min: 2, max: 60, step: 1 },
   { key: 'maxRes', label: 'max res', min: 480, max: 1920, step: 160 },
+  { key: 'maxVideos', label: 'max videos', min: 1, max: 16, step: 1 },
 ];
 
 // These only shape the effect while feedback is on; gray them out otherwise.

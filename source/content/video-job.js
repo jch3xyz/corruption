@@ -37,6 +37,13 @@ export class VideoJob {
     };
     this.onEncrypted = () => this.abandon('drm');
     video.addEventListener('encrypted', this.onEncrypted);
+    // rVFC only fires on newly presented frames, so paused videos would
+    // never be touched. Render the still frame on seeks and initial load.
+    this.onStillFrame = () => {
+      if (this.active && this.video.paused) this.renderNow();
+    };
+    video.addEventListener('seeked', this.onStillFrame);
+    video.addEventListener('loadeddata', this.onStillFrame);
   }
 
   activate() {
@@ -58,6 +65,8 @@ export class VideoJob {
     this.nextResetAt = 0; // first frame after (re)activation is a clean keyframe
     this.syncGeometry();
     this.scheduleFrame();
+    // A paused video presents no frames; sort its current still once.
+    if (video.paused && video.readyState >= 2) this.renderNow();
   }
 
   suspend() {
@@ -92,17 +101,26 @@ export class VideoJob {
 
   onFrame(now, metadata) {
     if (!this.active || this.destroyed) return;
+    this.governor.sample(now, metadata);
+    this.renderTick(now);
+    if (this.active) this.scheduleFrame(); // renderTick may have abandoned
+  }
+
+  // One-shot render outside the rVFC loop (paused videos: activation,
+  // seeks). Deterministic in straight-sort mode, so re-renders are stable.
+  renderNow() {
+    if (!this.active || this.destroyed) return;
+    this.renderTick(performance.now());
+  }
+
+  renderTick(now) {
     const video = this.video;
     this.lastFrameAt = performance.now();
-    this.governor.sample(now, metadata);
 
     if (video.mediaKeys) return this.abandon('drm');
 
-    // Context lost: keep the loop alive but do no GL work until restore.
-    if (this.glc.lost) {
-      this.scheduleFrame();
-      return;
-    }
+    // Context lost: do no GL work until restore rebuilds the pipeline.
+    if (this.glc.lost) return;
 
     // Src/quality swaps change resolution in place (YouTube reuses its
     // <video> across SPA navigations) — recompute, don't tear down.
@@ -125,8 +143,6 @@ export class VideoJob {
         // Transient GL/decoder hiccup: skip the frame, keep the loop alive.
       }
     }
-
-    this.scheduleFrame();
   }
 
   renderFrame(video, now) {
@@ -273,6 +289,8 @@ export class VideoJob {
     this.suspend();
     this.destroyed = true;
     this.video.removeEventListener('encrypted', this.onEncrypted);
+    this.video.removeEventListener('seeked', this.onStillFrame);
+    this.video.removeEventListener('loadeddata', this.onStillFrame);
     this.releaseGL();
     if (this.overlay) {
       this.overlay.destroy();

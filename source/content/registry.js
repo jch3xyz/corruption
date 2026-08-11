@@ -7,7 +7,6 @@ import { VideoJob } from './video-job.js';
 
 const SCAN_DEBOUNCE_MS = 100;
 const SWEEP_MS = 2000;
-const MAX_ACTIVE_VIDEOS = 4;
 
 export class Registry {
   constructor(params) {
@@ -118,7 +117,7 @@ export class Registry {
       .map(([el, job]) => [this.visibleArea.get(el) ?? 0, job])
       .sort((a, b) => b[0] - a[0]);
 
-    let slots = MAX_ACTIVE_VIDEOS;
+    let slots = Math.max(1, this.params.maxVideos ?? 8);
     for (const [area, job] of ranked) {
       if (area > 0 && slots > 0) {
         job.activate();
