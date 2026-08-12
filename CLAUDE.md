@@ -25,7 +25,8 @@ Quick facts:
   `/test/harness/audio.html` (deterministic offline tiers + live-tap button).
 - Params live in chrome.storage.local; stored values beat code defaults —
   use the panel's "restore defaults" after changing DEFAULTS.
-- Per-knob documentation: [documentation/parameters.md](documentation/parameters.md).
+- How both pipelines actually work: [documentation/how-it-works.md](documentation/how-it-works.md).
+  Per-knob documentation: [documentation/parameters.md](documentation/parameters.md).
   Site quirks: [documentation/site-notes.md](documentation/site-notes.md).
 - Discipline: one commit per verified iteration; run the relevant harness
   before committing; never break the page — every failure path must leave

@@ -67,6 +67,10 @@ body at sustain 12 / drive 1.0 / continuous exciter.
   `--kiosk` decision (popup panel conflicts with `--kiosk`), 72 h + 7-day
   soak, `kiosk-setup.md` written well enough to build the cold spare from.
 
+For a full technical description of both pipelines — the GL sort/composite
+path and the resonant-body audio path, with the reasoning behind each —
+see [how-it-works.md](how-it-works.md).
+
 ## Architecture map
 
 ```
