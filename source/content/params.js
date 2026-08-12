@@ -12,7 +12,7 @@ export const DEFAULTS = {
   streak: 256,       // max compare-exchange stride: longer = longer ribbons
   decay: 0.906,      // feedback only: accumulator retention per frame
   driftX: -0.0025,   // feedback only: smear direction, UV units per frame
-  driftY: 0,         // feedback only: 0 = purely horizontal drift (and no smear wobble)
+  driftY: 0,         // feedback only: 0 = purely horizontal drift
   resetMinS: 1,      // feedback only: accumulator "keyframe" reset window
   resetMaxS: 60,
   maxRes: 1920,      // processing resolution cap, long axis
@@ -27,8 +27,13 @@ export const DEFAULTS = {
   audioMix: 1,       // wet/dry in the tap graph, not DSP
   audioFeedback: true,  // echo/smear layer on the engine output (either mode)
   audioFbDecay: 0.999,  // smear retention; maps to feedback gain 0.5–0.95
+  audioFbWobble: 0,     // delay wobble depth 0–0.4 (tape warble); 0 = static echo stack.
+                        // Was coupled to driftY; detangled 2026-08-12 — audio knobs
+                        // only, so performing the video never bends the sound.
   audioFbClear: false,  // the smear never clears by default: gain < 1 IS its decay
   audioFbClearS: 1,     // when clearing is on: fade the wash over ~this long; 0 = hard cut
+  audioFbClearMinS: 1,  // when clearing is on: the smear's own keyframe window,
+  audioFbClearMaxS: 60, // decoupled from the visual resetMinS/resetMaxS rhythm
   audioMaxTaps: 8,   // concurrent taps, most recently playing first
   audioSustain: 12,  // T60 at the lowest fundamental, seconds
   audioDrive: 1.0,   // drive into the resonators

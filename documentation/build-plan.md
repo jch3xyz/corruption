@@ -43,6 +43,7 @@ no build step — "Load unpacked" points at `source/`.
 | verdict | **Body won** (John, on live browsing: body + continuous exciter + smear). Timebase engine, `audioMode`, and its knobs removed; the two-engine state is tag `audio-bakeoff`. DEFAULTS = John's live-iterated settings. Audio harness 25/25. |
 | tainted-video mirror | The Phase 4 IOU paid: videos whose GL upload throws SecurityError (direct cross-origin src, no-cors — Instagram explore reel previews) recover via a detached `crossorigin` mirror element riding the DNR ACAO rule; page element untouched, mirror failure abandons as before. Harness check behind the :8439 gate. |
 | Phase 5 — text mode | **Built, defaulted off, undecided.** First landed as caption-swapping between cards (the proposal's recommendation — complete at tag `text-swap`, its suite was 26/26); John then chose **scrambling, page-wide**: letters rearrange inside their own word, non-letters are barriers, `textMin` (default 12) is the navigability dial. Character-data writes only, self-invalidating records, restore on either toggle. Suite rewritten for the scramble grammar: 35/35. |
+| audio detangle | **The visual sliders no longer reach the audio** (John's request: performing the video must never bend the sound). The smear's wobble left `driftY` for its own `audioFbWobble` (0–0.4, default 0 = the resting state unchanged); the optional clear rhythm left `resetMinS`/`resetMaxS` for `audioFbClearMinS`/`audioFbClearMaxS` (1/60). Harness asserts the detangle structurally (no visual key in the worklet's param surface) and behaviorally (the wobble knob moves the echoes). Audio suite 27/27 incl. live tier. |
 
 Audio lineage: the first phase (spectral/granular sorting) was removed for
 mirroring the pixel-sort grammar — tag `audio-v1`. The bake-off's two
@@ -53,7 +54,7 @@ see "The audio engine" in parameters.md.
 
 **John's live-chosen settings are now the DEFAULTS** (2026-08-11): visual
 feedback **off** (his final call — its knobs stay live-tuned: decay 0.906,
-driftX −0.0025, driftY 0 (= audio smear wobble off — the coupling), reset
+driftX −0.0025, driftY 0, reset
 1–60 s, imageFps 6); audio fb on at fbDecay 0.999 with
 **clears off** (`audioFbClear` — his call: the smear's gain < 1 is its own
 decay, continuous sounds nicer; the video keyframe still clears), maxTaps 8,
@@ -164,9 +165,9 @@ python3 test/serve.py 8439   # second origin for the image CORS-route test
   runs clean; in Claude's embedded pane expect visibility roulette.
 - Audio suite: `http://localhost:8437/test/harness/audio.html` — tier 1 (pure
   DSP) + tier 2 (body engine + feedback layer through OfflineAudioContext)
-  are fully deterministic, 16 checks; tier 3 ("run live tap tests" button)
+  are fully deterministic, 18 checks; tier 3 ("run live tap tests" button)
   adds 9 live-tap checks incl. tap permanence and re-tap reuse. Last full
-  run: 25/25. Unlike the visual suite it is immune to pane visibility
+  run: 27/27. Unlike the visual suite it is immune to pane visibility
   (offline rendering).
 - Text suite: `http://localhost:8437/test/harness/text.html` — 35 checks,
   pure DOM (no rVFC, no GL, no AudioContext), so it is deterministic and

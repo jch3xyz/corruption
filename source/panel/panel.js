@@ -27,8 +27,11 @@ const DEFS = [
   { key: 'audioMix', label: 'audio mix', min: 0, max: 1, step: 0.01 },
   { key: 'audioFeedback', label: 'audio fb', type: 'toggle' },
   { key: 'audioFbDecay', label: 'fb decay', min: 0.8, max: 0.999, step: 0.001 },
+  { key: 'audioFbWobble', label: 'fb wobble', min: 0, max: 0.4, step: 0.005 },
   { key: 'audioFbClear', label: 'fb clear', type: 'toggle' },
   { key: 'audioFbClearS', label: 'fb clear s', min: 0, max: 4, step: 0.1 },
+  { key: 'audioFbClearMinS', label: 'fb clear min s', min: 1, max: 30, step: 1 },
+  { key: 'audioFbClearMaxS', label: 'fb clear max s', min: 2, max: 60, step: 1 },
   { key: 'audioMaxTaps', label: 'max taps', min: 1, max: 8, step: 1 },
   { key: 'audioSustain', label: 'sustain s', min: 2, max: 12, step: 0.5 },
   { key: 'audioDrive', label: 'drive', min: 0, max: 1, step: 0.01 },
@@ -53,15 +56,26 @@ const AUDIO_ONLY = [
   'audioMix',
   'audioFeedback',
   'audioFbDecay',
+  'audioFbWobble',
   'audioFbClear',
   'audioFbClearS',
+  'audioFbClearMinS',
+  'audioFbClearMaxS',
   'audioMaxTaps',
   'audioSustain',
   'audioDrive',
   'audioExciter',
 ];
-const AUDIO_FB_ONLY = ['audioFbDecay', 'audioFbClear', 'audioFbClearS'];
-const AUDIO_FB_CLEAR_ONLY = ['audioFbClearS']; // needs fb clear on too
+const AUDIO_FB_ONLY = [
+  'audioFbDecay',
+  'audioFbWobble',
+  'audioFbClear',
+  'audioFbClearS',
+  'audioFbClearMinS',
+  'audioFbClearMaxS',
+];
+// These need fb clear on too.
+const AUDIO_FB_CLEAR_ONLY = ['audioFbClearS', 'audioFbClearMinS', 'audioFbClearMaxS'];
 
 // The text mode's reach only means anything while the mode is on.
 const TEXT_ONLY = ['textMin'];

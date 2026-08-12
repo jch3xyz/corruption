@@ -17,7 +17,7 @@ Kill switch: Ctrl+Shift+D toggles `enabled` without the panel.
 | `streak` | **256** | 1–256 | Longest compare-exchange stride (rounded down to a power of two). Directly sets how far pixels can travel per frame — the ribbon-length knob. 1 = classic single-step odd-even. |
 | `decay` | **0.906** | 0.8–0.999 | *Feedback only.* Accumulator retention per frame. Higher = smear lingers longer. |
 | `driftX` | **−0.0025** | ±0.01 | *Feedback only.* Horizontal smear, UV units per frame (negative = leftward). |
-| `driftY` | **0** | ±0.01 | *Feedback only.* Vertical smear; **positive = upward**. 0 = purely horizontal drift — and no audio smear wobble (the coupling below). |
+| `driftY` | **0** | ±0.01 | *Feedback only.* Vertical smear; **positive = upward**. 0 = purely horizontal drift. Purely visual — the audio wobble it used to drive is now `audioFbWobble`. |
 | `resetMinS` / `resetMaxS` | **1 / 60** | 1–30 / 2–60 | *Feedback only.* Keyframe rhythm: the accumulator resets to a clean frame at a random interval in this window. |
 | `maxRes` | 1920 | 480–1920 | Processing resolution cap, long axis. Lower it on weak GPUs; output upscales through the overlay. |
 | `maxVideos` | **12** | 1–16 | Concurrent video jobs, biggest visible first. Paused videos count too — they get a one-shot sorted still (rVFC never fires for them). Raised from 8 for grid feeds (Instagram explore) where a dozen previews are on screen at once. |
@@ -28,9 +28,11 @@ Kill switch: Ctrl+Shift+D toggles `enabled` without the panel.
 | `audioEnabled` | on | on/off | Audio master. Off ramps every tap to dry — the tap itself is permanent by design. |
 | `audioMix` | 1 | 0–1 | Wet/dry in the tap graph (30 ms ramps). 0 = the internet as transmitted. |
 | `audioFeedback` | **on** | on/off | The smear: the body's output recirculates through a 0.35 s delay line (0.1 Hz wobble, tanh-clipped write-back), continuously — see `audioFbClear`. |
-| `audioFbDecay` | **0.999** | 0.8–0.999 | *Audio fb only.* Echo retention (maps to feedback gain 0.5–0.95) — the visual `decay` knob's range, so it feels like the same knob. `driftY` sets the delay wobble depth (×100), exactly as the first audio phase had it — **`driftY` 0 = no wobble, a static echo stack**. |
-| `audioFbClear` | **off** | on/off | *Audio fb only.* Whether the smear clears on the `resetMinS`/`resetMaxS` keyframe rhythm at all. **Off is the piece**: the loop gain (< 1) is already a natural decay, so unlike the video accumulator the smear needs no clearing — it stays continuous. |
+| `audioFbDecay` | **0.999** | 0.8–0.999 | *Audio fb only.* Echo retention (maps to feedback gain 0.5–0.95) — the visual `decay` knob's range, so it feels like the same knob. |
+| `audioFbWobble` | **0** | 0–0.4 | *Audio fb only.* Delay wobble depth — the tape-warble on the echo stack. **0 = no wobble, a static echo stack** (the resting state). Until 2026-08-12 this rode the visual `driftY` slider; detangled so performing the video never bends the sound. |
+| `audioFbClear` | **off** | on/off | *Audio fb only.* Whether the smear clears on its own `audioFbClearMinS`/`audioFbClearMaxS` rhythm at all (its own window since 2026-08-12 — the visual `resetMinS`/`resetMaxS` no longer reach the audio). **Off is the piece**: the loop gain (< 1) is already a natural decay, so unlike the video accumulator the smear needs no clearing — it stays continuous. |
 | `audioFbClearS` | 1 | 0–4 | *Audio fb clear only.* When clearing is on, the keyframe fades the wash out over ~this many seconds before the line wipes, instead of cutting in one sample. **0 = the original hard cut.** The video keyframe stays a hard cut by design — one frame hides in a glitching image; a vanished wash doesn't. |
+| `audioFbClearMinS` / `audioFbClearMaxS` | 1 / 60 | 1–30 / 2–60 | *Audio fb clear only.* The smear's own keyframe window: when clearing is on, the wash clears at a random interval in this range — the audio sibling of the visual `resetMinS`/`resetMaxS`, and no longer the same sliders. |
 | `audioMaxTaps` | **8** | 1–8 | Concurrent *engaged* taps, most recently playing first — the audio sibling of `maxVideos`. Everything safe gets tapped; beyond the cap, elements play dry (idle processors cost ~nothing). Matters on feed pages with several sounding videos; each engaged tap is its own worklet. |
 | `audioSustain` | **12** | 2–12 | T60 at the lowest string (55 Hz), seconds. Higher modes always die faster ((55/f)^0.7) — the ring-length knob. |
 | `audioDrive` | **1.0** | 0–1 | Strike force into the resonators. Per-mode caps bound runaway, so drive shapes attack more than loudness. |
@@ -150,4 +152,5 @@ always shows your requested values.
 3. Toggle params (`enabled`) treat CC value ≥64 as on.
 
 Any class-compliant controller works. Suggested performance set: threshold,
-decay, driftY, passes. For audio: `audioMix`, `audioSustain`, `audioFbDecay`.
+decay, driftY, passes. For audio: `audioMix`, `audioSustain`, `audioFbDecay`,
+`audioFbWobble`.

@@ -31,9 +31,9 @@ const DEFAULT_PARAMS = {
   fbDecay: 0.999,
   fbClear: false, // smear runs continuous by default: gain < 1 IS its decay
   fbClearS: 1, // when clearing: fade the wash over ~this long; 0 = hard cut
-  driftY: 0, // |driftY|·100 = delay wobble depth, as the first audio phase had it
-  resetMinS: 1,
-  resetMaxS: 60,
+  wobble: 0, // delay wobble depth, 0..0.4; 0 = a static echo stack
+  clearMinS: 1, // when clearing: the smear's own keyframe window —
+  clearMaxS: 60, // decoupled from the visual reset rhythm (2026-08-12)
 };
 
 // --- Engine: fixed resonant body ------------------------------------------
@@ -193,8 +193,8 @@ class FeedbackLayer {
   }
 
   scheduleReset(p) {
-    const minS = p.resetMinS ?? 4;
-    const maxS = Math.max(minS, p.resetMaxS ?? 10);
+    const minS = p.clearMinS ?? 1;
+    const maxS = Math.max(minS, p.clearMaxS ?? 60);
     return currentFrame + (minS + Math.random() * (maxS - minS)) * this.sr;
   }
 
@@ -203,7 +203,7 @@ class FeedbackLayer {
     // knob's range, so the knob feels like the same knob).
     const gain = Math.min(0.95, 0.5 + (((p.fbDecay ?? 0.96) - 0.8) / 0.199) * 0.45);
     const base = 0.35 * this.sr;
-    const modDepth = Math.min(0.4, Math.abs(p.driftY ?? 0) * 100);
+    const modDepth = Math.min(0.4, Math.abs(p.wobble ?? 0));
     const phaseInc = (2 * Math.PI * 0.1) / this.sr;
 
     // The keyframe — optional for audio, and OFF by default (John's call:

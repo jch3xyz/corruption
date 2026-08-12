@@ -459,7 +459,7 @@ echo  = interpolated read at 0.35 s · (1 + depth·sin(2π·0.1t))
 out   = in + gain · echo
 line ← tanh(out)                    soft-clipped write-back bounds it absolutely
 gain  = 0.5 … 0.95   from fbDecay 0.8 … 0.999
-depth = min(0.4, |driftY| · 100)    ← the visual drift knob, inherited coupling
+depth = audioFbWobble                its own knob (0–0.4) since 2026-08-12
 ```
 
 **It never clears, by design.** The video accumulator needs its keyframe reset
@@ -471,8 +471,14 @@ the keyframe rhythm, in which case the clear *fades* the echo return over
 `audioFbClearS` and wipes the line only once it's inaudible (a one-sample cut is
 invisible in a glitching image but very audible in a wash).
 
-Note the live coupling: `driftY: 0` — the current default — means the audio
-smear has **no wobble**, a static echo stack rather than a tape-warble.
+The wobble depth and the clear rhythm were originally inherited from the
+visual sliders (`driftY` and `resetMinS`/`resetMaxS`, exactly as the first
+audio phase had them). That coupling was **detangled on John's request**
+(2026-08-12): `audioFbWobble` and `audioFbClearMinS`/`audioFbClearMaxS` own
+those behaviors now, and no visual parameter reaches the worklet at all —
+the harness asserts this structurally. At the default `audioFbWobble: 0`
+the smear is a static echo stack rather than a tape-warble, which is
+unchanged from the resting state the coupling produced.
 
 ### 3.5 Silence in, silence out
 

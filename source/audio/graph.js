@@ -61,17 +61,19 @@ export function workletParams(p) {
     sustain: p.audioSustain ?? 12,
     drive: p.audioDrive ?? 1.0,
     exciter: p.audioExciter ?? 'continuous',
-    // Smear layer: its own toggle+decay, but the delay wobble and the
-    // keyframe rhythm deliberately ride the visual params, exactly as the
-    // first audio phase had it. Clears default OFF: gain < 1 is already
-    // the smear's decay.
+    // Smear layer: fully self-contained since 2026-08-12. The wobble and the
+    // clear rhythm used to ride the visual driftY/resetMin/MaxS sliders (an
+    // inheritance from the first audio phase); John asked for the detangle —
+    // performing the video must never bend the sound. No visual param may
+    // appear below this line. Clears default OFF: gain < 1 is already the
+    // smear's decay.
     fb: p.audioFeedback ?? true,
     fbDecay: p.audioFbDecay ?? 0.999,
     fbClear: !!p.audioFbClear,
     fbClearS: p.audioFbClearS ?? 1,
-    driftY: p.driftY ?? 0,
-    resetMinS: p.resetMinS ?? 1,
-    resetMaxS: p.resetMaxS ?? 60,
+    wobble: p.audioFbWobble ?? 0,
+    clearMinS: p.audioFbClearMinS ?? 1,
+    clearMaxS: p.audioFbClearMaxS ?? 60,
   };
 }
 

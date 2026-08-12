@@ -20,7 +20,7 @@ import {
   BODY_PARTIALS,
   BODY_STRETCH,
 } from '../../source/audio/dsp.js';
-import { acquireAudio, tapSafety } from '../../source/audio/graph.js';
+import { acquireAudio, tapSafety, workletParams } from '../../source/audio/graph.js';
 import { AudioJob } from '../../source/content/audio-job.js';
 
 const status = document.getElementById('status');
@@ -116,6 +116,28 @@ function tier1() {
     check(`steady sine fires ≤1 onset (its own attack; got ${falsePos})`, falsePos <= 1);
   }
 
+  // The detangle (2026-08-12): performing the video must never bend the
+  // sound. The worklet's entire param surface is built from audio knobs;
+  // the visual sliders that used to leak in (driftY → wobble depth,
+  // resetMin/MaxS → clear rhythm) must be inert here.
+  {
+    const wp = workletParams({
+      driftY: 0.01, // full-scale visual drift
+      resetMinS: 2, // a tight visual keyframe window
+      resetMaxS: 3,
+      audioFbWobble: 0.2,
+      audioFbClearMinS: 5,
+      audioFbClearMaxS: 9,
+    });
+    const leaked = ['driftY', 'resetMinS', 'resetMaxS'].filter((k) => k in wp);
+    check(
+      'detangle: visual sliders never reach the worklet',
+      leaked.length === 0 &&
+        wp.wobble === 0.2 &&
+        wp.clearMinS === 5 &&
+        wp.clearMaxS === 9
+    );
+  }
 }
 
 // --- Tier 2: both engines through the real worklet --------------------------
@@ -283,9 +305,9 @@ async function tier2() {
   }
 
   // Feedback/smear layer: silence stays exact zeros; echoes recirculate at
-  // 0.35 s and decay; the keyframe reset hard-clears the line. driftY 0
-  // pins the delay (no LFO wobble) and resetMin=Max removes the jitter, so
-  // every window lands deterministically.
+  // 0.35 s and decay; the keyframe reset hard-clears the line. wobble 0
+  // pins the delay (no LFO) and clearMin=Max removes the jitter, so every
+  // window lands deterministically.
   try {
     const FB = {
       ...BODY,
@@ -293,9 +315,9 @@ async function tier2() {
       fbDecay: 0.96,
       fbClear: true, // the clear tests exercise the optional clear path
       fbClearS: 0, // hard-cut clears; the smooth path has its own check
-      driftY: 0,
-      resetMinS: 1000,
-      resetMaxS: 1000,
+      wobble: 0,
+      clearMinS: 1000,
+      clearMaxS: 1000,
     };
     const { out: zout } = await renderThrough(FB, () => {}, 1.2);
     let maxAbs = 0;
@@ -319,7 +341,7 @@ async function tier2() {
     );
 
     const { out: outR } = await renderThrough(
-      { ...FB, resetMinS: 0.6, resetMaxS: 0.6 },
+      { ...FB, clearMinS: 0.6, clearMaxS: 0.6 },
       burst,
       1.6
     );
@@ -334,7 +356,7 @@ async function tier2() {
     // partially faded — audibly reduced but NOT gone (that partial value is
     // the smoothness) — and the envelope dead well before the next echo.
     const { out: outS } = await renderThrough(
-      { ...FB, resetMinS: 0.6, resetMaxS: 0.6, fbClearS: 0.8 },
+      { ...FB, clearMinS: 0.6, clearMaxS: 0.6, fbClearS: 0.8 },
       burst,
       1.6
     );
@@ -350,7 +372,7 @@ async function tier2() {
     // echoes ride through the same 0.6 s reset window at full strength,
     // decaying only by their own loop gain.
     const { out: outC } = await renderThrough(
-      { ...FB, fbClear: false, resetMinS: 0.6, resetMaxS: 0.6 },
+      { ...FB, fbClear: false, clearMinS: 0.6, clearMaxS: 0.6 },
       burst,
       1.6
     );
@@ -359,6 +381,23 @@ async function tier2() {
     check(
       `feedback: clears off → smear is continuous through the reset window (${c1.toFixed(4)} → ${c2.toFixed(4)})`,
       c1 > 0.002 && c2 > 0.5 * c1
+    );
+
+    // The wobble knob is real: at depth 0.4 the delay line drifts, so the
+    // echoes leave the pinned 0.35 s slots they occupy in outC (wobble 0).
+    // Same input, same engine, both renders deterministic — the difference
+    // is the LFO alone.
+    const { out: outW } = await renderThrough(
+      { ...FB, fbClear: false, clearMinS: 0.6, clearMaxS: 0.6, wobble: 0.4 },
+      burst,
+      1.6
+    );
+    let dsum = 0;
+    for (let i = 0; i < outW.length; i++) dsum += (outW[i] - outC[i]) ** 2;
+    const drms = Math.sqrt(dsum / outW.length);
+    check(
+      `feedback: the wobble knob moves the echoes (delta rms ${drms.toFixed(5)})`,
+      drms > 1e-3
     );
   } catch (e) {
     check(`feedback render (${e.message})`, false);
