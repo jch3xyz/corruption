@@ -6,7 +6,7 @@
 import { VideoJob } from './video-job.js';
 import { ImageJob } from './image-job.js';
 import { AudioJob } from './audio-job.js';
-import { TextSwap } from './text-swap.js';
+import { TextScramble } from './text-scramble.js';
 
 const SCAN_DEBOUNCE_MS = 100;
 const SWEEP_MS = 2000;
@@ -17,12 +17,13 @@ export class Registry {
     this.params = params;
     this.jobs = new Map(); // element → VideoJob | ImageJob
     this.audioJobs = new Map(); // element → AudioJob (videos carry both)
-    this.text = new TextSwap(params); // off unless params.textSwap
+    this.text = new TextScramble(params); // off unless params.textScramble
     this.visibleArea = new Map(); // element → px² in viewport
     this.routeStats = { direct: 0, cors: 0, sw: 0, failed: 0 };
     this.scanTimer = 0;
     this.sweepTimer = 0;
     this.imageDirtyTimer = 0;
+    this.textDirtyTimer = 0;
     this.imageTicker = 0;
     this.imageTickerFps = 0;
 
@@ -139,18 +140,10 @@ export class Registry {
     for (const job of this.jobs.values()) job.checkHealth(now);
     this.syncAll();
     this.ensureImageTicker();
-    this.text.update(this.corruptedMedia());
-  }
-
-  // What the text mode is allowed to follow: media the pipeline is actually
-  // corrupting. Abandoned jobs (DRM, unrecoverable taint) show the real
-  // picture, so their captions stay real too.
-  corruptedMedia() {
-    const els = new Set();
-    for (const [el, job] of this.jobs) {
-      if (!job.abandoned && !job.destroyed) els.add(el);
-    }
-    return els;
+    // Page-wide, so it rides the sweep rather than the 100 ms scan: text
+    // arrives readable and dissolves a moment later, and a busy feed never
+    // pays for a full document walk more than once every 2 s.
+    this.text.update();
   }
 
   syncAll() {
@@ -219,12 +212,16 @@ export class Registry {
 
     // The text toggle answers immediately rather than on the next sweep.
     // (rebalance() has already restored everything if `enabled` went off.)
-    if ('textSwap' in changed) {
-      if (this.params.enabled && this.params.textSwap) {
-        this.text.update(this.corruptedMedia());
-      } else {
+    if ('textScramble' in changed || 'textMin' in changed) {
+      // A different textMin means a different set of text is eligible, so the
+      // page is restored first and re-scrambled against the new reach —
+      // debounced like the image path, because the panel drags at ~30 Hz and
+      // this walks the whole document.
+      clearTimeout(this.textDirtyTimer);
+      this.textDirtyTimer = setTimeout(() => {
         this.text.restoreAll();
-      }
+        if (this.params.enabled && this.params.textScramble) this.text.update();
+      }, 200);
     }
     const effectKeys = ['threshold', 'passes', 'streak', 'feedback', 'maxRes'];
     if (Object.keys(changed).some((k) => effectKeys.includes(k))) {

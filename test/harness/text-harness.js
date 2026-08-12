@@ -1,15 +1,20 @@
-// Text-mode harness. Tier 1 drives the TextSwap module against a synthetic
-// page (cards with media, chrome without); tier 2 asserts the registry
-// actually calls it on the sweep and on the toggles. Both tiers are pure DOM
-// — no rVFC, no GL, no AudioContext — so unlike the visual suite this one is
-// immune to pane visibility and runs deterministically anywhere.
+// Text-mode harness. Tier 1 checks the scramble grammar as a pure function,
+// tier 2 drives the module page-wide against a synthetic document, tier 3
+// asserts the registry actually calls it on the sweep and on the toggles.
+// All pure DOM — no rVFC, no GL, no AudioContext — so unlike the visual
+// suite this one is deterministic and immune to pane visibility.
 //
-// Assertions are structural invariants: conservation of the page's text,
-// reversibility, and the containment of the effect to media captions.
+// Assertions are structural invariants: conservation of every glyph, the
+// integrity of word shape, reversibility, and the exclusions that keep the
+// page functional (form values, live CSS, editable text).
 //
 // Run: python3 test/serve.py  →  http://localhost:8437/test/harness/text.html
 
-import { TextSwap, qualifies, bucketOf } from '../../source/content/text-swap.js';
+import {
+  TextScramble,
+  qualifies,
+  scramble,
+} from '../../source/content/text-scramble.js';
 import { Registry } from '../../source/content/registry.js';
 import { DEFAULTS } from '../../source/content/params.js';
 
@@ -30,117 +35,155 @@ function check(name, ok) {
   ok ? passCount++ : failCount++;
 }
 
-const MEDIUM = [
+const TITLES = [
   'The Last Hour of Analog Television Broadcast',
   'Field Recording: Rain on a Corrugated Roof',
   'How the Compression Artifact Became a Style',
   'Nine Minutes Inside a Decommissioned Server Hall',
-  'A Complete History of the Test Pattern',
-  'Why Every Feed Looks the Same Now',
 ];
-const SHORT = [
-  'Rain on the Roof',
-  'Test Pattern Loop',
-  'Server Hall Tour',
-  'Analog Sign Off',
-];
-const TITLES = [...MEDIUM, ...SHORT];
-const STACKED = 'A Tile That Plays Before You Reach It';
-const ABANDONED = 'The Film That Refused To Be Sorted';
 
-// A card the module can read: one medium, a title, and metadata it must not
-// touch. Whitespace around the title mimics a framework-rendered text node.
-function makeCard(title, i, extra = '') {
-  const card = document.createElement('div');
-  card.className = 'card';
-  card.innerHTML = `
-    <div class="thumb"><img alt="" width="240" height="135">${extra}</div>
-    <div class="meta">
-      <a class="title" href="/watch?v=${i}">\n      ${title}\n    </a>
-      <span class="stats">247,891 views · 2 days ago</span>
-      <span class="dur">12:04</span>
-    </div>`;
-  return card;
+const glyphs = (s) => [...s].sort().join('');
+const words = (s) => s.match(/[\p{L}\p{M}]+/gu) ?? [];
+// Everything that is not a letter, with its position — the barrier map.
+const barriers = (s) =>
+  [...s].map((c, i) => (/[\p{L}\p{M}]/u.test(c) ? null : `${i}:${c}`)).filter(Boolean).join('|');
+
+// The module ignores the harness's own UI via [data-deflection] on our
+// status/stage wrappers' ancestors? No — the harness IS the page here, so
+// tier 2 sandboxes what the module may touch by marking everything outside
+// the stage as aria-hidden instead. See buildPage().
+
+// --- Tier 1: the grammar as a pure function --------------------------------
+
+function tier1() {
+  const samples = [...TITLES, 'Café Society at 3:15 · Berlin', 'BROADCAST 🌐 SIGNAL TEST'];
+  const results = samples.map((s) => ({ from: s, to: scramble(s) }));
+
+  check(
+    'every glyph is conserved — nothing added, nothing lost',
+    results.every((r) => glyphs(r.from) === glyphs(r.to))
+  );
+  check(
+    'letters never cross a barrier (each word keeps its own letters)',
+    results.every((r) => {
+      const a = words(r.from);
+      const b = words(r.to);
+      return a.length === b.length && a.every((w, i) => glyphs(w) === glyphs(b[i]));
+    })
+  );
+  check(
+    'word count and word lengths are unchanged',
+    results.every((r) => {
+      const a = words(r.from);
+      const b = words(r.to);
+      return a.every((w, i) => w.length === b[i].length);
+    })
+  );
+  check(
+    'spaces, punctuation, digits and emoji stay exactly where they were',
+    results.every((r) => barriers(r.from) === barriers(r.to))
+  );
+  check('the text actually changes', results.every((r) => r.to !== r.from));
+  check(
+    'unscramblable words are left alone',
+    scramble('I a aaa ooo 12:04 ●') === 'I a aaa ooo 12:04 ●'
+  );
+  check(
+    'a combining accent travels with its base letter',
+    (() => {
+      const out = scramble('née Ångström overflowing');
+      return glyphs(out) === glyphs('née Ångström overflowing') && !/^\p{M}/u.test(out);
+    })()
+  );
+  check(
+    'textMin is the only gate: long prose yes, short labels no',
+    qualifies('The Last Hour of Analog Television', 12) &&
+      !qualifies('Subscribe', 12) &&
+      qualifies('Subscribe', 5) &&
+      !qualifies('12:04 · 1.2 / 60 %', 12) // letterless runs never qualify
+      // (a lone unit letter like "1.2M" does qualify — harmless, since
+      // single letters between barriers cannot be rearranged anyway)
+  );
 }
 
-// The text node inside a title anchor (the node the module actually writes).
-const titleNode = (el) => el.firstChild;
-const shown = (node) => node.nodeValue.trim();
-const sorted = (arr) => [...arr].sort();
-const same = (a, b) => JSON.stringify(sorted(a)) === JSON.stringify(sorted(b));
+// --- Tier 2: the module against a page -------------------------------------
 
 function buildPage() {
   stage.innerHTML = `
     <nav>
-      <a class="nav-link" href="/">Browse the whole library</a>
-      <button class="nav-button">Subscribe to this channel</button>
-      <form role="search"><input id="search" value="documentary archive"></form>
+      <a class="nav-link" href="/">Browse the whole library of recordings</a>
+      <a class="nav-short" href="/">Home</a>
+      <button class="nav-button">Subscribe to this excellent channel</button>
     </nav>
+    <form role="search"><input id="search" value="documentary archive"><\/form>
+    <textarea id="comment">A comment the visitor is still typing</textarea>
+    <div id="editor" contenteditable="true">Editable words the site might save</div>
+    <style id="livecss">.card { color: rgb(200, 200, 208); }</style>
     <div class="grid"></div>
-    <div class="card textonly">
-      <p class="loose">An essay with no media in its card at all</p>
-    </div>`;
+    <p class="prose">An essay paragraph with no media anywhere near it, which
+      the page-wide mode should dissolve exactly like a caption.</p>
+    <span class="short">OK</span>`;
   const grid = stage.querySelector('.grid');
-  TITLES.forEach((t, i) => grid.appendChild(makeCard(t, i)));
+  for (const [i, t] of TITLES.entries()) {
+    const card = document.createElement('div');
+    card.className = 'card';
+    card.innerHTML = `
+      <img alt="" width="240" height="135">
+      <a class="title" href="/watch?v=${i}">\n      ${t}\n    </a>
+      <span class="stats">247,891 views · 2 days ago</span>`;
+    grid.appendChild(card);
+  }
 
-  // A feed tile in the Instagram shape: a preview <video> stacked over its
-  // own thumbnail. Two tracked media, one card — the climb must not stop.
-  const stacked = makeCard(STACKED, TITLES.length, '<video class="preview"></video>');
-  stacked.classList.add('stacked');
-  grid.appendChild(stacked);
+  // The module walks document.body; fence it into the stage by hiding the
+  // harness's own chrome the same way sites hide decorative text.
+  document.querySelector('h3').setAttribute('aria-hidden', 'true');
+  document.querySelector('p').setAttribute('aria-hidden', 'true');
+  status.setAttribute('aria-hidden', 'true');
 
-  // Media the pipeline gave up on (DRM, unrecoverable taint) is simply absent
-  // from the tracked set: its picture is real, so its caption stays real.
-  const abandoned = makeCard(ABANDONED, TITLES.length + 1);
-  abandoned.classList.add('abandoned');
-  grid.appendChild(abandoned);
-
-  const media = new Set([
-    ...grid.querySelectorAll('.card:not(.abandoned) img'),
-    ...grid.querySelectorAll('video'),
-  ]);
-  const cards = [...grid.querySelectorAll('.card:not(.abandoned)')];
   return {
-    media,
-    titles: cards.map((c) => titleNode(c.querySelector('.title'))),
-    abandonedNode: titleNode(abandoned.querySelector('.title')),
+    titles: [...stage.querySelectorAll('.title')].map((a) => a.firstChild),
+    prose: stage.querySelector('.prose').firstChild,
   };
 }
 
-function tier1() {
-  // --- what counts as a caption at all ---
-  const yes = [...TITLES, STACKED, ABANDONED].every(qualifies);
-  const no = ['12:04', '1.2M views', '247,891 views · 2 days ago', 'Subscribe', '2026', '   ']
-    .every((s) => !qualifies(s));
-  check('captions qualify, metadata and labels do not', yes && no);
-
-  const { media, titles, abandonedNode } = buildPage();
-  const originals = titles.map(shown);
-  const params = { ...DEFAULTS, enabled: true, textSwap: true };
-  const ts = new TextSwap(params);
+function tier2() {
+  const { titles, prose } = buildPage();
+  const originals = titles.map((n) => n.nodeValue);
+  const proseOriginal = prose.nodeValue;
+  const params = { ...DEFAULTS, enabled: true, textScramble: true, textMin: 12 };
+  const ts = new TextScramble(params);
 
   // The registry's observer options exactly: if a write here produced a
-  // childList record, discovery would re-scan on every swap and could loop.
+  // childList record, discovery would re-scan on every pass and could loop.
   const mo = new MutationObserver(() => {});
-  mo.observe(stage, { childList: true, subtree: true });
+  mo.observe(document.body, { childList: true, subtree: true });
 
-  ts.update(media);
+  ts.update();
   const structural = mo.takeRecords();
   mo.disconnect();
 
-  const after = titles.map(shown);
   check(
-    'every caption swapped, none keeps its own text',
-    after.length === originals.length && after.every((t, i) => t !== originals[i])
+    'captions scrambled',
+    titles.every((n, i) => n.nodeValue !== originals[i])
   );
-  check('nothing added, nothing lost (text conserved)', same(after, originals));
+  check('prose far from any media scrambled too (page-wide)', prose.nodeValue !== proseOriginal);
   check(
-    'every displayed caption is a real caption from another card',
-    after.every((t) => originals.includes(t))
+    'long navigation text scrambled too — reach is textMin, not card',
+    stage.querySelector('.nav-link').textContent !== 'Browse the whole library of recordings' &&
+      stage.querySelector('.nav-button').textContent !== 'Subscribe to this excellent channel'
   );
   check(
-    'swaps stay inside a length class (layout holds)',
-    after.every((t, i) => bucketOf(t) === bucketOf(originals[i]))
+    'every scrambled run conserves its own glyphs',
+    titles.every((n, i) => glyphs(n.nodeValue) === glyphs(originals[i])) &&
+      glyphs(prose.nodeValue) === glyphs(proseOriginal)
+  );
+  check(
+    'no word borrows letters from another word',
+    titles.every((n, i) => {
+      const a = words(originals[i]);
+      const b = words(n.nodeValue);
+      return a.length === b.length && a.every((w, j) => glyphs(w) === glyphs(b[j]));
+    })
   );
   check('no structural mutation — character data only', structural.length === 0);
   check(
@@ -148,89 +191,97 @@ function tier1() {
     titles.every((n) => /^\n {6}/.test(n.nodeValue) && /\n {4}$/.test(n.nodeValue))
   );
 
-  // --- the card boundary ---
+  // --- the exclusions that keep the page functional ---
   check(
-    'a tile stacking video over its thumbnail is still one card',
-    shown(titles[titles.length - 1]) !== STACKED
-  );
-  check('media the pipeline abandoned keeps its real caption', shown(abandonedNode) === ABANDONED);
-  check(
-    'navigation, buttons and search untouched',
-    stage.querySelector('.nav-link').textContent === 'Browse the whole library' &&
-      stage.querySelector('.nav-button').textContent === 'Subscribe to this channel' &&
-      stage.querySelector('#search').value === 'documentary archive'
+    'short labels survive at textMin 12',
+    stage.querySelector('.nav-short').textContent === 'Home' &&
+      stage.querySelector('.short').textContent === 'OK'
   );
   check(
-    'a card with no media is untouched',
-    stage.querySelector('.loose').textContent === 'An essay with no media in its card at all'
+    'sub-25%-digit metadata is eligible, digits stay put',
+    barriers(stage.querySelector('.stats').textContent) ===
+      barriers('247,891 views · 2 days ago')
   );
   check(
-    'metadata inside a swapped card is untouched',
-    [...stage.querySelectorAll('.stats')].every((e) => e.textContent === '247,891 views · 2 days ago') &&
-      [...stage.querySelectorAll('.dur')].every((e) => e.textContent === '12:04')
+    'form values untouched (search still works)',
+    stage.querySelector('#search').value === 'documentary archive' &&
+      stage.querySelector('#comment').value === 'A comment the visitor is still typing'
+  );
+  check(
+    'contenteditable untouched (visitor data)',
+    stage.querySelector('#editor').textContent === 'Editable words the site might save'
+  );
+  check(
+    'live CSS untouched (scrambling style breaks layout, not rendering)',
+    stage.querySelector('#livecss').textContent === '.card { color: rgb(200, 200, 208); }' &&
+      getComputedStyle(stage.querySelector('.card')).color === 'rgb(200, 200, 208)'
   );
   check(
     'links still point where they did',
     [...stage.querySelectorAll('.title')].every((a, i) => a.getAttribute('href') === `/watch?v=${i}`)
   );
 
-  // --- stability ---
-  const settled = titles.map(shown);
-  ts.update(media);
-  ts.update(media);
-  check('re-running the sweep does not re-shuffle', titles.every((n, i) => shown(n) === settled[i]));
+  // --- stability: text must not churn on every sweep ---
+  const settled = titles.map((n) => n.nodeValue);
+  ts.update();
+  ts.update();
+  check('re-running the sweep does not re-scramble', titles.every((n, i) => n.nodeValue === settled[i]));
 
-  // --- a card arriving later (infinite scroll) trades with the pool ---
-  const late = makeCard('An Evening of Uninterrupted Colour Bars', 99);
-  stage.querySelector('.grid').appendChild(late);
-  const lateNode = titleNode(late.querySelector('.title'));
-  const lateOriginal = shown(lateNode);
-  media.add(late.querySelector('img'));
-  ts.update(media);
+  // --- text arriving later (infinite scroll) ---
+  const late = document.createElement('p');
+  late.className = 'late';
+  late.textContent = 'An Evening of Uninterrupted Colour Bars';
+  stage.appendChild(late);
+  const lateNode = late.firstChild;
+  ts.update();
   check(
-    'a card arriving alone still trades (donor pool)',
-    shown(lateNode) !== lateOriginal && originals.includes(shown(lateNode))
+    'text arriving later dissolves on the next sweep',
+    lateNode.nodeValue !== 'An Evening of Uninterrupted Colour Bars' &&
+      glyphs(lateNode.nodeValue) === glyphs('An Evening of Uninterrupted Colour Bars')
   );
 
-  // --- the toggle is inert when off ---
-  const frozen = titles.map(shown);
-  const off = makeCard('The Signal That Outlived Its Station', 100);
-  stage.querySelector('.grid').appendChild(off);
-  const offNode = titleNode(off.querySelector('.title'));
-  media.add(off.querySelector('img'));
-  params.textSwap = false;
-  ts.update(media);
-  check('textSwap off is a no-op', shown(offNode) === 'The Signal That Outlived Its Station');
-  params.textSwap = true;
+  // --- the toggles are inert ---
+  const frozen = titles.map((n) => n.nodeValue);
+  const off = document.createElement('p');
+  off.textContent = 'The Signal That Outlived Its Station';
+  stage.appendChild(off);
+  params.textScramble = false;
+  ts.update();
+  check('textScramble off is a no-op', off.textContent === 'The Signal That Outlived Its Station');
+  params.textScramble = true;
   params.enabled = false;
-  ts.update(media);
-  check('the master switch stops it too', shown(offNode) === 'The Signal That Outlived Its Station');
+  ts.update();
+  check('the master switch stops it too', off.textContent === 'The Signal That Outlived Its Station');
   params.enabled = true;
-  check('already-swapped captions did not move meanwhile', titles.every((n, i) => shown(n) === frozen[i]));
+  check('already-scrambled text did not move meanwhile', titles.every((n, i) => n.nodeValue === frozen[i]));
 
   // --- a site re-rendering a node we hold must never be clobbered ---
-  const SITE = 'A caption the site rewrote after we swapped it';
+  const SITE = 'A caption the site rewrote after we scrambled it';
   titles[0].nodeValue = SITE;
-  ts.update(media);
+  ts.update();
   ts.restoreAll();
-  check('a stale caption is never written back over live content', titles[0].nodeValue === SITE);
+  check('stale text is never written back over live content', titles[0].nodeValue === SITE);
 
   // --- reversibility (the kill switch's other half) ---
   check(
-    'restore puts every caption back',
-    titles.slice(1).every((n, i) => shown(n) === originals[i + 1])
+    'restore puts every caption and paragraph back',
+    titles.slice(1).every((n, i) => n.nodeValue === originals[i + 1]) &&
+      prose.nodeValue === proseOriginal &&
+      lateNode.nodeValue === 'An Evening of Uninterrupted Colour Bars'
   );
-  check(
-    'restore also releases the late arrival',
-    shown(lateNode) === lateOriginal && ts.stats().swapped === 0
-  );
+  check('no records survive restore', ts.stats().scrambled === 0);
+
+  // un-fence the harness chrome
+  document.querySelector('h3').removeAttribute('aria-hidden');
+  document.querySelector('p').removeAttribute('aria-hidden');
+  status.removeAttribute('aria-hidden');
 }
 
-// --- Tier 2: the registry actually drives it -------------------------------
+// --- Tier 3: the registry actually drives it -------------------------------
 
-function tier2() {
+async function tier3() {
   stage.innerHTML = ''; // no media in the document: scan() creates no jobs
-  const params = { ...DEFAULTS, enabled: true, textSwap: true };
+  const params = { ...DEFAULTS, enabled: true, textScramble: true };
   const registry = new Registry(params);
   const real = { update: registry.text.update, restoreAll: registry.text.restoreAll };
 
@@ -242,39 +293,63 @@ function tier2() {
   registry.sweep();
   check('the sweep feeds the text mode', updates === 1);
 
-  params.textSwap = false;
-  registry.paramsChanged({ textSwap: false });
-  check('toggling text swap off restores immediately', restores >= 1);
+  // Toggle and textMin edits are debounced (the panel drags at ~30 Hz and a
+  // pass walks the whole document), so these assertions wait out the 200 ms.
+  const settle = () => new Promise((r) => setTimeout(r, 300));
 
-  params.textSwap = true;
-  const before = updates;
-  registry.paramsChanged({ textSwap: true });
-  check('toggling it on applies without waiting for the sweep', updates === before + 1);
+  params.textScramble = false;
+  registry.paramsChanged({ textScramble: false });
+  await settle();
+  check('toggling text scramble off restores (debounced)', restores >= 1);
+
+  params.textScramble = true;
+  const beforeToggle = updates;
+  registry.paramsChanged({ textScramble: true });
+  await settle();
+  check('toggling it on applies without waiting for the sweep', updates === beforeToggle + 1);
+
+  const beforeMin = { updates, restores };
+  params.textMin = 4;
+  registry.paramsChanged({ textMin: 4 });
+  registry.paramsChanged({ textMin: 3 });
+  registry.paramsChanged({ textMin: 2 });
+  await settle();
+  check(
+    'a textMin drag restores and re-applies once, not per tick',
+    restores === beforeMin.restores + 1 && updates === beforeMin.updates + 1
+  );
 
   const priorRestores = restores;
   params.enabled = false;
   registry.paramsChanged({ enabled: false });
-  check('the kill switch restores the captions', restores > priorRestores);
+  check('the kill switch restores immediately (not debounced)', restores > priorRestores);
 
   Object.assign(registry.text, real);
-  check('text state is reported in stats()', registry.stats().text?.swapped === 0);
+  check('text state is reported in stats()', registry.stats().text?.scrambled === 0);
 }
 
 // --- run --------------------------------------------------------------------
 
-status.innerHTML = '';
-try {
-  tier1();
-} catch (e) {
-  check(`tier 1 crashed (${e.message})`, false);
-}
-try {
-  tier2();
-} catch (e) {
-  check(`tier 2 crashed (${e.message})`, false);
-}
-const done = document.createElement('div');
-done.id = 'done';
-done.textContent = `COMPLETE: ${passCount} passed, ${failCount} failed`;
-done.className = failCount === 0 ? 'pass' : 'fail';
-status.appendChild(done);
+(async () => {
+  status.innerHTML = '';
+  try {
+    tier1();
+  } catch (e) {
+    check(`tier 1 crashed (${e.message})`, false);
+  }
+  try {
+    tier2();
+  } catch (e) {
+    check(`tier 2 crashed (${e.message})`, false);
+  }
+  try {
+    await tier3();
+  } catch (e) {
+    check(`tier 3 crashed (${e.message})`, false);
+  }
+  const done = document.createElement('div');
+  done.id = 'done';
+  done.textContent = `COMPLETE: ${passCount} passed, ${failCount} failed`;
+  done.className = failCount === 0 ? 'pass' : 'fail';
+  status.appendChild(done);
+})();

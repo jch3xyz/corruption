@@ -290,47 +290,46 @@ animates images ≥200 px from a registry-owned ticker at `imageFps`, capped at
 
 ### 2.10 The text mode (optional, off by default)
 
-The same argument as the pixel sort, made in language: captions are
-**rearranged, never scrambled**. Every title on the page stays a real,
-correctly spelled title — attached to the wrong thing. Nothing added,
-nothing lost, unreliable anyway. (Scrambling glyphs was the rejected
-version: an unreadable interface is an unnavigable one.)
+The sorting grammar applied to language, page-wide (`text-scramble.js`).
+Letters rearrange **inside their own word**; anything that isn't a letter —
+space, punctuation, digit, emoji — is a barrier no glyph crosses, exactly
+as sub-threshold pixels refuse to be traded through in the sort shader.
+Word count, word lengths, and every mark hold position, so the page keeps
+its shape and loses its sense. Nothing added, nothing lost, unreadable
+anyway.
 
-Eligibility is defined by the picture, not by a selector. For each medium
-the pipeline is corrupting, the module climbs at most six levels to the
-**card**: the shallowest ancestor holding that medium, a caption, and no
-medium belonging to a different card. Navigation, search and buttons are
-therefore clean *by construction* — they don't live in a corrupted card —
-and media that abandoned (DRM, taint) keeps its real caption, because its
-picture is real too.
+This supersedes the proposal's recommendation (swap captions between
+cards; that version is complete at tag `text-swap`) by John's call. The
+proposal's objection to scrambling — an unreadable interface is an
+unnavigable one — is answered by **`textMin`** rather than by containment:
+only runs of at least that many characters are eligible, interface labels
+are short, and prose is long. Form *values* aren't text nodes at all, so
+search keeps working at any setting.
+
+Hard exclusions, which are data-integrity rather than aesthetics:
+`script`/`style`/`noscript` (a page's CSS is live text — scrambling it
+wrecks layout rather than bending rendering), `input`/`textarea`/
+contenteditable (the visitor's own words, which a site might save),
+`aria-hidden` text, media fallback text, and our own overlays.
 
 Two structural rules, both harness-guarded:
 
 1. **Only `Text.nodeValue` is written.** Character data is not a childList
-   mutation, so the registry's MutationObserver cannot see the swap and
+   mutation, so the registry's MutationObserver cannot see the write and
    cannot loop on it. Writing `textContent` or replacing nodes would.
 2. **Records are self-invalidating.** If a site re-renders a node we hold,
    the value we wrote is gone, so the record is dropped rather than
-   restored — a stale title can never be written back over live content.
+   restored — stale text can never be written back over live content.
    This is the case that matters on YouTube, which reuses the same DOM
    nodes for the next video.
 
-Swaps stay inside a length class so the layout underneath holds, and within
-a class the fresh candidates are shuffled then rotated by one — a perfect
-derangement that conserves the page's text exactly. A card arriving alone on
-infinite scroll trades with the pool of originals seen earlier.
-
-The card boundary has one subtlety worth keeping: a feed tile stacks a
-preview `<video>` over its own thumbnail `<img>` (Instagram explore), so a
-second tracked medium does *not* always mean a second card. Media that
-overlaps the medium we started from is part of the same tile. Both then
-resolve to the same caption node, which is why a single pass claims each
-node once — letting it in twice would write it twice and record the second
-"original" from already-swapped text, poisoning the restore. The harness
-caught exactly that.
-
-All rect reads happen during collection, before any caption is written, so a
-sweep costs one layout flush rather than one per card.
+Scrambling is grapheme-aware (`Intl.Segmenter`) so combining accents travel
+with their base letters, and a word is re-shuffled until it differs — a
+short word that happens to shuffle into itself would otherwise read as a
+skip. The walk reads no layout, so a pass costs no reflow; it rides the 2 s
+sweep rather than the 100 ms scan, which both bounds its cost on busy feeds
+and gives arriving text a moment of legibility before it dissolves —
+the same rhythm as a video frame arriving intact and then sorting.
 
 ---
 
@@ -515,7 +514,7 @@ source/
 │   ├── video-job.js       rVFC loop, DRM gate, CORS mirror, black probe, governor
 │   ├── image-job.js       3-route CORS resolution, one-shot stills, animation
 │   ├── audio-job.js       playback-driven tap lifecycle, safety gate, bypass
-│   ├── text-swap.js       optional text mode: captions traded between cards
+│   ├── text-scramble.js   optional text mode: letters rearranged inside words, page-wide
 │   ├── overlay.js         sibling canvas, object-fit replication
 │   └── metrics.js         FrameGovernor
 ├── gl/    context.js · pipeline.js · shaders/{common,passthrough,composite,sort}.js
@@ -523,7 +522,8 @@ source/
 └── panel/ panel.html · panel.js · panel.css · midi.js
 ```
 
-Two rejected designs are preserved as tags and should not be resurrected:
-`audio-v1` (spectral/granular sorting — mirrored the pixel-sort grammar) and
+Three rejected designs are preserved as tags and should not be resurrected:
+`audio-v1` (spectral/granular sorting — mirrored the pixel-sort grammar),
 `audio-bakeoff` (the time-base deflection engine: a 45 s reservoir read by
-lag-controlled heads, which lost the live A/B).
+lag-controlled heads, which lost the live A/B), and `text-swap` (captions
+traded whole between cards — John chose scrambling over it).

@@ -21,7 +21,8 @@ const DEFS = [
   { key: 'maxVideos', label: 'max videos', min: 1, max: 16, step: 1 },
   { key: 'imageFps', label: 'image fps', min: 1, max: 30, step: 1 },
   { key: 'imageAnimCap', label: 'image anim cap', min: 0, max: 24, step: 1 },
-  { key: 'textSwap', label: 'text swap', type: 'toggle' },
+  { key: 'textScramble', label: 'text scramble', type: 'toggle' },
+  { key: 'textMin', label: 'text min chars', min: 1, max: 40, step: 1 },
   { key: 'audioEnabled', label: 'audio', type: 'toggle' },
   { key: 'audioMix', label: 'audio mix', min: 0, max: 1, step: 0.01 },
   { key: 'audioFeedback', label: 'audio fb', type: 'toggle' },
@@ -61,6 +62,9 @@ const AUDIO_ONLY = [
 ];
 const AUDIO_FB_ONLY = ['audioFbDecay', 'audioFbClear', 'audioFbClearS'];
 const AUDIO_FB_CLEAR_ONLY = ['audioFbClearS']; // needs fb clear on too
+
+// The text mode's reach only means anything while the mode is on.
+const TEXT_ONLY = ['textMin'];
 
 const hasChrome = typeof chrome !== 'undefined' && !!chrome.storage?.local;
 const shim = { data: { ...DEFAULTS }, listeners: [] };
@@ -136,6 +140,7 @@ for (const def of DEFS) {
     queueWrite(def.key, v);
     valueEls[def.key].textContent = fmt(def, v);
     if (def.key === 'feedback') syncFeedbackUI(input.checked);
+    if (def.key === 'textScramble') syncTextUI(input.checked);
     if (['audioEnabled', 'audioFeedback', 'audioFbClear'].includes(def.key)) syncAudioUI();
   });
 
@@ -162,11 +167,19 @@ function setUI(key, v) {
   else inputs[key].value = v;
   valueEls[key].textContent = fmt(def, v);
   if (key === 'feedback') syncFeedbackUI(!!v);
+  if (key === 'textScramble') syncTextUI(!!v);
   if (['audioEnabled', 'audioFeedback', 'audioFbClear'].includes(key)) syncAudioUI();
 }
 
 function syncFeedbackUI(on) {
   for (const key of FEEDBACK_ONLY) {
+    inputs[key].disabled = !on;
+    inputs[key].closest('.row').classList.toggle('inert', !on);
+  }
+}
+
+function syncTextUI(on) {
+  for (const key of TEXT_ONLY) {
     inputs[key].disabled = !on;
     inputs[key].closest('.row').classList.toggle('inert', !on);
   }

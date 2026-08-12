@@ -19,7 +19,8 @@ export const DEFAULTS = {
   maxVideos: 12,     // concurrent video jobs, biggest visible first
   imageFps: 6,       // animated image tick rate
   imageAnimCap: 12,  // max concurrently animated images
-  textSwap: false,
+  textScramble: false, // letters rearranged inside each word, page-wide
+  textMin: 12,       // shortest run of text that scrambles; short labels survive
 
   // --- audio (the body engine — bake-off verdict; timebase at tag audio-bakeoff) ---
   audioEnabled: true,

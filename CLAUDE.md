@@ -16,9 +16,12 @@ Two rejected designs live in tags — `audio-v1` (spectral sorting, mirrored
 the pixel-sort grammar) and `audio-bakeoff` (the timebase engine, lost on
 John's ears). Do not resurrect either.
 
-**The text mode is built and defaulted off** (`textSwap`). Captions are
-traded between cards, never scrambled. Whether the piece uses it at all is
-John's call, to be made in the room — don't argue it on or off in code.
+**The text mode is built and defaulted off** (`textScramble`): page-wide
+word scrambling, letters never crossing a non-letter barrier, `textMin` as
+the navigability dial. John chose this over the proposal's swap design —
+the complete swap implementation is tag `text-swap`; don't resurrect it
+unprompted. Whether the piece uses the mode at all is John's call, to be
+made in the room — don't argue it on or off in code.
 
 Quick facts:
 

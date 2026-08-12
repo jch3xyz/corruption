@@ -23,7 +23,8 @@ Kill switch: Ctrl+Shift+D toggles `enabled` without the panel.
 | `maxVideos` | **12** | 1–16 | Concurrent video jobs, biggest visible first. Paused videos count too — they get a one-shot sorted still (rVFC never fires for them). Raised from 8 for grid feeds (Instagram explore) where a dozen previews are on screen at once. |
 | `imageFps` | **6** | 1–30 | *Feedback only.* Tick rate for animated images. Straight-sort stills don't animate at all. |
 | `imageAnimCap` | 12 | 0–24 | *Feedback only.* Max concurrently animated images (≥200 px side, biggest visible first); the rest stay stills. |
-| `textSwap` | **off** | on/off | The text mode. On = captions are traded between cards: every title stays a real, correctly spelled title, attached to the wrong thing. Only text sharing a card with media the pipeline is corrupting is eligible, so navigation, search and buttons stay clean. Off restores every caption. **Decide in the room** — see the text mode below. |
+| `textScramble` | **off** | on/off | The text mode. On = letters rearrange inside each word, page-wide; anything that isn't a letter (space, punctuation, digit, emoji) is a barrier no glyph crosses, so every word keeps its length and the page keeps its shape. Off restores every run. **Decide in the room** — see the text mode below. |
+| `textMin` | **12** | 1–40 | *Text only.* Shortest run of text that scrambles. At 12 prose dissolves while short interface labels (Home, Subscribe) survive — the navigability dial. Wind it down and the furniture goes too. |
 | `audioEnabled` | on | on/off | Audio master. Off ramps every tap to dry — the tap itself is permanent by design. |
 | `audioMix` | 1 | 0–1 | Wet/dry in the tap graph (30 ms ramps). 0 = the internet as transmitted. |
 | `audioFeedback` | **on** | on/off | The smear: the body's output recirculates through a 0.35 s delay line (0.1 Hz wobble, tanh-clipped write-back), continuously — see `audioFbClear`. |
@@ -64,38 +65,37 @@ finiteness-checked before recursive state; the output gate snaps to exact
 zeros once input is absent and the engines reach the floor; `process()`
 never throws (a dead processor is permanently silent media).
 
-## The text mode (`textSwap`, off by default)
+## The text mode (`textScramble`, off by default)
 
-Swapping, not scrambling — the proposal's own conclusion, and the same
-argument the pixel sort makes: a **rearrangement**, not a destruction. Every
-word that was on the page is still on the page, every title is still a real
-title, and the page is unreliable anyway. Scrambling glyphs would have been
-the other thing: an unreadable interface is an unnavigable one, and a
-visitor who can't find the search box leaves.
+The sorting grammar applied to language, page-wide. Letters rearrange
+**inside their own word**; anything that isn't a letter — space,
+punctuation, digit, emoji — is a barrier no glyph crosses, exactly as
+sub-threshold pixels refuse to be traded through in the sort shader. Word
+count, word lengths, and every mark stay where they were: the page keeps
+its shape and loses its sense. Nothing added, nothing lost, unreadable
+anyway.
 
-What it will and won't touch:
+(John's calls, 2026-08-12, superseding the proposal's recommendation: first
+scrambling over swapping-between-cards — the swap version is complete at
+tag `text-swap` — then the whole page over captions-only.)
 
-- **Eligible**: the longest run of prose sharing a card with media the
-  pipeline is actually corrupting. One caption per card.
-- **Never**: navigation, buttons, form fields, search — not by blocklist but
-  because they don't live in a corrupted card. Also skipped: anything under
-  `button/input/form/nav/header/footer/time`, contenteditable, `aria-hidden`,
-  and media fallback text.
-- **Never**: metadata that isn't prose. A caption is ≥12 characters, more
-  than one word, contains letters, and is <25 % digits — which is what
-  excludes `12:04`, `1.2M views`, and `247,891 views · 2 days ago`.
-- **Never**: cards whose media abandoned (DRM, unrecoverable taint). Their
-  picture is real, so their caption stays real.
+Reach is one dial, `textMin`: only runs of at least that many characters
+scramble. The proposal's worry about scrambling — an unreadable interface
+is an unnavigable one — is answered by that dial rather than by a
+containment rule: interface labels are short, prose is long, and 12 sits
+comfortably between them. Search inputs survive at any setting because
+form *values* aren't text nodes — the one lifeline that is free.
 
-Swaps stay inside a length class (<32, <96, ≥96 characters) so a caption
-never lands where the layout can't hold it. Within a class the fresh
-candidates are shuffled and rotated by one — a perfect derangement, so
-nobody keeps their own title and the page's text is conserved exactly. A
-card arriving alone on infinite scroll trades with the pool of originals
-seen earlier instead, which is what keeps text circulating across a scroll
-rather than resetting.
+What never scrambles, regardless of `textMin` (these are data-loss, not
+aesthetics): `script`/`style` (live CSS — scrambling it wrecks layout
+rather than bending rendering), `input`/`textarea`/contenteditable (the
+visitor's own words, which a site might save), `aria-hidden` text, and
+media fallback text.
 
-Turning it off — or the `enabled` kill switch — restores every caption.
+Grapheme-aware: a combining accent travels with its base letter. Records
+are per-text-node and self-invalidating — a node the site re-renders is
+dropped, never restored over live content. Turning the mode off — or the
+`enabled` kill switch — puts every run back.
 
 ## Image pipeline (Phase 4)
 
