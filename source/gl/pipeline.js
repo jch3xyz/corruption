@@ -34,6 +34,7 @@ export function createPipeline(gl) {
   const composite = buildProgram(gl, VERT_FULLSCREEN, FRAG_COMPOSITE, [
     'uFrame',
     'uAccum',
+    'uPrev',
     'uDrift',
     'uDecay',
     'uThreshold',
@@ -43,7 +44,14 @@ export function createPipeline(gl) {
     'uParity',
     'uStride',
     'uThreshold',
+    'uTemp',
+    'uMotionGate',
+    'uSeed',
   ]);
+
+  // Advances once per sort pass so the temperature hash draws fresh pairs
+  // every pass; wraps far below integer precision loss.
+  let sortSeed = 0;
 
   function drawQuad() {
     gl.bindVertexArray(vao);
@@ -56,6 +64,21 @@ export function createPipeline(gl) {
     gl.bindFramebuffer(gl.FRAMEBUFFER, bundle.accum[write].fbo);
     gl.viewport(0, 0, bundle.w, bundle.h);
     return write;
+  }
+
+  // Keep a clean downscaled copy of the frame just consumed — the motion
+  // reference for the NEXT composite. Runs after every reset/composite so
+  // the reference is always exactly one frame behind, whatever mode the
+  // job is in.
+  function snapshotPrev(bundle) {
+    gl.bindFramebuffer(gl.FRAMEBUFFER, bundle.prev.fbo);
+    gl.viewport(0, 0, bundle.w, bundle.h);
+    gl.useProgram(passthrough.handle);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, bundle.frameTex);
+    gl.uniform1i(passthrough.uniforms.uTex, 0);
+    gl.uniform1f(passthrough.uniforms.uFlipY, 0);
+    drawQuad();
   }
 
   return {
@@ -77,6 +100,8 @@ export function createPipeline(gl) {
     },
 
     // Keyframe: overwrite the accumulator with a clean copy of the frame.
+    // (Frame alpha is 1, so a reset also floods the motion trail hot for
+    // one frame — a fresh keyframe is "all new material", which is right.)
     runReset(bundle) {
       const write = bindWrite(bundle);
       gl.useProgram(passthrough.handle);
@@ -86,10 +111,13 @@ export function createPipeline(gl) {
       gl.uniform1f(passthrough.uniforms.uFlipY, 0);
       drawQuad();
       bundle.read = write;
+      snapshotPrev(bundle);
     },
 
     // Feedback: incoming frame composited against the drifted, decaying
-    // accumulator (the proposal's shader).
+    // accumulator (the proposal's shader), motion trail written to alpha
+    // against the clean previous frame. The prev snapshot happens AFTER
+    // the draw so the composite always sees the frame before this one.
     runComposite(bundle, { driftX, driftY, decay, threshold }) {
       const write = bindWrite(bundle);
       gl.useProgram(composite.handle);
@@ -97,13 +125,18 @@ export function createPipeline(gl) {
       gl.bindTexture(gl.TEXTURE_2D, bundle.frameTex);
       gl.activeTexture(gl.TEXTURE1);
       gl.bindTexture(gl.TEXTURE_2D, bundle.accum[bundle.read].tex);
+      gl.activeTexture(gl.TEXTURE2);
+      gl.bindTexture(gl.TEXTURE_2D, bundle.prev.tex);
       gl.uniform1i(composite.uniforms.uFrame, 0);
       gl.uniform1i(composite.uniforms.uAccum, 1);
+      gl.uniform1i(composite.uniforms.uPrev, 2);
       gl.uniform2f(composite.uniforms.uDrift, driftX, driftY);
       gl.uniform1f(composite.uniforms.uDecay, decay);
       gl.uniform1f(composite.uniforms.uThreshold, threshold);
       drawQuad();
       bundle.read = write;
+      gl.activeTexture(gl.TEXTURE0);
+      snapshotPrev(bundle);
     },
 
     // K compare-exchange passes ping-ponging over the working buffer.
@@ -111,7 +144,7 @@ export function createPipeline(gl) {
     // down to 1, two passes per level for both parities), cycled until the
     // pass budget is spent. Long strides move pixels far fast; stride 1
     // settles the local order.
-    runSortPasses(bundle, passes, threshold, streak) {
+    runSortPasses(bundle, passes, threshold, streak, opts = {}) {
       if (passes <= 0) return;
       let top = 1;
       while (top * 2 <= Math.max(1, streak || 1)) top *= 2;
@@ -120,6 +153,8 @@ export function createPipeline(gl) {
 
       gl.useProgram(sort.handle);
       gl.uniform1f(sort.uniforms.uThreshold, threshold);
+      gl.uniform1f(sort.uniforms.uTemp, opts.temperature ?? 0);
+      gl.uniform1f(sort.uniforms.uMotionGate, opts.motionGate ?? 0);
       gl.uniform1i(sort.uniforms.uTex, 0);
       gl.activeTexture(gl.TEXTURE0);
       for (let i = 0; i < passes; i++) {
@@ -128,6 +163,8 @@ export function createPipeline(gl) {
         gl.bindTexture(gl.TEXTURE_2D, bundle.accum[bundle.read].tex);
         gl.uniform1f(sort.uniforms.uStride, stride);
         gl.uniform1f(sort.uniforms.uParity, parity);
+        sortSeed = (sortSeed + 1) & 0x7fffffff;
+        gl.uniform1i(sort.uniforms.uSeed, sortSeed);
         drawQuad();
         bundle.read = write;
       }
@@ -153,10 +190,14 @@ export function createPipeline(gl) {
 // so the composite doubles as the downscale.
 export function createBundle(gl, srcW, srcH, w, h) {
   const frameTex = createTex(gl, gl.RGBA8, srcW, srcH);
-  const accum = [0, 1].map(() => {
-    const tex = createTex(gl, gl.RGBA16F, w, h);
+  const target = () => {
     const fbo = gl.createFramebuffer();
     gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+    return fbo;
+  };
+  const accum = [0, 1].map(() => {
+    const tex = createTex(gl, gl.RGBA16F, w, h);
+    const fbo = target();
     gl.framebufferTexture2D(
       gl.FRAMEBUFFER,
       gl.COLOR_ATTACHMENT0,
@@ -166,8 +207,22 @@ export function createBundle(gl, srcW, srcH, w, h) {
     );
     return { tex, fbo };
   });
+  // Clean copy of the last-consumed frame: the motion reference. RGBA8 —
+  // the diff needs no float precision.
+  const prev = (() => {
+    const tex = createTex(gl, gl.RGBA8, w, h);
+    const fbo = target();
+    gl.framebufferTexture2D(
+      gl.FRAMEBUFFER,
+      gl.COLOR_ATTACHMENT0,
+      gl.TEXTURE_2D,
+      tex,
+      0
+    );
+    return { tex, fbo };
+  })();
   gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-  return { srcW, srcH, w, h, frameTex, accum, read: 0 };
+  return { srcW, srcH, w, h, frameTex, accum, prev, read: 0 };
 }
 
 export function destroyBundle(gl, bundle) {
@@ -176,6 +231,8 @@ export function destroyBundle(gl, bundle) {
     gl.deleteTexture(tex);
     gl.deleteFramebuffer(fbo);
   }
+  gl.deleteTexture(bundle.prev.tex);
+  gl.deleteFramebuffer(bundle.prev.fbo);
 }
 
 function createTex(gl, internalFormat, w, h) {

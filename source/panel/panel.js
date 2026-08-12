@@ -13,6 +13,8 @@ const DEFS = [
   { key: 'threshold', label: 'threshold', min: 0, max: 1, step: 0.01 },
   { key: 'passes', label: 'sort passes', min: 0, max: 64, step: 1 },
   { key: 'streak', label: 'streak', min: 1, max: 256, step: 1 },
+  { key: 'temperature', label: 'temperature', min: 0, max: 0.5, step: 0.005 },
+  { key: 'motionGate', label: 'motion gate', min: 0, max: 1, step: 0.01 },
   { key: 'decay', label: 'decay', min: 0.8, max: 0.999, step: 0.001 },
   { key: 'driftX', label: 'drift x', min: -0.01, max: 0.01, step: 0.0005 },
   { key: 'driftY', label: 'drift y', min: -0.01, max: 0.01, step: 0.0005 },
@@ -42,7 +44,10 @@ const DEFS = [
 // The shaping knobs are shared by both feedback modes: live while either
 // toggle is on. The image-animation knobs belong to image feedback alone
 // (straight-sort stills are static, so the ticker params are moot).
-const FEEDBACK_SHARED = ['decay', 'driftX', 'driftY', 'resetMinS', 'resetMaxS'];
+// motionGate lives here: it judges motion via the alpha trail, which only
+// exists where a composite runs — without a feedback mode it has nothing
+// to read. temperature is NOT here: it bites in straight sort too.
+const FEEDBACK_SHARED = ['decay', 'driftX', 'driftY', 'resetMinS', 'resetMaxS', 'motionGate'];
 const IMAGE_FEEDBACK_ONLY = ['imageFps', 'imageAnimCap'];
 
 // Audio rows gray out when the audio master toggle is off; the smear rows

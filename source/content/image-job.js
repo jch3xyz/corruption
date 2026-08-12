@@ -138,7 +138,10 @@ export class ImageJob {
     const p = glc.pipeline;
     p.uploadFrame(b, src);
     p.runReset(b);
-    p.runSortPasses(b, params.passes ?? 12, params.threshold ?? 0.55, params.streak ?? 32);
+    p.runSortPasses(b, params.passes ?? 12, params.threshold ?? 0.55, params.streak ?? 32, {
+      temperature: params.temperature ?? 0,
+      motionGate: params.motionGate ?? 0,
+    });
     glc.ensureSize(w, h);
     p.present(b);
 
@@ -180,7 +183,10 @@ export class ImageJob {
           threshold: params.threshold ?? 0.55,
         });
       }
-      p.runSortPasses(b, params.passes ?? 12, params.threshold ?? 0.55, params.streak ?? 32);
+      p.runSortPasses(b, params.passes ?? 12, params.threshold ?? 0.55, params.streak ?? 32, {
+        temperature: params.temperature ?? 0,
+        motionGate: params.motionGate ?? 0,
+      });
       glc.ensureSize(b.w, b.h);
       p.present(b);
       const { x, y, w, h } = this.fitRect;

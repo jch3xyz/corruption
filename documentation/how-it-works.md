@@ -148,9 +148,11 @@ accumulates across frames rather than restarting each frame.
 ```glsl
 vec4 incoming = texture(uFrame, vUV);
 vec4 history  = texture(uAccum, vUV + uDrift);
-vec4 kept     = max(history * uDecay, incoming);
-float mask    = step(uThreshold, luma(kept.rgb));
-outColor = mix(incoming, kept, mask);
+vec3 prev     = texture(uPrev, vUV).rgb;
+vec3 kept     = max(history.rgb * uDecay, incoming.rgb);
+float mask    = step(uThreshold, luma(kept));
+float motion  = clamp(distance(incoming.rgb, prev) * 3.0, 0.0, 1.0);
+outColor = vec4(mix(incoming.rgb, kept, mask), max(motion, history.a * 0.90));
 ```
 
 Four behaviors fall out of those five lines: history **drifts** (sampling the
@@ -167,6 +169,15 @@ below threshold. The harness's trail test exists to catch a regression here.
 
 Because texture *v* grows toward the video's bottom, **positive `driftY` makes
 trails climb upward**.
+
+The alpha channel carries a **motion trail** for the sort pass's motion gate:
+`|incoming − previous frame|`, amplified, decaying at ~0.90 per frame. The
+reference is `uPrev` — a clean RGBA8 copy of the last frame, snapshotted into
+the bundle after every composite/reset — never the accumulator, because the
+accumulator holds *sorted* material and diffing against it would measure our
+own damage and read the whole frame as motion. Alpha never reaches the screen
+(the shared context is `alpha: false`), and it swaps along with its pixel, so
+motion tags travel with their material.
 
 ### 2.5 The sort shader (the pixel sorting proper)
 
@@ -199,6 +210,21 @@ Three properties define the look:
    teleport a pixel across a dark gap.
 2. **Bright rises toward smaller *y***, i.e. the video's top. Fixed direction.
 3. **The stride ladder** is what produces ribbons rather than mush:
+
+Two per-pair gates extend the grammar (John, 2026-08-12), both exactly inert
+at 0 and both preserving the symmetric-swap/permutation property:
+
+- **`temperature`** inverts the comparison verdict for a hash-chosen fraction
+  of pairs each pass. The hash keys on the pair's shared identity (the upper
+  member's coordinates + a per-pass seed), so both partners reach the same
+  verdict and every pass remains a permutation. The sort simmers at its
+  equilibrium; barriers still confine the boil to bright spans.
+- **`motionGate`** requires BOTH members (and the span midpoint, at strides
+  > 1) to carry a motion trail above the gate. min(), not max(), keeps the
+  containment strict: a hot pixel cannot drag cold material into the churn,
+  so the damage boundary IS the motion boundary. Harness-pinned: with the
+  gate up, a moving band sorts while pixels outside it stay byte-identical.
+
 
 ```
 top = largest power of two ≤ streak

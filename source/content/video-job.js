@@ -301,7 +301,8 @@ export class VideoJob {
       b,
       this.governor.effectivePasses(params.passes ?? 12),
       params.threshold ?? 0.55,
-      params.streak ?? 32
+      params.streak ?? 32,
+      { temperature: params.temperature ?? 0, motionGate: params.motionGate ?? 0 }
     );
 
     glc.ensureSize(procW, procH);

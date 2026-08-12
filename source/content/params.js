@@ -12,6 +12,10 @@ export const DEFAULTS = {
   threshold: 0,      // luma above this is eligible; 0 = the whole frame sorts
   passes: 64,        // sort passes per frame (~3.5 cycles of a 256→1 ladder)
   streak: 256,       // max compare-exchange stride: longer = longer ribbons
+  temperature: 0,    // fraction of pair-verdicts inverted per pass: the sort
+                     // simmers at its equilibrium instead of settling into it
+  motionGate: 0,     // feedback modes: a pair trades only when both members'
+                     // motion trail clears this; 0 = sort regardless of motion
   decay: 0.906,      // feedback modes: accumulator retention per frame
   driftX: -0.0025,   // feedback modes: smear direction, UV units per frame
   driftY: 0.0020,    // feedback modes: positive = upward smear

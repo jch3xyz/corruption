@@ -8,6 +8,8 @@
 // frames, rVFC, and IntersectionObserver, and tests will time out.
 import { Registry } from '../../source/content/registry.js';
 import { DEFAULTS } from '../../source/content/params.js';
+import { acquireGL } from '../../source/gl/context.js';
+import { createBundle, destroyBundle } from '../../source/gl/pipeline.js';
 
 const status = document.getElementById('status');
 let passCount = 0;
@@ -68,7 +70,224 @@ function makeVideo(label, hue) {
   return v;
 }
 
+// --- Tier 0: direct-pipeline micro-tests -----------------------------------
+// Static canvas sources through the real GL pipeline, no rVFC and no
+// observers, so unlike everything below these run identically in a hidden
+// pane. They pin the sort's structural invariants: determinism, permutation
+// (nothing added, nothing lost), and the temperature / motion-gate grammar.
+function tier0() {
+  const glc = acquireGL();
+  if (!glc) {
+    check('tier 0: WebGL2 available', false);
+    return;
+  }
+  const gl = glc.gl;
+  const W = 64;
+  const H = 64;
+
+  let s = 7;
+  const rnd = () => (s = (s * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff;
+  const src = (paint) => {
+    const c = document.createElement('canvas');
+    c.width = W;
+    c.height = H;
+    paint(c.getContext('2d'));
+    return c;
+  };
+  const noisy = src((x) => {
+    for (let j = 0; j < H; j++) {
+      for (let i = 0; i < W; i++) {
+        x.fillStyle = `rgb(${(rnd() * 256) | 0},${(rnd() * 256) | 0},${(rnd() * 256) | 0})`;
+        x.fillRect(i, j, 1, 1);
+      }
+    }
+  });
+
+  // Run a step sequence on a bundle and read the presented pixels back.
+  const run = (steps) => {
+    const b = createBundle(gl, W, H, W, H);
+    try {
+      steps(glc.pipeline, b);
+      glc.ensureSize(W, H);
+      glc.pipeline.present(b);
+      const px = new Uint8Array(W * H * 4);
+      gl.readPixels(0, 0, W, H, gl.RGBA, gl.UNSIGNED_BYTE, px);
+      return px;
+    } finally {
+      destroyBundle(gl, b);
+    }
+  };
+  const lum = (px, x, y) => {
+    const i = (y * W + x) * 4;
+    return 0.2126 * px[i] + 0.7152 * px[i + 1] + 0.0722 * px[i + 2];
+  };
+  // Ordered-ness, direction-agnostic: violations of monotonicity down each
+  // column, taken in whichever direction has fewer (present() flips V, and
+  // the invariant is "columns ordered", not which way readback runs).
+  const inversions = (px) => {
+    let asc = 0;
+    let desc = 0;
+    for (let x = 0; x < W; x++) {
+      for (let y = 1; y < H; y++) {
+        const a = lum(px, x, y - 1);
+        const b2 = lum(px, x, y);
+        if (b2 > a + 0.75) asc++;
+        if (b2 < a - 0.75) desc++;
+      }
+    }
+    return Math.min(asc, desc);
+  };
+  const colKey = (px, x) => {
+    const rows = [];
+    for (let y = 0; y < H; y++) {
+      const i = (y * W + x) * 4;
+      rows.push(`${px[i]},${px[i + 1]},${px[i + 2]}`);
+    }
+    return rows.sort().join('|');
+  };
+  const sameColumns = (a, b) => {
+    for (let x = 0; x < W; x++) if (colKey(a, x) !== colKey(b, x)) return false;
+    return true;
+  };
+
+  const sortSteps = (opts) => (p, b) => {
+    p.uploadFrame(b, noisy);
+    p.runReset(b);
+    p.runSortPasses(b, 200, 0, 64, opts);
+  };
+  const unsorted = run((p, b) => {
+    p.uploadFrame(b, noisy);
+    p.runReset(b);
+  });
+  const s1 = run(sortSteps());
+  const s2 = run(sortSteps());
+  check(
+    'pipeline: temperature 0 is deterministic',
+    s1.length === s2.length && s1.every((v, i) => v === s2[i])
+  );
+  check(
+    `pipeline: columns fully ordered at temperature 0 (${inversions(s1)} inversions)`,
+    inversions(s1) === 0
+  );
+
+  const hot = run(sortSteps({ temperature: 0.45 }));
+  check(
+    'pipeline: temperature conserves every pixel in its column (permutation)',
+    sameColumns(hot, unsorted)
+  );
+  check(
+    `pipeline: temperature keeps the sort from settling (${inversions(hot)} inversions persist)`,
+    inversions(hot) > 200
+  );
+
+  // Motion gate. f2 = f1 except rows 24–35, which hold displaced noise.
+  // Sequence: reset on f1, then 10 still composites to cool the post-reset
+  // trail flood (1 → 0.9¹⁰ ≈ 0.35 < the 0.5 gate), then the perturbed
+  // frame arrives and only its band carries fresh motion.
+  const f2 = src((x) => {
+    x.drawImage(noisy, 0, 0);
+    x.save();
+    x.beginPath();
+    x.rect(0, 24, W, 12);
+    x.clip();
+    x.drawImage(noisy, 5, 3);
+    x.restore();
+  });
+  const motionSteps = (gate, passes) => (p, b) => {
+    p.uploadFrame(b, noisy);
+    p.runReset(b);
+    const still = { driftX: 0, driftY: 0, decay: 0.5, threshold: 0 };
+    for (let i = 0; i < 10; i++) p.runComposite(b, still);
+    p.uploadFrame(b, f2);
+    p.runComposite(b, still);
+    if (passes > 0) p.runSortPasses(b, passes, 0, 64, { motionGate: gate });
+  };
+  const baseline = run(motionSteps(0.5, 0));
+  const gated = run(motionSteps(0.5, 200));
+  const open = run(motionSteps(0, 200));
+  // Rows 24–35 in source space; present() flips V, so compare via column
+  // multisets restricted to bands. Simplest robust split: count changed
+  // pixels in each readback row against the no-sort baseline.
+  const changedRows = (px) => {
+    const rows = [];
+    for (let y = 0; y < H; y++) {
+      let changed = 0;
+      for (let x = 0; x < W; x++) {
+        const i = (y * W + x) * 4;
+        if (
+          px[i] !== baseline[i] ||
+          px[i + 1] !== baseline[i + 1] ||
+          px[i + 2] !== baseline[i + 2]
+        ) {
+          changed++;
+        }
+      }
+      rows.push(changed);
+    }
+    return rows;
+  };
+  const bandRows = new Set();
+  for (let y = 24; y < 36; y++) bandRows.add(H - 1 - y); // flipped readback
+  const g = changedRows(gated);
+  const insideChanged = [...bandRows].reduce((n, y) => n + g[y], 0);
+  const outsideChanged = g.reduce((n, c, y) => (bandRows.has(y) ? n : n + c), 0);
+  check(
+    `pipeline: motion gate confines sorting to the moving band (inside ${insideChanged}, outside ${outsideChanged})`,
+    insideChanged > 50 && outsideChanged === 0
+  );
+  const o = changedRows(open);
+  const openOutside = o.reduce((n, c, y) => (bandRows.has(y) ? n : n + c), 0);
+  check(
+    `pipeline: gate 0 sorts regardless of motion (${openOutside} pixels moved outside the band)`,
+    openOutside > 200
+  );
+
+  // The composite's core contract, pinned where pane visibility can't
+  // interfere: history outlives its source through a composite (the trail),
+  // and a reset wipes it (straight sort has no history). This is the
+  // shader-level twin of the rVFC trail test below, which needs a visible
+  // tab to adjudicate.
+  const barA = src((x) => {
+    x.fillStyle = '#000';
+    x.fillRect(0, 0, W, H);
+    x.fillStyle = '#fff';
+    x.fillRect(10, 10, 8, 8);
+  });
+  const barB = src((x) => {
+    x.fillStyle = '#000';
+    x.fillRect(0, 0, W, H);
+    x.fillStyle = '#fff';
+    x.fillRect(40, 40, 8, 8);
+  });
+  const atA = (px) => lum(px, 14, H - 1 - 14); // readback is V-flipped
+  const trailed = run((p, b) => {
+    p.uploadFrame(b, barA);
+    p.runReset(b);
+    p.uploadFrame(b, barB);
+    p.runComposite(b, { driftX: 0, driftY: 0, decay: 0.95, threshold: 0.1 });
+  });
+  const wiped = run((p, b) => {
+    p.uploadFrame(b, barA);
+    p.runReset(b);
+    p.uploadFrame(b, barB);
+    p.runReset(b);
+  });
+  check(
+    `pipeline: composite trail outlives its source (luma ${atA(trailed).toFixed(0)} at the old bar)`,
+    atA(trailed) > 100
+  );
+  check(
+    `pipeline: reset wipes history (luma ${atA(wiped).toFixed(0)} at the old bar)`,
+    atA(wiped) < 10
+  );
+}
+
 async function run() {
+  try {
+    tier0();
+  } catch (e) {
+    check(`tier 0 crashed (${e.message})`, false);
+  }
   // Boot the registry FIRST so all videos arrive via MutationObserver.
   // feedbackVideo:true (the default, pinned here anyway) so the trail test
   // exercises the temporal path; a later check flips it off and asserts
@@ -263,18 +482,25 @@ async function run() {
   // animating underneath this test.)
   {
     const j = registry.jobs.get(sameImg);
-    const snap = j.ctx.getImageData(0, ((j.overlay.canvas.height / 2) | 0), j.overlay.canvas.width, 1).data.join();
-    params.threshold = 0.9;
-    registry.paramsChanged({ threshold: 0.9 });
-    check(
-      'param change re-renders image stills',
-      await waitFor(() => {
-        const now = j.ctx.getImageData(0, ((j.overlay.canvas.height / 2) | 0), j.overlay.canvas.width, 1).data.join();
-        return now !== snap;
-      })
-    );
-    params.threshold = DEFAULTS.threshold;
-    registry.paramsChanged({ threshold: params.threshold });
+    // Guard, don't dereference: in a starved pane the image never rendered
+    // and ctx is null — an unguarded read here threw OUTSIDE waitFor's
+    // try and silently killed the whole run (no COMPLETE line, ever).
+    if (j?.ctx) {
+      const snap = j.ctx.getImageData(0, ((j.overlay.canvas.height / 2) | 0), j.overlay.canvas.width, 1).data.join();
+      params.threshold = 0.9;
+      registry.paramsChanged({ threshold: 0.9 });
+      check(
+        'param change re-renders image stills',
+        await waitFor(() => {
+          const now = j.ctx.getImageData(0, ((j.overlay.canvas.height / 2) | 0), j.overlay.canvas.width, 1).data.join();
+          return now !== snap;
+        })
+      );
+      params.threshold = DEFAULTS.threshold;
+      registry.paramsChanged({ threshold: params.threshold });
+    } else {
+      check('param change re-renders image stills (no render to test — starved pane)', false);
+    }
   }
 
 
@@ -331,26 +557,37 @@ async function run() {
   );
 
   // --- Removal teardown + slot promotion ---
+  // Guarded like the image-still check above: in a starved pane no job is
+  // active, and an unguarded [0].video deref here killed the whole run.
   const victimJob = activeJobs()[0];
-  const victim = victimJob.video;
-  const victimCanvas = victimJob.overlay.canvas;
-  victim.parentElement.remove();
-  check(
-    'removed video torn down',
-    await waitFor(() => !registry.jobs.has(victim) && !victimCanvas.isConnected)
-  );
-  check(
-    'freed slot promoted another video',
-    await waitFor(() => registry.stats().active === 4)
-  );
+  if (victimJob?.overlay) {
+    const victim = victimJob.video;
+    const victimCanvas = victimJob.overlay.canvas;
+    victim.parentElement.remove();
+    check(
+      'removed video torn down',
+      await waitFor(() => !registry.jobs.has(victim) && !victimCanvas.isConnected)
+    );
+    check(
+      'freed slot promoted another video',
+      await waitFor(() => registry.stats().active === 4)
+    );
+  } else {
+    check('removed video torn down (no active job — starved pane)', false);
+    check('freed slot promoted another video (no active job — starved pane)', false);
+  }
 
   // --- Orphaned overlay reattach (YouTube re-parent simulation) ---
   const healJob = activeJobs()[0];
-  healJob.overlay.canvas.remove();
-  check(
-    'orphaned overlay reattached and re-mirrored by sweep',
-    await waitFor(() => healJob.overlay.canvas.isConnected && healJob.mirrored)
-  );
+  if (healJob?.overlay) {
+    healJob.overlay.canvas.remove();
+    check(
+      'orphaned overlay reattached and re-mirrored by sweep',
+      await waitFor(() => healJob.overlay.canvas.isConnected && healJob.mirrored)
+    );
+  } else {
+    check('orphaned overlay reattached (no active job — starved pane)', false);
+  }
 
   // --- Disable / enable ---
   params.enabled = false;
@@ -435,26 +672,30 @@ async function run() {
       await waitFor(() => !lossGlc.lost, 4000)
     );
     const j = mirroredJob();
-    const sample = () => {
-      const c = j.overlay.canvas;
-      const row = Math.floor(c.height / 2);
-      const d = j.ctx.getImageData(0, row, c.width, 1).data;
-      let s = '';
-      for (let i = 0; i < d.length; i += 48) s += d[i] + ',';
-      return s;
-    };
-    // Content must CHANGE and be NON-BLACK: a restore bug (e.g. extension
-    // enables resetting with the context) renders black, which a plain
-    // change-detection check would wrongly pass.
-    const before = sample();
-    const nonBlack = (s) => s.split(',').some((v) => Number(v) > 20);
-    check(
-      'frames render real content after restore (bundle realloc)',
-      await waitFor(() => {
-        const now = sample();
-        return now !== before && nonBlack(now);
-      })
-    );
+    if (j?.ctx) {
+      const sample = () => {
+        const c = j.overlay.canvas;
+        const row = Math.floor(c.height / 2);
+        const d = j.ctx.getImageData(0, row, c.width, 1).data;
+        let s = '';
+        for (let i = 0; i < d.length; i += 48) s += d[i] + ',';
+        return s;
+      };
+      // Content must CHANGE and be NON-BLACK: a restore bug (e.g. extension
+      // enables resetting with the context) renders black, which a plain
+      // change-detection check would wrongly pass.
+      const before = sample();
+      const nonBlack = (s) => s.split(',').some((v) => Number(v) > 20);
+      check(
+        'frames render real content after restore (bundle realloc)',
+        await waitFor(() => {
+          const now = sample();
+          return now !== before && nonBlack(now);
+        })
+      );
+    } else {
+      check('frames render real content after restore (no mirrored job — starved pane)', false);
+    }
   }
 
   // --- Tainted-source recovery: cross-origin video via detached CORS mirror ---
