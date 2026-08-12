@@ -24,44 +24,37 @@ Kill switch: Ctrl+Shift+D toggles `enabled` without the panel.
 | `imageFps` | **6** | 1–30 | *Feedback only.* Tick rate for animated images. Straight-sort stills don't animate at all. |
 | `imageAnimCap` | 12 | 0–24 | *Feedback only.* Max concurrently animated images (≥200 px side, biggest visible first); the rest stay stills. |
 | `audioEnabled` | on | on/off | Audio master. Off ramps every tap to dry — the tap itself is permanent by design. |
-| `audioMode` | **body** | body / timebase | Which engine speaks. **The bake-off knob**: switches live with a 100 ms crossfade, so A/B the two on the same material. |
 | `audioMix` | 1 | 0–1 | Wet/dry in the tap graph (30 ms ramps). 0 = the internet as transmitted. |
-| `audioFeedback` | **on** | on/off | The smear: engine output recirculates through a 0.35 s delay line (0.1 Hz wobble, tanh-clipped write-back). Works in both modes; sits after the crossfade, so the smear carries across a live A/B. |
+| `audioFeedback` | **on** | on/off | The smear: the body's output recirculates through a 0.35 s delay line (0.1 Hz wobble, tanh-clipped write-back), continuously — see `audioFbClear`. |
 | `audioFbDecay` | **0.999** | 0.8–0.999 | *Audio fb only.* Echo retention (maps to feedback gain 0.5–0.95) — the visual `decay` knob's range, so it feels like the same knob. `driftY` sets the delay wobble depth (×100), exactly as the first audio phase had it — **`driftY` 0 = no wobble, a static echo stack**. |
 | `audioFbClear` | **off** | on/off | *Audio fb only.* Whether the smear clears on the `resetMinS`/`resetMaxS` keyframe rhythm at all. **Off is the piece**: the loop gain (< 1) is already a natural decay, so unlike the video accumulator the smear needs no clearing — it stays continuous. |
 | `audioFbClearS` | 1 | 0–4 | *Audio fb clear only.* When clearing is on, the keyframe fades the wash out over ~this many seconds before the line wipes, instead of cutting in one sample. **0 = the original hard cut.** The video keyframe stays a hard cut by design — one frame hides in a glitching image; a vanished wash doesn't. |
-| `audioMaxTaps` | **8** | 1–8 | Concurrent *engaged* taps, most recently playing first — the audio sibling of `maxVideos`. Everything safe gets tapped; beyond the cap, elements play dry (idle processors cost ~nothing). Matters on feed pages with several sounding videos; each engaged tap is its own worklet (and its own 45 s reservoir in timebase mode). |
-| `audioSustain` | **12** | 2–12 | *Body only.* T60 at the lowest string (55 Hz), seconds. Higher modes always die faster ((55/f)^0.7) — the ring-length knob. |
-| `audioDrive` | **1.0** | 0–1 | *Body only.* Strike force into the resonators. Per-mode caps bound runaway, so drive shapes attack more than loudness. |
-| `audioExciter` | **continuous** | gated / continuous | *Body only.* Gated = onsets open a 60 ms window and the body is *struck*. Continuous = the stream drives it always — the honest drone test, bounded but relentless. |
-| `audioDepth` | 0.8 | 0–1.5 | *Timebase only.* Octaves of lag bend under the field. 0 = a transparent multi-tap of the actual browsing; up = heads fan across time. |
-| `audioFieldRate` | 1 | 0.25–4 | *Timebase only.* Deflection field speed. The field never repeats (four incommensurate periods, 40 s–47 min at 1×). |
-| `audioTail` | 1.5 | 0–5 | *Timebase only.* Seconds the heads may keep speaking after input stops — the silence-semantics knob. 0 = strict silence-in/silence-out. |
+| `audioMaxTaps` | **8** | 1–8 | Concurrent *engaged* taps, most recently playing first — the audio sibling of `maxVideos`. Everything safe gets tapped; beyond the cap, elements play dry (idle processors cost ~nothing). Matters on feed pages with several sounding videos; each engaged tap is its own worklet. |
+| `audioSustain` | **12** | 2–12 | T60 at the lowest string (55 Hz), seconds. Higher modes always die faster ((55/f)^0.7) — the ring-length knob. |
+| `audioDrive` | **1.0** | 0–1 | Strike force into the resonators. Per-mode caps bound runaway, so drive shapes attack more than loudness. |
+| `audioExciter` | **continuous** | gated / continuous | **Continuous is the piece**: the stream drives the body always, bounded by resonz normalization and per-mode caps. Gated = onsets open a 60 ms window and the body is *struck* instead. |
 
-## Audio engines (bake-off)
+## The audio engine (bake-off settled: body won)
 
-Two complete engines live in one worklet; `audioMode` crossfades between
-them (100 ms, equal-power). The loser is removed after the live verdict.
+**body** — a fixed resonant body driven by the stream: 48 modal resonators,
+three just-intonation fundamentals (55/82.5/137.5 Hz) × 16 stretched
+partials (`f_k = k·f₀·√(1+4e-4k²)`) — the stretch is what makes it read as
+an object, not a comb. Identity lives in the apparatus: tuning is fixed in
+source and never on a knob. Latency ≈ 0 — the sound coincides with the
+visual event. Continuous excitation uses constant-peak-gain (resonz)
+normalization so the stream excites only its sympathetic partials; gated
+excitation is impulse-normalized so strikes ring.
 
-- **body** — a fixed resonant body struck by the stream: 48 modal
-  resonators, three just-intonation fundamentals (55/82.5/137.5 Hz) × 16
-  stretched partials (`f_k = k·f₀·√(1+4e-4k²)`) — the stretch is what makes
-  it read as an object, not a comb. Identity lives in the apparatus: tuning
-  is fixed in source and never on a knob. Latency ≈ 0 — the strike
-  coincides with the visual event.
-- **timebase** — the clock is deformed, not the signal: a 45 s reservoir
-  written at 1× and read by five heads (base lags 0.15/1/4/12/30 s) whose
-  lags bend under a shaped never-repeating field. Lag is the controlled
-  variable; its slope is clamped to ±0.75 s/s so read rates stay inside
-  [0.25×, 1.75×]. Latency is the material, by construction.
+The losing **timebase** engine (a 45 s reservoir read by lag-controlled
+heads) is preserved at tag `audio-bakeoff` with its harness checks — judged
+on live browsing, removed 2026-08-11.
 
-The feedback layer (ported intact from the first audio phase) is a *layer*,
-not a mode: it smears whichever engine is speaking, continuously by default —
-its loop gain (< 1) is a built-in decay, so unlike the video accumulator it
-never needs a clear to stay clean. At high `audioFbDecay` its tail can
-outlive input by tens of seconds; the output gate at the floor is what keeps
-silence-in/silence-out honest, and `audioFbClear` restores the keyframe
-rhythm if the piece ever wants it back.
+The feedback layer (ported intact from the first audio phase) smears the
+body's output continuously — its loop gain (< 1) is a built-in decay, so
+unlike the video accumulator it never needs a clear to stay clean. At high
+`audioFbDecay` its tail can outlive input by tens of seconds; the output
+gate at the floor is what keeps silence-in/silence-out honest, and
+`audioFbClear` restores the keyframe rhythm if the piece ever wants it back.
 
 Rules the implementation lives by: safety is predicted before tapping
 (same-origin / blob / data / MediaStream / `crossorigin="anonymous"` only);
@@ -123,5 +116,4 @@ always shows your requested values.
 3. Toggle params (`enabled`) treat CC value ≥64 as on.
 
 Any class-compliant controller works. Suggested performance set: threshold,
-decay, driftY, passes. For the audio bake-off: `audioMode` on a CC (≥64 =
-timebase) plus `audioMix`, `audioSustain`, `audioDepth`.
+decay, driftY, passes. For audio: `audioMix`, `audioSustain`, `audioFbDecay`.

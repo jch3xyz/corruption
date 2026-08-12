@@ -108,49 +108,5 @@ export class OnsetDetector {
   }
 }
 
-// --- Timebase engine: the deflection field --------------------------------
-//
-// Four incommensurate sines (prime-ish periods, seconds) summed and shaped
-// by a signed cube root. The cube root is the excursion floor: it expands
-// small values away from zero, so the field's modal state is *bent*, not
-// parked at unity rate (a raw sum of sines spends most of its life near
-// zero, which would degrade the engine to a plain multi-tap echo).
-
-export const FIELD_PERIODS = [40, 181, 661, 2837];
-
-export function lagField(t, phase) {
-  let d = 0;
-  for (let i = 0; i < FIELD_PERIODS.length; i++) {
-    d += Math.sin((2 * Math.PI * (t + phase * (i + 1) * 7.3)) / FIELD_PERIODS[i]);
-  }
-  d /= FIELD_PERIODS.length; // [-1, 1]
-  return Math.cbrt(d); // signed cube root: |S| rarely near zero
-}
-
-// Lag is the controlled variable; rate is derived. Clamping the lag slope
-// to ±0.75 s/s pins the instantaneous read rate inside [0.25, 1.75] — the
-// correction that replaces the refuted rate-controlled head bank (a head
-// commanded to 2× burns through its lag band and re-anchors at audio rate).
-export const LAG_MAX_SLOPE = 0.75;
-
-export function slewLag(current, target, dt, maxSlope = LAG_MAX_SLOPE) {
-  const d = target - current;
-  const maxStep = maxSlope * dt;
-  if (d > maxStep) return current + maxStep;
-  if (d < -maxStep) return current - maxStep;
-  return target;
-}
-
-// Head geometry, shared with the harness so identity checks are exact.
-export const HEAD_LAGS = [0.15, 1, 4, 12, 30]; // seconds
-export const HEAD_GAINS = [0.45, 0.35, 0.3, 0.25, 0.2];
-export const HEAD_PANS = [-0.8, 0.4, 0, -0.4, 0.8]; // near head slightly left
-export const RING_S = 45;
-export const LAG_MIN_S = 0.02;
-
-// Equal-power pan legs; for a mono output the two legs collapse to √½.
-export function panGains(pan, channels) {
-  if (channels < 2) return [Math.SQRT1_2];
-  const a = ((pan + 1) * Math.PI) / 4;
-  return [Math.cos(a), Math.sin(a)];
-}
+// (The timebase engine's deflection-field DSP lived here until the bake-off
+// verdict — body won. See tag `audio-bakeoff` for lagField/slewLag/heads.)

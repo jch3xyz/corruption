@@ -58,13 +58,9 @@ export function tapSafety(el) {
 // audioMix is deliberately absent: mix is the graph-side wet/dry, not DSP.
 export function workletParams(p) {
   return {
-    mode: p.audioMode ?? 'body',
     sustain: p.audioSustain ?? 12,
     drive: p.audioDrive ?? 1.0,
     exciter: p.audioExciter ?? 'continuous',
-    depth: p.audioDepth ?? 0.8,
-    fieldRate: p.audioFieldRate ?? 1,
-    tail: p.audioTail ?? 1.5,
     // Smear layer: its own toggle+decay, but the delay wobble and the
     // keyframe rhythm deliberately ride the visual params, exactly as the
     // first audio phase had it. Clears default OFF: gain < 1 is already

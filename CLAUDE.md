@@ -1,22 +1,20 @@
 # DEFLECTION — browser extension (art installation)
 
 Chrome MV3 extension that intercepts every video frame, image, and sound in
-the browser and rearranges it (GPU pixel sorting; audio via two candidate
-engines). Paik's *Magnet TV* for the web: the bytes arrive perfect, the
-rendering bends.
+the browser and rearranges it (GPU pixel sorting; audio through a fixed
+resonant body + smear layer). Paik's *Magnet TV* for the web: the bytes
+arrive perfect, the rendering bends.
 
 **Read [documentation/build-plan.md](documentation/build-plan.md) first** —
 it is the handoff document: current status (all committed work is
 harness-verified), architecture map, the list of hard-won corrections (do not
 relearn those), dev workflow, and what remains.
 
-**Audio is mid-bake-off.** Two complete engines live in one worklet, switched
-live by `audioMode`: **body** (fixed resonant body struck by the stream) and
-**timebase** (a reservoir read by lag-controlled heads — the clock bends, not
-the signal). John judges on live browsing; the loser gets removed. Do not
-remove either or design toward one until he rules. The first audio attempt
-(spectral sorting, rejected for mirroring the pixel-sort grammar) survives at
-tag `audio-v1`; do not resurrect it.
+**The audio design is settled** (bake-off verdict, 2026-08-11): the body
+engine, continuously driven, smeared by a never-clearing feedback layer.
+Two rejected designs live in tags — `audio-v1` (spectral sorting, mirrored
+the pixel-sort grammar) and `audio-bakeoff` (the timebase engine, lost on
+John's ears). Do not resurrect either.
 
 Quick facts:
 

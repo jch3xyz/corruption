@@ -5,10 +5,10 @@
 DEFLECTION (Proposal B in [admin/DEFLECTION - proposal.md](../admin/DEFLECTION%20-%20proposal.md))
 is an art-installation Chrome extension: Nam June Paik's *Magnet TV* restated
 for the browser. The transmission arrives perfect; the apparatus of display
-bends. It intercepts every video frame and image between decode and display
-and rearranges the material by pixel-sorting on the GPU. Nothing added,
-nothing lost, unreadable anyway. Sound is intended to receive the same
-treatment but the effect is **not yet chosen** — see below.
+bends. It intercepts every video frame, image, and sound between decode and
+output: pixels sort on the GPU; audio drives a fixed resonant body (48
+stretched-partial modal resonators) whose output smears through a
+recirculating delay. Nothing added, nothing lost, unreadable anyway.
 
 Conceptually the project has grown from "codec-corruption aesthetic" into a
 device that turns the live internet into a generative artwork with code
@@ -35,14 +35,16 @@ no build step — "Load unpacked" points at `source/`.
 | maxVideos | Cap became a param (default 8); paused videos get one-shot sorted stills (rVFC never fires for them) |
 | Phase 4 | Image path: DNR ACAO rule enabled + 3-route CORS strategy (direct / detached-crossorigin / SW base64), still re-render on param change, feedback-mode image ticker; video black-output probe |
 | defaults | threshold 0, passes 64, streak 256 (full-frame sorting), feedback off |
-| audio bake-off | Two complete engines behind one worklet, live-switchable via `audioMode` (100 ms crossfade): **body** (48 modal resonators, struck) and **timebase** (45 s reservoir, 5 lag-controlled heads). Plumbing restored from `audio-v1` with its latent bugs fixed. **Verdict pending — John judges on live browsing and the loser is removed.** Early lean: body + continuous exciter. |
-| audio fb layer | The first phase's feedback/smear layer ported intact (`audioFeedback` + `audioFbDecay`; wobble from `driftY`, keyframe clears from `resetMinS/MaxS`): 0.35 s modulated delay on the mixed engine output, post-crossfade so the smear survives a live A/B. Audio harness 34/34 (tiers 1–3). |
+| audio bake-off | Two complete engines behind one worklet, live-switchable via `audioMode`: **body** (48 modal resonators) and **timebase** (45 s reservoir, 5 lag-controlled heads). Plumbing restored from `audio-v1` with its latent bugs fixed. |
+| audio fb layer | The first phase's feedback/smear layer ported intact (`audioFeedback` + `audioFbDecay`; wobble from `driftY`): 0.35 s modulated delay on the engine output. Clears optional (`audioFbClear`, off) with a smooth fade (`audioFbClearS`). |
+| verdict | **Body won** (John, on live browsing: body + continuous exciter + smear). Timebase engine, `audioMode`, and its knobs removed; the two-engine state is tag `audio-bakeoff`. DEFAULTS = John's live-iterated settings. Audio harness 25/25. |
 
-The first audio phase (spectral/granular sorting) was built, verified, then
-removed for mirroring the pixel-sort grammar; it survives at tag `audio-v1`.
-The current two engines came out of a multiple-perspectives run (5 isolated
-probes, 5 blind critics); the corrections that run produced are baked into
-the implementations — see "Audio engines (bake-off)" in parameters.md.
+Audio lineage: the first phase (spectral/granular sorting) was removed for
+mirroring the pixel-sort grammar — tag `audio-v1`. The bake-off's two
+engines came from a multiple-perspectives run (5 isolated probes, 5 blind
+critics); body won on John's ears, and the losing timebase engine is tag
+`audio-bakeoff`. The run's corrections are baked into the implementation —
+see "The audio engine" in parameters.md.
 
 **John's live-chosen settings are now the DEFAULTS** (2026-08-11): visual
 feedback **off** (his final call — its knobs stay live-tuned: decay 0.906,
@@ -54,13 +56,6 @@ body at sustain 12 / drive 1.0 / continuous exciter.
 
 **Remaining:**
 
-- **Audio verdict.** Browse real sites, flip `audioMode` live (panel or MIDI
-  CC), keep the winner, remove the loser. Criteria: body wins if unrelated
-  sources cohere as one struck object without fusing into an unbroken chord;
-  timebase wins if material acquires a form that is not the browsing's form
-  (bent time, not an echo plugin). Either loses the spine test: if you can't
-  connect what you hear to what you just played, it's ambient music near a
-  computer.
 - **Phase 5 — text swap** (titles/captions swapped between elements, behind a
   toggle): **ON HOLD by John's instruction.** Don't build unprompted.
 - **Phase 6 — kiosk hardening + soak**: not started. Chrome for Testing at a
@@ -89,7 +84,7 @@ source/
 │   ├── overlay.js                 # sibling canvas; object-fit/position replication
 │   └── metrics.js                 # FrameGovernor (rVFC presentedFrames deltas)
 ├── gl/  context.js · pipeline.js · shaders/{common,passthrough,composite,sort}.js
-├── audio/ graph.js · worklet.js · dsp.js · fft.js   # worklet holds BOTH engines (mode-switched)
+├── audio/ graph.js · worklet.js · dsp.js · fft.js   # worklet = body engine + smear layer
 └── panel/ panel.html · panel.js · panel.css · midi.js  # extension page, popup window
 ```
 
@@ -149,11 +144,11 @@ python3 test/serve.py 8439   # second origin for the image CORS-route test
   produce false timeouts (documented in harness header). In John's Chrome it
   runs clean; in Claude's embedded pane expect visibility roulette.
 - Audio suite: `http://localhost:8437/test/harness/audio.html` — tier 1 (pure
-  DSP) + tier 2 (both engines + feedback layer through OfflineAudioContext)
-  are fully deterministic, 25 checks; tier 3 ("run live tap tests" button)
-  adds 9 live-tap checks incl. tap permanence, re-tap reuse, and a live mode
-  flip. Last full run: 34/34. Unlike the visual suite it is immune to pane
-  visibility (offline rendering).
+  DSP) + tier 2 (body engine + feedback layer through OfflineAudioContext)
+  are fully deterministic, 16 checks; tier 3 ("run live tap tests" button)
+  adds 9 live-tap checks incl. tap permanence and re-tap reuse. Last full
+  run: 25/25. Unlike the visual suite it is immune to pane visibility
+  (offline rendering).
 - Extension: chrome://extensions → Load unpacked → `source/`. Reload after
   edits; Chrome writes `source/_metadata/` (gitignored).
 - Proof-of-interception tricks: invert/hide `canvas[data-deflection]`;
@@ -162,12 +157,10 @@ python3 test/serve.py 8439   # second origin for the image CORS-route test
 
 ## John's manual checklist (needs real Chrome; not yet all exercised)
 
-- **The bake-off verdict** (see Remaining): YouTube music video, news
-  autoplay, an ad, a quiet documentary — flip `audioMode` on the same
-  material. Also: visual suite re-run in real Chrome (the embedded pane
-  starves rVFC and can't adjudicate it — verified identical at baseline).
+- Visual suite re-run in real Chrome (the embedded pane starves rVFC and
+  can't adjudicate it — verified identical at baseline).
 - Audio plumbing: page mute/volume through the chain; a cross-origin-audio
-  site stays untouched w/ console log; MIDI sweep incl. `audioMode` on a CC.
+  site stays untouched w/ console log; MIDI sweep.
 - Visual: fullscreen/theater tracking, 5× SPA navigation canvas-leak check,
   DRM trailer untouched, 30-min GPU-memory flatness (rides Phase 6 soak).
 

@@ -21,21 +21,17 @@ export const DEFAULTS = {
   imageAnimCap: 12,  // max concurrently animated images
   textSwap: false,
 
-  // --- audio (two engines under live A/B; the loser is removed) ---
+  // --- audio (the body engine — bake-off verdict; timebase at tag audio-bakeoff) ---
   audioEnabled: true,
-  audioMode: 'body', // 'body' = struck resonant body · 'timebase' = bent clock
   audioMix: 1,       // wet/dry in the tap graph, not DSP
   audioFeedback: true,  // echo/smear layer on the engine output (either mode)
   audioFbDecay: 0.999,  // smear retention; maps to feedback gain 0.5–0.95
   audioFbClear: false,  // the smear never clears by default: gain < 1 IS its decay
   audioFbClearS: 1,     // when clearing is on: fade the wash over ~this long; 0 = hard cut
   audioMaxTaps: 8,   // concurrent taps, most recently playing first
-  audioSustain: 12,  // body: T60 at the lowest fundamental, seconds
-  audioDrive: 1.0,   // body: strike force into the resonators
+  audioSustain: 12,  // T60 at the lowest fundamental, seconds
+  audioDrive: 1.0,   // drive into the resonators
   audioExciter: 'continuous', // 'continuous' drives always · 'gated' strikes on onsets
-  audioDepth: 0.8,   // timebase: lag bend, octaves of the field's swing
-  audioFieldRate: 1, // timebase: deflection field speed multiplier
-  audioTail: 1.5,    // timebase: seconds the heads may speak after input stops
 };
 
 export async function loadParams() {

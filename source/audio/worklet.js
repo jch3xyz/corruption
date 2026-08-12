@@ -1,35 +1,20 @@
-// The DEFLECTION audio processor: two complete engines behind one node,
-// switched live by the `mode` param with an equal-power crossfade — the
-// bake-off happens on real material, not in descriptions.
+// The DEFLECTION audio processor: a fixed resonant body struck by the
+// stream, smeared by a recirculating feedback layer. The bake-off verdict
+// (John, 2026-08-11): body + continuous exciter won; the timebase engine is
+// preserved at tag `audio-bakeoff`, never resurrected by accident.
 //
-//   body     — a fixed resonant body struck by the stream. 48 modal
-//              resonators (stretched partials over three just fundamentals);
-//              the browsing only decides when and how hard it is struck.
-//   timebase — the clock is deformed, not the signal. A 45 s reservoir read
-//              by five heads whose lags bend under a slow shaped field.
+//   body — 48 modal resonators (stretched partials over three just
+//          fundamentals); the browsing only decides when and how hard the
+//          body is driven. Identity lives in the apparatus, not the source.
 //
 // Discipline (from the multiple-perspectives run):
-// - lag is the controlled variable, rate is derived (slew-clamped);
 // - non-finite guards on everything entering recursive state;
 // - silence in → silence out is enforced by an output gate, exact zeros;
 // - process() must never throw: a dead processor is permanently silent
 //   media, which violates "never break the page".
 
-import {
-  rms,
-  modeTable,
-  OnsetDetector,
-  lagField,
-  slewLag,
-  HEAD_LAGS,
-  HEAD_GAINS,
-  HEAD_PANS,
-  RING_S,
-  LAG_MIN_S,
-  panGains,
-} from './dsp.js';
+import { rms, modeTable, OnsetDetector } from './dsp.js';
 
-const XFADE_S = 0.1;
 const PRESENCE_OPEN_DB = -55;
 const PRESENCE_CLOSE_DB = -65;
 const PRESENCE_CLOSE_S = 0.2;
@@ -39,13 +24,9 @@ const BODY_OUT_GAIN = 0.4;
 const BODY_CONT_BOOST = 4; // continuous-path peak gain = amp × this
 
 const DEFAULT_PARAMS = {
-  mode: 'body',
   sustain: 12,
   drive: 1.0,
   exciter: 'continuous',
-  depth: 0.8,
-  fieldRate: 1,
-  tail: 1.5,
   fb: true,
   fbDecay: 0.999,
   fbClear: false, // smear runs continuous by default: gain < 1 IS its decay
@@ -117,12 +98,6 @@ class BodyEngine {
     this.envStage = 0;
   }
 
-  energy() {
-    let e = 0;
-    for (const y of this.y1) for (let i = 0; i < y.length; i++) e += y[i] * y[i];
-    return e;
-  }
-
   process(inBufs, outBufs, channels, n, p, monoIn) {
     if (this.coeffsDirty) this.refreshCoeffs();
     const gated = p.exciter === 'gated';
@@ -135,8 +110,9 @@ class BodyEngine {
     const drive = p.drive;
     for (let s = 0; s < n; s++) {
       // Gated: a raised-cosine-ish AR envelope opened by onsets, so the
-      // body is *struck*, never continuously driven (the drone kill
-      // condition). Continuous: the honest comparison, bounded by caps.
+      // body is *struck*, never continuously driven. Continuous (the
+      // piece's chosen state): the stream drives it always, bounded by
+      // resonz normalization + caps.
       if (gated) {
         const target = this.envStage > 0 ? 1 : 0;
         if (this.envStage > 0) this.envStage--;
@@ -186,130 +162,13 @@ class BodyEngine {
   }
 }
 
-// --- Engine: time-base deflection -----------------------------------------
-
-class TimebaseEngine {
-  constructor(sr, channels) {
-    this.sr = sr;
-    this.channels = channels;
-    this.n = Math.ceil(RING_S * sr);
-    this.ring = new Float32Array(this.n);
-    this.writeAbs = this.n; // start one ring in: reads never go negative
-    this.heads = HEAD_LAGS.map((base, i) => ({
-      base,
-      lag: base,
-      target: base,
-      gain: HEAD_GAINS[i],
-      pans: panGains(HEAD_PANS[i], channels),
-      lp: 0, // anti-alias one-pole state (engaged when rate > 1)
-      alpha: 1,
-      initialized: false,
-    }));
-    this.tailEnv = 0;
-  }
-
-  reset() {
-    // Envelopes only — the reservoir IS the piece's memory; silence must
-    // not erase it, only gate it.
-    this.tailEnv = 0;
-    for (const h of this.heads) h.lp = 0;
-  }
-
-  energy() {
-    return this.tailEnv;
-  }
-
-  read(pos) {
-    const n = this.n;
-    const i0 = Math.floor(pos);
-    const u = pos - i0;
-    const r = this.ring;
-    const im1 = (((i0 - 1) % n) + n) % n;
-    const i1 = (im1 + 1) % n;
-    const i2 = (im1 + 2) % n;
-    const i3 = (im1 + 3) % n;
-    const p0 = r[im1];
-    const p1 = r[i1];
-    const p2 = r[i2];
-    const p3 = r[i3];
-    // Catmull-Rom
-    return (
-      p1 +
-      0.5 *
-        u *
-        (p2 -
-          p0 +
-          u * (2 * p0 - 5 * p1 + 4 * p2 - p3 + u * (3 * (p1 - p2) + p3 - p0)))
-    );
-  }
-
-  process(inBufs, outBufs, channels, n, p, monoIn, present) {
-    const sr = this.sr;
-    const dt = 1 / sr;
-    const blockS = n / sr;
-    // Field time scales with fieldRate; targets computed at block rate,
-    // slewed per sample — lag is the controlled variable, always.
-    const tField = (currentFrame / sr) * p.fieldRate;
-    const lagMax = RING_S - 1;
-    for (const [i, h] of this.heads.entries()) {
-      const s = lagField(tField, i + 1);
-      let target = h.base * Math.pow(2, p.depth * s);
-      if (target < LAG_MIN_S) target = LAG_MIN_S;
-      if (target > lagMax) target = lagMax;
-      if (!h.initialized) {
-        h.lag = target;
-        h.initialized = true;
-      }
-      h.target = target;
-      const rate = Math.min(
-        1.75,
-        Math.max(0.25, 1 - (target - h.lag) / Math.max(blockS, 1e-6))
-      );
-      h.alpha = rate <= 1 ? 1 : Math.min(1, 1.2 / rate);
-    }
-    // Tail: presence-open pulls the heads up fast; presence-closed lets
-    // them speak for `tail` seconds — the silence-semantics knob.
-    const tailTau = present ? 0.05 : Math.max(0.005, p.tail / 3);
-    const tailCoef = 1 - Math.exp(-1 / (tailTau * sr));
-    const tailTarget = present ? 1 : 0;
-
-    for (let s = 0; s < n; s++) {
-      if (present) {
-        const x = monoIn[s];
-        this.ring[this.writeAbs % this.n] = Number.isFinite(x) ? x : 0;
-        this.writeAbs++;
-      }
-      this.tailEnv += (tailTarget - this.tailEnv) * tailCoef;
-      for (let c = 0; c < channels; c++) outBufs[c][s] = 0;
-      for (const h of this.heads) {
-        h.lag = slewLag(h.lag, h.target, dt);
-        // writeAbs already counts this sample, so "lag seconds ago" is
-        // writeAbs − 1 − lag·sr (the off-by-one decorrelates the identity
-        // check on noise — harness-caught).
-        let y = this.read(this.writeAbs - 1 - h.lag * this.sr);
-        if (h.alpha < 1) {
-          h.lp += (y - h.lp) * h.alpha;
-          y = h.lp;
-        } else {
-          h.lp = y;
-        }
-        const v = y * h.gain * this.tailEnv;
-        for (let c = 0; c < channels; c++) {
-          outBufs[c][s] += v * h.pans[Math.min(c, h.pans.length - 1)];
-        }
-      }
-    }
-  }
-}
-
 // --- Feedback/smear layer ---------------------------------------------------
 //
-// A LAYER, not a mode (ported intact from the first audio phase): the mixed
-// engine output recirculates through a 0.35 s delay line whose read point
-// wobbles on a 0.1 Hz LFO, tanh-clipped on write-back, hard-cleared on the
-// same jittered keyframe rhythm as the video accumulator. It sits after the
-// mode crossfade, so it smears whichever engine is speaking — and the smear
-// itself carries across a live A/B switch.
+// A LAYER, not a mode (ported intact from the first audio phase): the body's
+// output recirculates through a 0.35 s delay line whose read point wobbles
+// on a 0.1 Hz LFO, tanh-clipped on write-back. Continuous by default — its
+// loop gain (< 1) is its own decay; the optional keyframe clear rides the
+// shared visual reset rhythm when enabled.
 
 class FeedbackLayer {
   constructor(sr, channels) {
@@ -405,29 +264,20 @@ class FeedbackLayer {
   }
 }
 
-// --- The shared shell ------------------------------------------------------
+// --- The shell --------------------------------------------------------------
 
 class DeflectionAudio extends AudioWorkletProcessor {
   constructor(options) {
     super();
     this.p = { ...DEFAULT_PARAMS, ...(options?.processorOptions?.params ?? {}) };
-    // Test affordance: deterministic mid-render param changes for the
-    // offline harness ({ atS, params } list; postMessage can't be
-    // sample-accurate against an offline render).
-    this.script = (options?.processorOptions?.script ?? [])
-      .slice()
-      .sort((a, b) => a.atS - b.atS);
     this.body = null;
-    this.timebase = null;
+    this.fbLayer = null;
     this.channels = 0;
     this.inBufs = null;
-    this.outA = null;
-    this.outB = null;
+    this.out = null;
     this.monoIn = null;
     this.dcX = null;
     this.dcY = null;
-    this.prevMode = null;
-    this.xfadeLeft = 0;
     this.present = false;
     this.closeBlocks = 0;
     this.quietBlocks = 0;
@@ -442,12 +292,7 @@ class DeflectionAudio extends AudioWorkletProcessor {
   }
 
   applyParams(params) {
-    const prev = this.p.mode;
     Object.assign(this.p, params);
-    if (this.p.mode !== prev) {
-      this.prevMode = prev;
-      this.xfadeLeft = Math.round(XFADE_S * sampleRate);
-    }
     this.body?.setSustain(this.p.sustain);
   }
 
@@ -456,35 +301,16 @@ class DeflectionAudio extends AudioWorkletProcessor {
       return;
     this.channels = channels;
     this.inBufs = [];
-    this.outA = [];
-    this.outB = [];
+    this.out = [];
     for (let c = 0; c < channels; c++) {
       this.inBufs.push(new Float32Array(n));
-      this.outA.push(new Float32Array(n));
-      this.outB.push(new Float32Array(n));
+      this.out.push(new Float32Array(n));
     }
     this.monoIn = new Float32Array(n);
     this.dcX = new Float32Array(channels);
     this.dcY = new Float32Array(channels);
     this.body = new BodyEngine(sampleRate, channels, this.p);
-    this.timebase = new TimebaseEngine(sampleRate, channels);
     this.fbLayer = new FeedbackLayer(sampleRate, channels);
-  }
-
-  engine(name) {
-    return name === 'timebase' ? this.timebase : this.body;
-  }
-
-  renderEngine(name, out, channels, n) {
-    this.engine(name).process(
-      this.inBufs,
-      out,
-      channels,
-      n,
-      this.p,
-      this.monoIn,
-      this.present
-    );
   }
 
   process(inputs, outputs) {
@@ -496,10 +322,6 @@ class DeflectionAudio extends AudioWorkletProcessor {
       const n = input[0].length;
       const channels = Math.min(input.length, output.length);
       this.ensure(channels, n);
-
-      while (this.script.length && currentFrame / sampleRate >= this.script[0].atS) {
-        this.applyParams(this.script.shift().params);
-      }
 
       // Sanitize + DC-block into scratch; derive the mono feed.
       for (let c = 0; c < channels; c++) {
@@ -545,29 +367,16 @@ class DeflectionAudio extends AudioWorkletProcessor {
         return true;
       }
 
-      this.renderEngine(this.p.mode, this.outA, channels, n);
-      if (this.xfadeLeft > 0 && this.prevMode) {
-        this.renderEngine(this.prevMode, this.outB, channels, n);
-        const w = this.xfadeLeft / (XFADE_S * sampleRate); // 1 → 0
-        const gNew = Math.cos((w * Math.PI) / 2);
-        const gOld = Math.sin((w * Math.PI) / 2);
-        for (let c = 0; c < channels; c++) {
-          const a = this.outA[c];
-          const b = this.outB[c];
-          for (let s = 0; s < n; s++) a[s] = a[s] * gNew + b[s] * gOld;
-        }
-        this.xfadeLeft = Math.max(0, this.xfadeLeft - n);
-        if (this.xfadeLeft === 0) this.prevMode = null;
-      }
+      this.body.process(this.inBufs, this.out, channels, n, this.p, this.monoIn);
 
-      // The smear layer runs on the mixed engine output, pre-clip.
-      if (this.p.fb) this.fbLayer.process(this.outA, channels, n, this.p);
+      // The smear layer runs on the body's output, pre-clip.
+      if (this.p.fb) this.fbLayer.process(this.out, channels, n, this.p);
 
       // Soft clip at −6 dBFS and write out; the gate below may still zero it.
       let outPeak = 0;
       for (let c = 0; c < channels; c++) {
         const dst = output[c];
-        const a = this.outA[c];
+        const a = this.out[c];
         for (let s = 0; s < n; s++) {
           const clipped = 0.5 * Math.tanh(a[s] * 2);
           dst[s] = clipped;
@@ -577,7 +386,7 @@ class DeflectionAudio extends AudioWorkletProcessor {
       }
       for (let c = channels; c < output.length; c++) output[c].set(output[0]);
 
-      // Silence gate: with input absent and the engines at the floor, snap
+      // Silence gate: with input absent and the engine at the floor, snap
       // to exact zeros and reset ring-down state (silence in, silence out —
       // enforced, not asymptotic).
       if (!this.present) {
@@ -586,7 +395,6 @@ class DeflectionAudio extends AudioWorkletProcessor {
         if (this.quietBlocks > 5) {
           this.muted = true;
           this.body?.reset();
-          this.timebase?.reset();
           this.fbLayer?.reset(); // stale echoes must not return with presence
           for (let c = 0; c < output.length; c++) output[c].fill(0);
         }

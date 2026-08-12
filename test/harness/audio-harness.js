@@ -1,9 +1,10 @@
-// Audio bake-off harness. Tier 1 tests the pure DSP modules with no audio
-// API at all; tier 2 renders BOTH engines deterministically through
-// OfflineAudioContext (no gesture, no rendering pipeline — immune to the
-// hidden-pane flakiness that plagues the visual harness); tier 3 taps a
-// live <audio> element and runs behind a button so the click doubles as
-// the autoplay gesture.
+// Audio harness for the body engine + smear layer (the bake-off verdict;
+// the timebase engine's checks left with it — tag `audio-bakeoff`). Tier 1
+// tests the pure DSP modules with no audio API at all; tier 2 renders the
+// real worklet deterministically through OfflineAudioContext (no gesture,
+// no rendering pipeline — immune to the hidden-pane flakiness that plagues
+// the visual harness); tier 3 taps a live <audio> element and runs behind
+// a button so the click doubles as the autoplay gesture.
 //
 // Assertions are structural invariants, never golden files. Randomness is
 // a fixed LCG so runs are byte-identical.
@@ -15,13 +16,6 @@ import {
   rms,
   modeTable,
   OnsetDetector,
-  lagField,
-  slewLag,
-  LAG_MAX_SLOPE,
-  HEAD_LAGS,
-  HEAD_GAINS,
-  RING_S,
-  LAG_MIN_S,
   BODY_FUNDAMENTALS,
   BODY_PARTIALS,
   BODY_STRETCH,
@@ -122,61 +116,6 @@ function tier1() {
     check(`steady sine fires ≤1 onset (its own attack; got ${falsePos})`, falsePos <= 1);
   }
 
-  // Deflection field: excursion floor holds, no parking at zero.
-  {
-    let nearZero = 0;
-    let sumAbs = 0;
-    let maxAbs = 0;
-    const nSamples = 3 * 3600;
-    for (let i = 0; i < nSamples; i++) {
-      const s = lagField(i, 2);
-      const a = Math.abs(s);
-      if (a < 0.2) nearZero++;
-      sumAbs += a;
-      if (a > maxAbs) maxAbs = a;
-      if (a > 1.0001) maxAbs = 99; // out of range = fail below
-    }
-    const dwell = nearZero / nSamples;
-    check(
-      `field excursion: dwell |S|<0.2 is ${(dwell * 100).toFixed(1)}% (<20%), mean |S| ${(sumAbs / nSamples).toFixed(2)} (>0.35), max ≤1`,
-      dwell < 0.2 && sumAbs / nSamples > 0.35 && maxAbs <= 1.0001
-    );
-  }
-
-  // Lag control: slew clamp holds exactly; a worst-case head trajectory
-  // stays inside the ring and its derived rate inside [0.25, 1.75].
-  {
-    const dt = 128 / 48000;
-    let slewOk = true;
-    let lag = 5;
-    for (let i = 0; i < 5000; i++) {
-      const target = rand() * 40;
-      const next = slewLag(lag, target, dt);
-      if (Math.abs(next - lag) > LAG_MAX_SLOPE * dt + 1e-9) slewOk = false;
-      lag = next;
-    }
-    check('slewLag never exceeds the slope clamp', slewOk);
-
-    const base = HEAD_LAGS[HEAD_LAGS.length - 1]; // 30 s, the worst case
-    const depth = 1.5;
-    let l = base;
-    let boundsOk = true;
-    let rateOk = true;
-    const steps = Math.round(600 / dt); // 10 simulated minutes
-    for (let i = 0; i < steps; i++) {
-      const s = lagField((i * dt) / 1, 5);
-      let target = base * Math.pow(2, depth * s);
-      if (target < LAG_MIN_S) target = LAG_MIN_S;
-      if (target > RING_S - 1) target = RING_S - 1;
-      const next = slewLag(l, target, dt);
-      const rate = 1 - (next - l) / dt;
-      if (next < LAG_MIN_S - 1e-9 || next > RING_S - 1 + 1e-9) boundsOk = false;
-      if (rate < 0.25 - 1e-9 || rate > 1.75 + 1e-9) rateOk = false;
-      l = next;
-    }
-    check('worst-case head trajectory stays inside the ring', boundsOk);
-    check('derived read rate stays inside [0.25, 1.75]', rateOk);
-  }
 }
 
 // --- Tier 2: both engines through the real worklet --------------------------
@@ -184,25 +123,20 @@ function tier1() {
 const SR = 48000;
 
 const BODY = {
-  mode: 'body',
   sustain: 2,
   drive: 0.5,
   exciter: 'continuous',
-  depth: 0.8,
-  fieldRate: 1,
-  tail: 1.5,
-  fb: false, // engine tests isolate the engines; DEFAULT_PARAMS now has fb on
+  fb: false, // engine tests isolate the engine; DEFAULT_PARAMS has fb on
 };
-const TIMEBASE = { ...BODY, mode: 'timebase' };
 
-async function renderThrough(wparams, buildInput, seconds, opts = {}) {
+async function renderThrough(wparams, buildInput, seconds) {
   const frames = Math.ceil(seconds * SR);
   const ctx = new OfflineAudioContext(1, frames, SR);
   await ctx.audioWorklet.addModule('/source/audio/worklet.js');
   const node = new AudioWorkletNode(ctx, 'deflection-audio', {
     numberOfInputs: 1,
     numberOfOutputs: 1,
-    processorOptions: { params: wparams, script: opts.script },
+    processorOptions: { params: wparams },
   });
   // Full-length buffer (silence is explicit zeros): the source must keep
   // the input connected to the end or ring-down/tail semantics can't render.
@@ -222,36 +156,32 @@ const fillNoise = (amp) => (data) => {
 };
 
 async function tier2() {
-  // Exact silence in → exact silence out, both engines.
-  for (const [name, p] of [['body', BODY], ['timebase', TIMEBASE]]) {
-    try {
-      const { out } = await renderThrough(p, () => {}, 1.5);
-      let maxAbs = 0;
-      for (let i = 0; i < out.length; i++) maxAbs = Math.max(maxAbs, Math.abs(out[i]));
-      check(`${name}: digital silence in → exact zeros out`, maxAbs === 0);
-    } catch (e) {
-      check(`${name} silence render (${e.message})`, false);
-    }
+  // Exact silence in → exact silence out.
+  try {
+    const { out } = await renderThrough(BODY, () => {}, 1.5);
+    let maxAbs = 0;
+    for (let i = 0; i < out.length; i++) maxAbs = Math.max(maxAbs, Math.abs(out[i]));
+    check('body: digital silence in → exact zeros out', maxAbs === 0);
+  } catch (e) {
+    check(`body silence render (${e.message})`, false);
   }
 
   // NaN in the stream must never reach the output or kill the processor.
-  for (const [name, p] of [['body', BODY], ['timebase', TIMEBASE]]) {
-    try {
-      const { out } = await renderThrough(
-        p,
-        (data) => {
-          fillNoise(0.1)(data);
-          data[1000] = NaN;
-          data[2000] = Infinity;
-        },
-        2
-      );
-      const finite = out.every(Number.isFinite);
-      const alive = rmsOf(out, 1.0 * SR, 0.5 * SR) > 1e-6;
-      check(`${name}: injected NaN/Inf → finite output, processor alive`, finite && alive);
-    } catch (e) {
-      check(`${name} NaN render (${e.message})`, false);
-    }
+  try {
+    const { out } = await renderThrough(
+      BODY,
+      (data) => {
+        fillNoise(0.1)(data);
+        data[1000] = NaN;
+        data[2000] = Infinity;
+      },
+      2
+    );
+    const finite = out.every(Number.isFinite);
+    const alive = rmsOf(out, 1.0 * SR, 0.5 * SR) > 1e-6;
+    check('body: injected NaN/Inf → finite output, processor alive', finite && alive);
+  } catch (e) {
+    check(`body NaN render (${e.message})`, false);
   }
 
   // Body: a short burst rings down monotonically and actually decays.
@@ -352,80 +282,6 @@ async function tier2() {
     check(`body drone render (${e.message})`, false);
   }
 
-  // Timebase: depth 0 is a transparent multi-tap at exactly the base lags.
-  try {
-    const { out, input } = await renderThrough(
-      { ...TIMEBASE, depth: 0 },
-      fillNoise(0.1),
-      3.5
-    );
-    const g0 = HEAD_GAINS[0] * Math.SQRT1_2;
-    const g1 = HEAD_GAINS[1] * Math.SQRT1_2;
-    const d0 = Math.round(HEAD_LAGS[0] * SR);
-    const d1 = Math.round(HEAD_LAGS[1] * SR);
-    let errSum = 0;
-    let n = 0;
-    for (let i = Math.round(1.6 * SR); i < Math.round(3.4 * SR); i += 7) {
-      const expect = g0 * input[i - d0] + g1 * input[i - d1];
-      errSum += Math.abs(out[i] - expect);
-      n++;
-    }
-    const avgErr = errSum / n;
-    check(`timebase depth 0 = multi-tap identity (avg err ${avgErr.toFixed(4)})`, avgErr < 0.02);
-  } catch (e) {
-    check(`timebase identity render (${e.message})`, false);
-  }
-
-  // Timebase: depth bends audibly away from the identity, stays finite/bounded.
-  try {
-    const { out, input } = await renderThrough(
-      { ...TIMEBASE, depth: 1.2, fieldRate: 4 },
-      fillNoise(0.1),
-      3.5
-    );
-    const g0 = HEAD_GAINS[0] * Math.SQRT1_2;
-    const g1 = HEAD_GAINS[1] * Math.SQRT1_2;
-    const d0 = Math.round(HEAD_LAGS[0] * SR);
-    const d1 = Math.round(HEAD_LAGS[1] * SR);
-    let errSum = 0;
-    let n = 0;
-    for (let i = Math.round(1.6 * SR); i < Math.round(3.4 * SR); i += 7) {
-      errSum += Math.abs(out[i] - (g0 * input[i - d0] + g1 * input[i - d1]));
-      n++;
-    }
-    const outR = rmsOf(out, 1.6 * SR, 1.8 * SR);
-    const inR = rmsOf(input, 1.6 * SR, 1.8 * SR);
-    check(
-      `timebase depth 1.2 diverges from identity (avg err ${(errSum / n).toFixed(4)} > 0.005), bounded`,
-      errSum / n > 0.005 && out.every(Number.isFinite) && outR <= inR * 2
-    );
-  } catch (e) {
-    check(`timebase depth render (${e.message})`, false);
-  }
-
-  // Timebase silence semantics: tail 0 gates hard; tail 3 speaks then
-  // decays. depth 0 pins the lags so the checks don't depend on where the
-  // deflection field happens to sit (the 1 s head reads the noise; the
-  // 0.15 s head reads the 200 ms of zeros the presence-close delay wrote).
-  try {
-    const stopAt = (data) => {
-      for (let i = 0; i < Math.round(1.2 * SR); i++) data[i] = 0.1 * (rand() * 2 - 1);
-    };
-    const { out: out0 } = await renderThrough({ ...TIMEBASE, depth: 0, tail: 0 }, stopAt, 5);
-    const gated = rmsOf(out0, 2.0 * SR, 0.5 * SR);
-    check(`timebase tail 0: silent within gate time of input stop (${gated.toExponential(1)})`, gated < 1e-4);
-
-    const { out: out3 } = await renderThrough({ ...TIMEBASE, depth: 0, tail: 3 }, stopAt, 5);
-    const speaking = rmsOf(out3, 1.8 * SR, 0.5 * SR);
-    const decayed = rmsOf(out3, 4.5 * SR, 0.4 * SR);
-    check(
-      `timebase tail 3: still speaking after stop (${speaking.toExponential(1)}), decayed by 4.5 s (${decayed.toExponential(1)})`,
-      speaking > 1e-3 && decayed < speaking * 0.2
-    );
-  } catch (e) {
-    check(`timebase tail render (${e.message})`, false);
-  }
-
   // Feedback/smear layer: silence stays exact zeros; echoes recirculate at
   // 0.35 s and decay; the keyframe reset hard-clears the line. driftY 0
   // pins the delay (no LFO wobble) and resetMin=Max removes the jitter, so
@@ -507,34 +363,6 @@ async function tier2() {
   } catch (e) {
     check(`feedback render (${e.message})`, false);
   }
-
-  // Live A/B: a scripted mid-render mode switch must not click. Gated
-  // exciter keeps the body side quiet enough that the delta threshold
-  // means something (continuous body on broadband noise lives near the
-  // clip, where max-delta saturates and the check is vacuous).
-  try {
-    const { out } = await renderThrough(
-      { ...BODY, exciter: 'gated' },
-      fillNoise(0.1),
-      4,
-      { script: [{ atS: 2, params: { mode: 'timebase' } }] }
-    );
-    const maxDelta = (from, to) => {
-      let m = 0;
-      for (let i = Math.round(from * SR) + 1; i < Math.round(to * SR); i++) {
-        m = Math.max(m, Math.abs(out[i] - out[i - 1]));
-      }
-      return m;
-    };
-    const steady = maxDelta(1.0, 1.9);
-    const around = maxDelta(1.95, 2.2);
-    check(
-      `mode switch is click-free (Δ ${around.toFixed(3)} ≤ max(4×${steady.toFixed(3)}, 0.05))`,
-      around <= Math.max(4 * steady, 0.05) && out.every(Number.isFinite)
-    );
-  } catch (e) {
-    check(`mode switch render (${e.message})`, false);
-  }
 }
 
 // --- Tier 3: live tap (button = autoplay gesture) ----------------------------
@@ -590,15 +418,12 @@ async function tier3() {
   const params = {
     enabled: true,
     audioEnabled: true,
-    audioMode: 'body',
     audioMix: 1,
     audioMaxTaps: 4,
     audioSustain: 4,
     audioDrive: 0.5,
     audioExciter: 'continuous',
-    audioDepth: 0.8,
-    audioFieldRate: 1,
-    audioTail: 1.5,
+    audioFeedback: false,
   };
 
   const graph = acquireAudio();
@@ -623,15 +448,15 @@ async function tier3() {
   watch(job1);
   check('worklet reports signal (rms > 0)', await waitFor(() => stats && stats.rms > 0.01, 4000));
 
-  // Live mode flip — the bake-off gesture itself.
-  params.audioMode = 'timebase';
+  // Live smear flip — params reach the worklet without error.
+  params.audioFeedback = true;
   job1.applyParams();
   stats = null;
   check(
-    'live mode flip to timebase: worklet alive, no error',
+    'live smear toggle: worklet alive, no error',
     (await waitFor(() => stats && stats.rms > 0.01, 4000)) && !workletError
   );
-  params.audioMode = 'body';
+  params.audioFeedback = false;
   job1.applyParams();
 
   // Permanence: a second direct tap must throw; our graph must reuse.
@@ -659,7 +484,7 @@ async function tier3() {
   check('no worklet errors across the live tier', !workletError);
 
   el.pause();
-  line('tier 3 done — for the real verdict: load unpacked, browse, flip audio mode.', '');
+  line('tier 3 done.', '');
 }
 
 // --- run ---------------------------------------------------------------------
