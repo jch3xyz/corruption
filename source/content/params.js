@@ -16,7 +16,7 @@ export const DEFAULTS = {
   resetMinS: 1,      // feedback only: accumulator "keyframe" reset window
   resetMaxS: 60,
   maxRes: 1920,      // processing resolution cap, long axis
-  maxVideos: 8,      // concurrent video jobs, biggest visible first
+  maxVideos: 12,     // concurrent video jobs, biggest visible first
   imageFps: 6,       // animated image tick rate
   imageAnimCap: 12,  // max concurrently animated images
   textSwap: false,

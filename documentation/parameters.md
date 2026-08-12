@@ -20,7 +20,7 @@ Kill switch: Ctrl+Shift+D toggles `enabled` without the panel.
 | `driftY` | **0** | ±0.01 | *Feedback only.* Vertical smear; **positive = upward**. 0 = purely horizontal drift — and no audio smear wobble (the coupling below). |
 | `resetMinS` / `resetMaxS` | **1 / 60** | 1–30 / 2–60 | *Feedback only.* Keyframe rhythm: the accumulator resets to a clean frame at a random interval in this window. |
 | `maxRes` | 1920 | 480–1920 | Processing resolution cap, long axis. Lower it on weak GPUs; output upscales through the overlay. |
-| `maxVideos` | 8 | 1–16 | Concurrent video jobs, biggest visible first. Paused videos count too — they get a one-shot sorted still (rVFC never fires for them). |
+| `maxVideos` | **12** | 1–16 | Concurrent video jobs, biggest visible first. Paused videos count too — they get a one-shot sorted still (rVFC never fires for them). Raised from 8 for grid feeds (Instagram explore) where a dozen previews are on screen at once. |
 | `imageFps` | **6** | 1–30 | *Feedback only.* Tick rate for animated images. Straight-sort stills don't animate at all. |
 | `imageAnimCap` | 12 | 0–24 | *Feedback only.* Max concurrently animated images (≥200 px side, biggest visible first); the rest stay stills. |
 | `audioEnabled` | on | on/off | Audio master. Off ramps every tap to dry — the tap itself is permanent by design. |
