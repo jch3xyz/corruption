@@ -51,6 +51,7 @@ precision highp float;
 uniform sampler2D uTex;
 uniform sampler2D uField;
 uniform float uUseFlow;
+uniform float uFacets;
 uniform float uSectorJitter;
 uniform float uParity;
 uniform float uStride;
@@ -62,15 +63,31 @@ in vec2 vUV;
 out vec4 outColor;
 ${GLSL_LUMA}
 const float SECTOR = 0.39269908169872414; // pi/8: 16 sectors of 22.5 deg
+const float SECTOR8 = 0.7853981633974483; // pi/4: the facet grammar's 8
 const ivec2 DIRS[16] = ivec2[16](
   ivec2(1, 0), ivec2(2, 1), ivec2(1, 1), ivec2(1, 2),
   ivec2(0, 1), ivec2(-1, 2), ivec2(-1, 1), ivec2(-2, 1),
   ivec2(-1, 0), ivec2(-2, -1), ivec2(-1, -1), ivec2(-1, -2),
   ivec2(0, -1), ivec2(1, -2), ivec2(1, -1), ivec2(2, -1)
 );
+const ivec2 DIRS8[8] = ivec2[8](
+  ivec2(1, 0), ivec2(1, 1), ivec2(0, 1), ivec2(-1, 1),
+  ivec2(-1, 0), ivec2(-1, -1), ivec2(0, -1), ivec2(1, -1)
+);
+// Two quantizers, both kept by John's call — he liked both behaviors.
+// paths (uFacets 0): 16 sectors, boundary dithered per pass — seams
+// wander, average motion follows the true angle, ribbons curve.
+// facets (uFacets 1): 8 fixed sectors, no dither — the first cut's
+// grammar, where sector edges are anchored seams and ribbons run
+// straight inside each patch and pool where the field bends.
 ivec2 fieldDir(ivec2 cell) {
   vec2 d = texelFetch(uField, cell, 0).rg * 2.0 - 1.0;
-  int k = int(round(atan(d.y, d.x) / SECTOR + uSectorJitter));
+  float a = atan(d.y, d.x);
+  if (uFacets > 0.5) {
+    int k = int(round(a / SECTOR8));
+    return DIRS8[((k % 8) + 8) % 8];
+  }
+  int k = int(round(a / SECTOR + uSectorJitter));
   return DIRS[((k % 16) + 16) % 16];
 }
 void main() {

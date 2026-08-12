@@ -44,6 +44,7 @@ export function createPipeline(gl) {
     'uTex',
     'uField',
     'uUseFlow',
+    'uFacets',
     'uSectorJitter',
     'uParity',
     'uStride',
@@ -181,6 +182,7 @@ export function createPipeline(gl) {
       gl.uniform1f(sort.uniforms.uTemp, opts.temperature ?? 0);
       gl.uniform1f(sort.uniforms.uMotionGate, opts.motionGate ?? 0);
       gl.uniform1f(sort.uniforms.uUseFlow, opts.flow ? 1 : 0);
+      gl.uniform1f(sort.uniforms.uFacets, opts.facets ? 1 : 0);
       gl.uniform1i(sort.uniforms.uTex, 0);
       // Always bound (every bundle owns one) so samplers stay complete;
       // never sampled unless uUseFlow is on.

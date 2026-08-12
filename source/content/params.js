@@ -18,6 +18,9 @@ export const DEFAULTS = {
                      // motion trail clears this; 0 = sort regardless of motion
   flowAmount: 0,     // 0 = classic vertical columns; 1 = sorting follows the
                      // curl-noise flow field (ribbons meander and swirl)
+  flowMode: 'paths', // 'paths' = 16 dithered sectors, ribbons curve ·
+                     // 'facets' = 8 fixed sectors, straight runs pooling at
+                     // anchored seams (the first cut — John liked both)
   flowScale: 4,      // flow only: noise cells across the frame — bigger = tighter swirls
   flowSpeed: 0.02,   // flow only: how fast the field morphs; 0 = frozen streamlines
   decay: 0.906,      // feedback modes: accumulator retention per frame

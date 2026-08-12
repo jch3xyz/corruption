@@ -151,6 +151,7 @@ export class ImageJob {
       temperature: params.temperature ?? 0,
       motionGate: params.motionGate ?? 0,
       flow: flowAmount > 0,
+      facets: params.flowMode === 'facets',
     });
     glc.ensureSize(w, h);
     p.present(b);
@@ -206,6 +207,7 @@ export class ImageJob {
         temperature: params.temperature ?? 0,
         motionGate: params.motionGate ?? 0,
         flow: flowAmount > 0,
+        facets: params.flowMode === 'facets',
       });
       glc.ensureSize(b.w, b.h);
       p.present(b);

@@ -315,6 +315,7 @@ export class VideoJob {
         temperature: params.temperature ?? 0,
         motionGate: params.motionGate ?? 0,
         flow: flowAmount > 0,
+        facets: params.flowMode === 'facets',
       }
     );
 

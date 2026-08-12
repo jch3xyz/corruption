@@ -220,10 +220,14 @@ land on exact texels to stay permutations, and the quantization boundary
 is **dithered per pass** (a golden-ratio sweep of ±half a sector). That
 dither is the difference between facets and paths: a fixed quantization
 anchors refusal seams wherever the field crosses a sector edge and
-material pools there (the first 8-direction cut did exactly that); with
-the boundary wandering, a cell near an edge trades along one neighbor
-direction on some passes and the other on the rest, so the average
-motion follows the true angle and ribbons genuinely round their curves.
+material pools there; with the boundary wandering, a cell near an edge
+trades along one neighbor direction on some passes and the other on the
+rest, so the average motion follows the true angle and ribbons genuinely
+round their curves. Both grammars survive as **`flowMode`** — **paths**
+(16 dithered sectors, the default) and **facets** (8 fixed sectors, no
+dither: the first cut's look, straight faceted runs pooling at anchored
+seams) — kept as peers because John liked both once he saw them. One
+field texture, two quantizers in the sort pass.
 Pairs are blocked by the projection `floor(dot(p,v) / (s·|v|²))` — for
 v=(0,1) exactly the old y/s brick — and a pair only trades when both
 endpoints quantize to the same v this pass. Partner symmetry survives

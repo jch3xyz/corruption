@@ -16,6 +16,7 @@ const DEFS = [
   { key: 'temperature', label: 'temperature', min: 0, max: 0.5, step: 0.005 },
   { key: 'motionGate', label: 'motion gate', min: 0, max: 1, step: 0.01 },
   { key: 'flowAmount', label: 'flow amount', min: 0, max: 1, step: 0.01 },
+  { key: 'flowMode', label: 'flow mode', type: 'select', options: ['paths', 'facets'] },
   { key: 'flowScale', label: 'flow scale', min: 1, max: 12, step: 0.5 },
   { key: 'flowSpeed', label: 'flow speed', min: 0, max: 0.2, step: 0.005 },
   { key: 'decay', label: 'decay', min: 0.8, max: 0.999, step: 0.001 },
@@ -84,7 +85,7 @@ const AUDIO_FB_CLEAR_ONLY = ['audioFbClearS', 'audioFbClearMinS', 'audioFbClearM
 const TEXT_ONLY = ['textMin'];
 
 // The flow shape knobs only mean anything while flow amount is above zero.
-const FLOW_ONLY = ['flowScale', 'flowSpeed'];
+const FLOW_ONLY = ['flowMode', 'flowScale', 'flowSpeed'];
 
 const hasChrome = typeof chrome !== 'undefined' && !!chrome.storage?.local;
 const shim = { data: { ...DEFAULTS }, listeners: [] };

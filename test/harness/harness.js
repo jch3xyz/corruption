@@ -283,13 +283,13 @@ function tier0() {
 
   // The flow field: sorting along curl-noise streamlines. Time is a fixed
   // uniform here, so every render is exactly reproducible.
-  const flowSteps = (amount, time) => (p, b) => {
+  const flowSteps = (amount, time, facets = false) => (p, b) => {
     p.uploadFrame(b, noisy);
     p.runReset(b);
     if (amount > 0) {
       p.runFieldPass(b, { amount, scale: 4, speed: 0.05, time });
     }
-    p.runSortPasses(b, 200, 0, 64, { flow: amount > 0 });
+    p.runSortPasses(b, 200, 0, 64, { flow: amount > 0, facets });
   };
   const globalKey = (px) => {
     const all = [];
@@ -321,6 +321,24 @@ function tier0() {
   check(
     'pipeline: flowAmount 0 is bit-identical to the vertical sort',
     flowZero.every((v, i) => v === s1[i])
+  );
+
+  // Both flow modes are kept (John liked both): paths (16 dithered
+  // sectors, curves) and facets (8 fixed sectors, anchored seams). Facets
+  // must hold the same invariants and genuinely differ from paths.
+  const faceted = run(flowSteps(1, 12.5, true));
+  const facetedAgain = run(flowSteps(1, 12.5, true));
+  check(
+    'pipeline: facet mode is deterministic',
+    faceted.every((v, i) => v === facetedAgain[i])
+  );
+  check(
+    'pipeline: facet mode conserves every pixel globally',
+    globalKey(faceted) === globalKey(unsorted)
+  );
+  check(
+    'pipeline: the two flow modes produce different pictures',
+    faceted.some((v, i) => v !== flowed[i])
   );
 }
 
