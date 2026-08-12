@@ -1,21 +1,20 @@
 // The flow field (John's pick from the dynamism survey, 2026-08-12): a
 // per-bundle direction texture the sort pass follows instead of straight
 // columns. Curl of morphing value noise — divergence-free, so streamlines
-// swirl and meander rather than converging or draining — quantized to the
-// 8 integer offset directions, because compare-exchange must land on exact
-// texels to remain a permutation.
+// swirl and meander rather than converging or draining. This pass stores
+// the CONTINUOUS unit direction; the sort pass quantizes it to 16 integer
+// offsets per pass with a dithered sector boundary (compare-exchange must
+// land on exact texels to remain a permutation, but a FIXED quantization
+// anchors refusal seams and material pools there instead of rounding the
+// curve — the lesson of the first, 8-direction cut).
 //
 // Rendered at 1/4 the processing resolution once per frame (not per sort
 // pass): the field is low-frequency by construction, and this keeps the
-// sort's per-pass cost at two cheap texelFetches.
+// sort's per-pass cost at two texelFetches plus an atan.
 //
-// uAmount blends the underlying direction from vertical (0) toward the
-// curl (1) BEFORE quantization. Quantization gives the blend a character
-// worth knowing: small amounts snap back to exact vertical until the mixed
-// angle crosses a 22.5° sector boundary, so raising the knob makes columns
-// defect to the flow patch by patch rather than leaning uniformly. At 0
-// every cell is exactly (0,1) and the sort is bit-identical to the classic
-// vertical grammar.
+// uAmount blends the direction from vertical (0) toward the curl (1). At
+// 0 every cell stores exact vertical, which the sort quantizes to (0,1)
+// under any jitter — bit-identical to the classic grammar, harness-pinned.
 export const FRAG_FIELD = `#version 300 es
 precision highp float;
 uniform vec2 uProcSize;
@@ -56,8 +55,8 @@ void main() {
   vec2 dir = len > 1e-5 ? curl / len : vec2(0.0, 1.0);
   // The epsilon keeps normalize() defined when the mix cancels exactly.
   dir = normalize(mix(vec2(0.0, 1.0), dir, uAmount) + vec2(1e-4));
-  float a = atan(dir.y, dir.x);
-  float qa = round(a / 0.7853981633974483) * 0.7853981633974483;
-  vec2 v = vec2(round(cos(qa)), round(sin(qa)));
-  outColor = vec4((v + 1.0) * 0.5, 0.0, 1.0);
+  // The CONTINUOUS direction ships to the sort pass, which quantizes it
+  // per pass with a dithered sector boundary — that is what lets material
+  // round a curve instead of pooling at a fixed quantization seam.
+  outColor = vec4((dir + 1.0) * 0.5, 0.0, 1.0);
 }`;

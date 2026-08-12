@@ -13,16 +13,25 @@
 //
 // The pairing axis is a vector v, not an axiom (the flow field, John's
 // 2026-08-12 pick). uUseFlow off: v = (0,1), the classic columns, bit-for-
-// bit. On: v comes per-4×4-cell from uField, quantized to the 8 integer
-// offsets so exchanges land on exact texels. Pairs are blocked by the
-// projection floor(dot(p,v) / (s·|v|²)) — for v=(0,1) that is exactly the
-// old y/s brick — and a pair only trades when BOTH endpoints read the same
-// v, which is what keeps every pass a permutation: partner symmetry says
-// that if q agrees with p's direction, q's own pairing arithmetic points
-// straight back at p, and every refusal condition below is computed
-// identically by both members. Where the field changes direction the
-// disagreement seam simply refuses to trade — flow boundaries are
-// barriers, like dark material.
+// bit. On: the field ships a CONTINUOUS direction per 4×4 cell, and this
+// pass quantizes it to one of 16 integer offsets (axes, diagonals, and the
+// knight moves) so exchanges land on exact texels. Pairs are blocked by
+// the projection floor(dot(p,v) / (s·|v|²)) — for v=(0,1) that is exactly
+// the old y/s brick — and a pair only trades when BOTH endpoints quantize
+// to the same v, which is what keeps every pass a permutation: partner
+// symmetry says that if q agrees with p's direction, q's own pairing
+// arithmetic points straight back at p, and every refusal condition below
+// is computed identically by both members.
+//
+// The sector boundary is DITHERED per pass (uSectorJitter, a golden-ratio
+// sweep of ±half a sector). A fixed quantization would anchor refusal
+// seams wherever the field crosses a sector edge, and material would pool
+// there instead of rounding the curve — the first cut of this shader did
+// exactly that, quantizing to 8 fixed directions. With the boundary
+// wandering, a cell near a sector edge trades along one neighbor
+// direction on some passes and the other on the rest, so the AVERAGE
+// motion follows the true continuous angle: ribbons genuinely meander
+// and curl instead of running straight and faceting at seams.
 //
 // Two per-pair gates (2026-08-12), both exactly inert at 0:
 //
@@ -42,6 +51,7 @@ precision highp float;
 uniform sampler2D uTex;
 uniform sampler2D uField;
 uniform float uUseFlow;
+uniform float uSectorJitter;
 uniform float uParity;
 uniform float uStride;
 uniform float uThreshold;
@@ -51,6 +61,18 @@ uniform int uSeed;
 in vec2 vUV;
 out vec4 outColor;
 ${GLSL_LUMA}
+const float SECTOR = 0.39269908169872414; // pi/8: 16 sectors of 22.5 deg
+const ivec2 DIRS[16] = ivec2[16](
+  ivec2(1, 0), ivec2(2, 1), ivec2(1, 1), ivec2(1, 2),
+  ivec2(0, 1), ivec2(-1, 2), ivec2(-1, 1), ivec2(-2, 1),
+  ivec2(-1, 0), ivec2(-2, -1), ivec2(-1, -1), ivec2(-1, -2),
+  ivec2(0, -1), ivec2(1, -2), ivec2(1, -1), ivec2(2, -1)
+);
+ivec2 fieldDir(ivec2 cell) {
+  vec2 d = texelFetch(uField, cell, 0).rg * 2.0 - 1.0;
+  int k = int(round(atan(d.y, d.x) / SECTOR + uSectorJitter));
+  return DIRS[((k % 16) + 16) % 16];
+}
 void main() {
   ivec2 size = textureSize(uTex, 0);
   ivec2 p = ivec2(gl_FragCoord.xy);
@@ -58,11 +80,7 @@ void main() {
 
   int s = int(uStride);
   ivec2 v = ivec2(0, 1);
-  if (uUseFlow > 0.5) {
-    vec2 f = texelFetch(uField, p >> 2, 0).rg;
-    v = ivec2(round(f * 2.0 - 1.0));
-    if (v == ivec2(0, 0)) v = ivec2(0, 1);
-  }
+  if (uUseFlow > 0.5) v = fieldDir(p >> 2);
 
   // Brick pairing along v. floor division (not truncation) keeps blocks
   // consistent when the projection goes negative under leftward/upward v.
@@ -75,13 +93,12 @@ void main() {
     outColor = self;
     return;
   }
-  // The partner must read the SAME direction, or neither touches the other.
-  if (uUseFlow > 0.5) {
-    vec2 f2 = texelFetch(uField, q >> 2, 0).rg;
-    if (ivec2(round(f2 * 2.0 - 1.0)) != v) {
-      outColor = self;
-      return;
-    }
+  // The partner must quantize to the SAME direction this pass, or neither
+  // touches the other. The jitter is shared, so refusal stays symmetric —
+  // and next pass the boundary has moved, so the seam does not anchor.
+  if (uUseFlow > 0.5 && fieldDir(q >> 2) != v) {
+    outColor = self;
+    return;
   }
   vec4 other = texelFetch(uTex, q, 0);
 

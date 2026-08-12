@@ -44,6 +44,7 @@ export function createPipeline(gl) {
     'uTex',
     'uField',
     'uUseFlow',
+    'uSectorJitter',
     'uParity',
     'uStride',
     'uThreshold',
@@ -193,6 +194,10 @@ export function createPipeline(gl) {
         gl.bindTexture(gl.TEXTURE_2D, bundle.accum[bundle.read].tex);
         gl.uniform1f(sort.uniforms.uStride, stride);
         gl.uniform1f(sort.uniforms.uParity, parity);
+        // Golden-ratio sweep of the flow-quantization boundary, keyed on
+        // the pass index WITHIN this call (not the global seed) so
+        // identical calls stay bit-identical — tier 0 asserts that.
+        gl.uniform1f(sort.uniforms.uSectorJitter, ((i * 0.6180339887498949) % 1) - 0.5);
         sortSeed = (sortSeed + 1) & 0x7fffffff;
         gl.uniform1i(sort.uniforms.uSeed, sortSeed);
         drawQuad();

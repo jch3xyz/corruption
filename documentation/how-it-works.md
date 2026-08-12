@@ -213,20 +213,28 @@ Three properties define the look:
 
 The pairing axis itself became a parameter with the **flow field**
 (`flowAmount`, John's pick from the dynamism survey): a per-bundle ¼-res
-RG8 texture, rendered once per frame, holding curl-of-value-noise
-directions quantized to the 8 integer offsets (exchanges must land on
-exact texels to stay permutations). Pairs are blocked by the projection
-`floor(dot(p,v) / (s·|v|²))` — for v=(0,1) exactly the old y/s brick —
-and a pair only trades when both endpoints read the same v; where the
-field bends, the disagreement seam refuses to trade, so flow boundaries
-act as barriers just like dark material. Partner symmetry survives
-because if q agrees with p's direction, q's own blocking arithmetic
-points straight back at p, and every refusal condition is computed
-identically by both members. The curl is divergence-free (streamlines
-swirl rather than draining), and the field morphs in place over
-`flowSpeed`, so the ribbon geometry itself re-carves over time. At
-`flowAmount 0` the sort is bit-identical to the vertical grammar —
-harness-pinned, along with global pixel conservation at full flow.
+RG8 texture, rendered once per frame, holding the curl of value noise as
+a CONTINUOUS unit direction. The sort pass quantizes it to one of 16
+integer offsets — axes, diagonals, knight moves — because exchanges must
+land on exact texels to stay permutations, and the quantization boundary
+is **dithered per pass** (a golden-ratio sweep of ±half a sector). That
+dither is the difference between facets and paths: a fixed quantization
+anchors refusal seams wherever the field crosses a sector edge and
+material pools there (the first 8-direction cut did exactly that); with
+the boundary wandering, a cell near an edge trades along one neighbor
+direction on some passes and the other on the rest, so the average
+motion follows the true angle and ribbons genuinely round their curves.
+Pairs are blocked by the projection `floor(dot(p,v) / (s·|v|²))` — for
+v=(0,1) exactly the old y/s brick — and a pair only trades when both
+endpoints quantize to the same v this pass. Partner symmetry survives
+because the jitter is shared: if q agrees with p's direction, q's own
+blocking arithmetic points straight back at p, and every refusal
+condition is computed identically by both members. The curl is
+divergence-free (streamlines swirl rather than draining), and the field
+morphs in place over `flowSpeed`, so the ribbon geometry itself
+re-carves over time. At `flowAmount 0` the sort is bit-identical to the
+vertical grammar — harness-pinned, along with global pixel conservation
+at full flow.
 
 Two per-pair gates extend the grammar (John, 2026-08-12), both exactly inert
 at 0 and both preserving the symmetric-swap/permutation property:
