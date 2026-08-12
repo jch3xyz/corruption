@@ -11,6 +11,7 @@ import { VERT_FULLSCREEN } from './shaders/common.js';
 import { FRAG_PASSTHROUGH } from './shaders/passthrough.js';
 import { FRAG_COMPOSITE } from './shaders/composite.js';
 import { FRAG_SORT } from './shaders/sort.js';
+import { FRAG_FIELD } from './shaders/field.js';
 
 export function createPipeline(gl) {
   // Fullscreen triangle.
@@ -41,12 +42,21 @@ export function createPipeline(gl) {
   ]);
   const sort = buildProgram(gl, VERT_FULLSCREEN, FRAG_SORT, [
     'uTex',
+    'uField',
+    'uUseFlow',
     'uParity',
     'uStride',
     'uThreshold',
     'uTemp',
     'uMotionGate',
     'uSeed',
+  ]);
+  const field = buildProgram(gl, VERT_FULLSCREEN, FRAG_FIELD, [
+    'uProcSize',
+    'uScale',
+    'uSpeed',
+    'uTime',
+    'uAmount',
   ]);
 
   // Advances once per sort pass so the temperature hash draws fresh pairs
@@ -144,6 +154,20 @@ export function createPipeline(gl) {
     // down to 1, two passes per level for both parities), cycled until the
     // pass budget is spent. Long strides move pixels far fast; stride 1
     // settles the local order.
+    // Renders the direction field for this frame (call once per frame,
+    // before the sort passes, whenever flow is in play).
+    runFieldPass(bundle, { amount, scale, speed, time }) {
+      gl.bindFramebuffer(gl.FRAMEBUFFER, bundle.field.fbo);
+      gl.viewport(0, 0, bundle.fieldW, bundle.fieldH);
+      gl.useProgram(field.handle);
+      gl.uniform2f(field.uniforms.uProcSize, bundle.w, bundle.h);
+      gl.uniform1f(field.uniforms.uScale, scale);
+      gl.uniform1f(field.uniforms.uSpeed, speed);
+      gl.uniform1f(field.uniforms.uTime, time);
+      gl.uniform1f(field.uniforms.uAmount, amount);
+      drawQuad();
+    },
+
     runSortPasses(bundle, passes, threshold, streak, opts = {}) {
       if (passes <= 0) return;
       let top = 1;
@@ -155,7 +179,13 @@ export function createPipeline(gl) {
       gl.uniform1f(sort.uniforms.uThreshold, threshold);
       gl.uniform1f(sort.uniforms.uTemp, opts.temperature ?? 0);
       gl.uniform1f(sort.uniforms.uMotionGate, opts.motionGate ?? 0);
+      gl.uniform1f(sort.uniforms.uUseFlow, opts.flow ? 1 : 0);
       gl.uniform1i(sort.uniforms.uTex, 0);
+      // Always bound (every bundle owns one) so samplers stay complete;
+      // never sampled unless uUseFlow is on.
+      gl.uniform1i(sort.uniforms.uField, 1);
+      gl.activeTexture(gl.TEXTURE1);
+      gl.bindTexture(gl.TEXTURE_2D, bundle.field.tex);
       gl.activeTexture(gl.TEXTURE0);
       for (let i = 0; i < passes; i++) {
         const [stride, parity] = schedule[i % schedule.length];
@@ -221,8 +251,24 @@ export function createBundle(gl, srcW, srcH, w, h) {
     );
     return { tex, fbo };
   })();
+  // The flow field's direction texture: one texel per 4×4 accumulator
+  // cell, RG8 holding the quantized offset vector as (v+1)/2.
+  const fieldW = Math.max(1, Math.ceil(w / 4));
+  const fieldH = Math.max(1, Math.ceil(h / 4));
+  const fieldT = (() => {
+    const tex = createTex(gl, gl.RG8, fieldW, fieldH);
+    const fbo = target();
+    gl.framebufferTexture2D(
+      gl.FRAMEBUFFER,
+      gl.COLOR_ATTACHMENT0,
+      gl.TEXTURE_2D,
+      tex,
+      0
+    );
+    return { tex, fbo };
+  })();
   gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-  return { srcW, srcH, w, h, frameTex, accum, prev, read: 0 };
+  return { srcW, srcH, w, h, frameTex, accum, prev, field: fieldT, fieldW, fieldH, read: 0 };
 }
 
 export function destroyBundle(gl, bundle) {
@@ -233,6 +279,8 @@ export function destroyBundle(gl, bundle) {
   }
   gl.deleteTexture(bundle.prev.tex);
   gl.deleteFramebuffer(bundle.prev.fbo);
+  gl.deleteTexture(bundle.field.tex);
+  gl.deleteFramebuffer(bundle.field.fbo);
 }
 
 function createTex(gl, internalFormat, w, h) {

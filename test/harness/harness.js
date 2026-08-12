@@ -280,6 +280,48 @@ function tier0() {
     `pipeline: reset wipes history (luma ${atA(wiped).toFixed(0)} at the old bar)`,
     atA(wiped) < 10
   );
+
+  // The flow field: sorting along curl-noise streamlines. Time is a fixed
+  // uniform here, so every render is exactly reproducible.
+  const flowSteps = (amount, time) => (p, b) => {
+    p.uploadFrame(b, noisy);
+    p.runReset(b);
+    if (amount > 0) {
+      p.runFieldPass(b, { amount, scale: 4, speed: 0.05, time });
+    }
+    p.runSortPasses(b, 200, 0, 64, { flow: amount > 0 });
+  };
+  const globalKey = (px) => {
+    const all = [];
+    for (let i = 0; i < px.length; i += 4) {
+      all.push(`${px[i]},${px[i + 1]},${px[i + 2]}`);
+    }
+    return all.sort().join('|');
+  };
+  const flowed = run(flowSteps(1, 12.5));
+  const flowedAgain = run(flowSteps(1, 12.5));
+  check(
+    'pipeline: flow is deterministic at a fixed field time',
+    flowed.every((v, i) => v === flowedAgain[i])
+  );
+  check(
+    'pipeline: flow conserves every pixel globally (permutation along streamlines)',
+    globalKey(flowed) === globalKey(unsorted)
+  );
+  check(
+    'pipeline: flow diverges from the vertical grammar',
+    flowed.some((v, i) => v !== s1[i])
+  );
+  const flowedLater = run(flowSteps(1, 30.0));
+  check(
+    'pipeline: the field evolves over time (streamlines re-carve)',
+    flowed.some((v, i) => v !== flowedLater[i])
+  );
+  const flowZero = run(flowSteps(0, 99));
+  check(
+    'pipeline: flowAmount 0 is bit-identical to the vertical sort',
+    flowZero.every((v, i) => v === s1[i])
+  );
 }
 
 async function run() {

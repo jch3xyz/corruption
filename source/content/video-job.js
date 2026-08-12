@@ -297,12 +297,25 @@ export class VideoJob {
         threshold: params.threshold ?? 0.55,
       });
     }
+    const flowAmount = params.flowAmount ?? 0;
+    if (flowAmount > 0) {
+      p.runFieldPass(b, {
+        amount: flowAmount,
+        scale: params.flowScale ?? 4,
+        speed: params.flowSpeed ?? 0.02,
+        time: now / 1000,
+      });
+    }
     p.runSortPasses(
       b,
       this.governor.effectivePasses(params.passes ?? 12),
       params.threshold ?? 0.55,
       params.streak ?? 32,
-      { temperature: params.temperature ?? 0, motionGate: params.motionGate ?? 0 }
+      {
+        temperature: params.temperature ?? 0,
+        motionGate: params.motionGate ?? 0,
+        flow: flowAmount > 0,
+      }
     );
 
     glc.ensureSize(procW, procH);

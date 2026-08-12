@@ -15,6 +15,9 @@ const DEFS = [
   { key: 'streak', label: 'streak', min: 1, max: 256, step: 1 },
   { key: 'temperature', label: 'temperature', min: 0, max: 0.5, step: 0.005 },
   { key: 'motionGate', label: 'motion gate', min: 0, max: 1, step: 0.01 },
+  { key: 'flowAmount', label: 'flow amount', min: 0, max: 1, step: 0.01 },
+  { key: 'flowScale', label: 'flow scale', min: 1, max: 12, step: 0.5 },
+  { key: 'flowSpeed', label: 'flow speed', min: 0, max: 0.2, step: 0.005 },
   { key: 'decay', label: 'decay', min: 0.8, max: 0.999, step: 0.001 },
   { key: 'driftX', label: 'drift x', min: -0.01, max: 0.01, step: 0.0005 },
   { key: 'driftY', label: 'drift y', min: -0.01, max: 0.01, step: 0.0005 },
@@ -79,6 +82,9 @@ const AUDIO_FB_CLEAR_ONLY = ['audioFbClearS', 'audioFbClearMinS', 'audioFbClearM
 
 // The text mode's reach only means anything while the mode is on.
 const TEXT_ONLY = ['textMin'];
+
+// The flow shape knobs only mean anything while flow amount is above zero.
+const FLOW_ONLY = ['flowScale', 'flowSpeed'];
 
 const hasChrome = typeof chrome !== 'undefined' && !!chrome.storage?.local;
 const shim = { data: { ...DEFAULTS }, listeners: [] };
@@ -154,6 +160,7 @@ for (const def of DEFS) {
     queueWrite(def.key, v);
     valueEls[def.key].textContent = fmt(def, v);
     if (def.key === 'feedbackVideo' || def.key === 'feedbackImage') syncFeedbackUI();
+    if (def.key === 'flowAmount') syncFlowUI();
     if (def.key === 'textScramble') syncTextUI(input.checked);
     if (['audioEnabled', 'audioFeedback', 'audioFbClear'].includes(def.key)) syncAudioUI();
   });
@@ -181,6 +188,7 @@ function setUI(key, v) {
   else inputs[key].value = v;
   valueEls[key].textContent = fmt(def, v);
   if (key === 'feedbackVideo' || key === 'feedbackImage') syncFeedbackUI();
+  if (key === 'flowAmount') syncFlowUI();
   if (key === 'textScramble') syncTextUI(!!v);
   if (['audioEnabled', 'audioFeedback', 'audioFbClear'].includes(key)) syncAudioUI();
 }
@@ -196,6 +204,14 @@ function syncFeedbackUI() {
   for (const key of IMAGE_FEEDBACK_ONLY) {
     inputs[key].disabled = !image;
     inputs[key].closest('.row').classList.toggle('inert', !image);
+  }
+}
+
+function syncFlowUI() {
+  const on = Number(inputs.flowAmount.value) > 0;
+  for (const key of FLOW_ONLY) {
+    inputs[key].disabled = !on;
+    inputs[key].closest('.row').classList.toggle('inert', !on);
   }
 }
 

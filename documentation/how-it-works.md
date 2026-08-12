@@ -211,6 +211,23 @@ Three properties define the look:
 2. **Bright rises toward smaller *y***, i.e. the video's top. Fixed direction.
 3. **The stride ladder** is what produces ribbons rather than mush:
 
+The pairing axis itself became a parameter with the **flow field**
+(`flowAmount`, John's pick from the dynamism survey): a per-bundle ¼-res
+RG8 texture, rendered once per frame, holding curl-of-value-noise
+directions quantized to the 8 integer offsets (exchanges must land on
+exact texels to stay permutations). Pairs are blocked by the projection
+`floor(dot(p,v) / (s·|v|²))` — for v=(0,1) exactly the old y/s brick —
+and a pair only trades when both endpoints read the same v; where the
+field bends, the disagreement seam refuses to trade, so flow boundaries
+act as barriers just like dark material. Partner symmetry survives
+because if q agrees with p's direction, q's own blocking arithmetic
+points straight back at p, and every refusal condition is computed
+identically by both members. The curl is divergence-free (streamlines
+swirl rather than draining), and the field morphs in place over
+`flowSpeed`, so the ribbon geometry itself re-carves over time. At
+`flowAmount 0` the sort is bit-identical to the vertical grammar —
+harness-pinned, along with global pixel conservation at full flow.
+
 Two per-pair gates extend the grammar (John, 2026-08-12), both exactly inert
 at 0 and both preserving the symmetric-swap/permutation property:
 
