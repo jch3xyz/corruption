@@ -24,6 +24,7 @@ export const DEFAULTS = {
   audioMix: 1,       // wet/dry in the tap graph, not DSP
   audioFeedback: false, // echo/smear layer on the engine output (either mode)
   audioFbDecay: 0.96,   // smear retention; maps to feedback gain 0.5–0.95
+  audioFbClearS: 1,     // keyframe clears fade the wash over ~this long; 0 = hard cut
   audioMaxTaps: 4,   // concurrent taps, most recently playing first
   audioSustain: 6,   // body: T60 at the lowest fundamental, seconds
   audioDrive: 0.5,   // body: strike force into the resonators

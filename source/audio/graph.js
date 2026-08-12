@@ -70,6 +70,7 @@ export function workletParams(p) {
     // first audio phase had it.
     fb: !!p.audioFeedback,
     fbDecay: p.audioFbDecay ?? 0.96,
+    fbClearS: p.audioFbClearS ?? 1,
     driftY: p.driftY ?? 0.0015,
     resetMinS: p.resetMinS ?? 4,
     resetMaxS: p.resetMaxS ?? 10,

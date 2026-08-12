@@ -40,6 +40,15 @@ The current two engines came out of a multiple-perspectives run (5 isolated
 probes, 5 blind critics); the corrections that run produced are baked into
 the implementations — see "Audio engines (bake-off)" in parameters.md.
 
+**John's live-chosen settings (2026-08-11, mid-bake-off — in storage, not yet
+DEFAULTS):** feedback **on**, threshold 0, passes 64, streak 256, decay 0.906,
+driftX −0.0025, **driftY 0** (= audio smear wobble off — the coupling), reset
+1–60 s, maxRes 1920, maxVideos 8, imageFps 6, imageAnimCap 12; audio on,
+mode **body**, mix 1, **audio fb on**, fbDecay **0.999**, maxTaps 8, sustain
+**12**, drive **1.0**, exciter **continuous**. Note feedback-on contradicts
+the documented "straight sorting is the resting state" — baking these into
+DEFAULTS is John's call, not yet made.
+
 **Remaining:**
 
 - **Audio verdict.** Browse real sites, flip `audioMode` live (panel or MIDI

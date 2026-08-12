@@ -26,6 +26,7 @@ const DEFS = [
   { key: 'audioMix', label: 'audio mix', min: 0, max: 1, step: 0.01 },
   { key: 'audioFeedback', label: 'audio fb', type: 'toggle' },
   { key: 'audioFbDecay', label: 'fb decay', min: 0.8, max: 0.999, step: 0.001 },
+  { key: 'audioFbClearS', label: 'fb clear s', min: 0, max: 4, step: 0.1 },
   { key: 'audioMaxTaps', label: 'max taps', min: 1, max: 8, step: 1 },
   { key: 'audioSustain', label: 'sustain s', min: 2, max: 12, step: 0.5 },
   { key: 'audioDrive', label: 'drive', min: 0, max: 1, step: 0.01 },
@@ -54,6 +55,7 @@ const AUDIO_ONLY = [
   'audioMix',
   'audioFeedback',
   'audioFbDecay',
+  'audioFbClearS',
   'audioMaxTaps',
   'audioSustain',
   'audioDrive',
@@ -64,7 +66,7 @@ const AUDIO_ONLY = [
 ];
 const BODY_ONLY = ['audioSustain', 'audioDrive', 'audioExciter'];
 const TIMEBASE_ONLY = ['audioDepth', 'audioFieldRate', 'audioTail'];
-const AUDIO_FB_ONLY = ['audioFbDecay'];
+const AUDIO_FB_ONLY = ['audioFbDecay', 'audioFbClearS'];
 
 const hasChrome = typeof chrome !== 'undefined' && !!chrome.storage?.local;
 const shim = { data: { ...DEFAULTS }, listeners: [] };

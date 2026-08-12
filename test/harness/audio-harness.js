@@ -434,6 +434,7 @@ async function tier2() {
       ...BODY,
       fb: true,
       fbDecay: 0.96,
+      fbClearS: 0, // hard-cut clears; the smooth path has its own check
       driftY: 0,
       resetMinS: 1000,
       resetMaxS: 1000,
@@ -467,8 +468,24 @@ async function tier2() {
     const r1 = rmsOf(outR, (0.05 + 0.35) * SR, 0.03 * SR);
     const r2 = rmsOf(outR, (0.05 + 0.7) * SR, 0.03 * SR);
     check(
-      `feedback: keyframe reset clears the line (${r1.toFixed(4)} → ${r2.toFixed(4)})`,
+      `feedback: hard keyframe reset clears the line (${r1.toFixed(4)} → ${r2.toFixed(4)})`,
       r1 > 0.002 && r2 < r1 * 0.15
+    );
+
+    // Smooth clear: with fbClearS 0.8 the echo at reset+0.15 s must be
+    // partially faded — audibly reduced but NOT gone (that partial value is
+    // the smoothness) — and the envelope dead well before the next echo.
+    const { out: outS } = await renderThrough(
+      { ...FB, resetMinS: 0.6, resetMaxS: 0.6, fbClearS: 0.8 },
+      burst,
+      1.6
+    );
+    const s1 = rmsOf(outS, (0.05 + 0.35) * SR, 0.03 * SR); // pre-reset: full
+    const s2 = rmsOf(outS, (0.05 + 0.7) * SR, 0.03 * SR); // mid-fade
+    const s3 = rmsOf(outS, 1.1 * SR, 0.03 * SR); // envelope floor
+    check(
+      `feedback: smooth clear fades instead of cutting (${s1.toFixed(4)} → ${s2.toFixed(4)} → ${s3.toFixed(4)})`,
+      s1 > 0.002 && s2 > 0.03 * s1 && s2 < 0.75 * s1 && s3 < 0.1 * s1
     );
   } catch (e) {
     check(`feedback render (${e.message})`, false);

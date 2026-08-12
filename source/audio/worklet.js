@@ -48,6 +48,7 @@ const DEFAULT_PARAMS = {
   tail: 1.5,
   fb: false,
   fbDecay: 0.96,
+  fbClearS: 1, // keyframe clears fade the wash over ~this long; 0 = hard cut
   driftY: 0.0015, // |driftY|·100 = delay wobble depth, as the first audio phase had it
   resetMinS: 4,
   resetMaxS: 10,
@@ -318,11 +319,17 @@ class FeedbackLayer {
     this.w = 0;
     this.phase = 0;
     this.nextResetAt = -1; // scheduled on first process (needs params)
+    this.clearEnv = 1; // keyframe fade: echo return × this while clearing
+    this.clearing = false;
+    this.pendingFill = false;
   }
 
   reset() {
     for (const line of this.lines) line.fill(0);
     this.nextResetAt = -1;
+    this.clearEnv = 1;
+    this.clearing = false;
+    this.pendingFill = false;
   }
 
   scheduleReset(p) {
@@ -339,15 +346,34 @@ class FeedbackLayer {
     const modDepth = Math.min(0.4, Math.abs(p.driftY ?? 0) * 100);
     const phaseInc = (2 * Math.PI * 0.1) / this.sr;
 
+    // The keyframe. Hard cut works for video (one frame in an already
+    // glitching image) but audio hears the wash vanish in a sample, so the
+    // clear fades the echo return over ~fbClearS seconds first, then wipes
+    // the line while it is inaudible. fbClearS 0 = the original hard cut.
+    const clearS = Math.max(0, p.fbClearS ?? 1);
     if (this.nextResetAt < 0) this.nextResetAt = this.scheduleReset(p);
-    if (currentFrame >= this.nextResetAt) {
-      for (const line of this.lines) line.fill(0); // the keyframe: hard clear
+    if (!this.clearing && currentFrame >= this.nextResetAt) {
+      if (clearS < 0.01) {
+        for (const line of this.lines) line.fill(0);
+      } else {
+        this.clearing = true; // rhythm counts from the start of the fade
+      }
       this.nextResetAt = this.scheduleReset(p);
     }
+    // τ = clearS/7 → the envelope reaches its floor in ≈ clearS seconds.
+    const clearCoef = clearS >= 0.01 ? 1 - Math.exp(-7 / (clearS * this.sr)) : 1;
 
     for (let i = 0; i < n; i++) {
       this.phase += phaseInc;
       const delay = base * (1 + modDepth * Math.sin(this.phase));
+      if (this.clearing) {
+        this.clearEnv -= this.clearEnv * clearCoef;
+        if (this.clearEnv < 1e-3) {
+          this.clearing = false;
+          this.pendingFill = true; // wipe at block end, off the hot path
+        }
+      }
+      const env = this.clearing || this.pendingFill ? this.clearEnv : 1;
       for (let c = 0; c < channels; c++) {
         const line = this.lines[c];
         const readPos = this.w - delay;
@@ -355,12 +381,18 @@ class FeedbackLayer {
         const frac = readPos - r0;
         const a = line[((r0 % this.len) + this.len) % this.len];
         const b = line[(((r0 + 1) % this.len) + this.len) % this.len];
-        const echo = a + (b - a) * frac;
+        const echo = (a + (b - a) * frac) * env;
         const y = bufs[c][i] + gain * echo;
         line[this.w % this.len] = Math.tanh(y);
         bufs[c][i] = y;
       }
       this.w++;
+    }
+
+    if (this.pendingFill) {
+      for (const line of this.lines) line.fill(0);
+      this.pendingFill = false;
+      this.clearEnv = 1;
     }
   }
 }
