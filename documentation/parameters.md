@@ -13,16 +13,16 @@ Kill switch: Ctrl+Shift+D toggles `enabled` without the panel.
 | `enabled` | on | on/off | Master switch. Off restores every video/image untouched. |
 | `feedbackVideo` | **on** | on/off | Temporal feedback on videos — **the resting state** (John, 2026-08-12; previously off): smear accumulates, drifts, decays, clears at slow 30–60 s keyframes. Off = straight per-frame pixel sorting. |
 | `feedbackImage` | **off** | on/off | Temporal feedback on images: big stills animate at `imageFps` and accumulate the same smear. Off = one-shot sorted stills (the resting state). The two toggles share every shaping knob below. |
-| `threshold` | **0** | 0–1 | Luma above this is eligible for sorting (and feedback). 0 = whole frame corrupts; 1 = untouched. The single most expressive knob. |
+| `threshold` | **0.05** | 0–1 | Luma above this is eligible for sorting (and feedback). Near-zero corrupts almost everything while true black holds as a barrier; 1 = untouched. The single most expressive knob. |
 | `passes` | **64** | 0–64 | Sort passes per frame. A full 256→1 stride ladder is 18 passes, so 64 runs ~3.5 settling cycles. |
 | `streak` | **256** | 1–256 | Longest compare-exchange stride (rounded down to a power of two). Directly sets how far pixels can travel per frame — the ribbon-length knob. 1 = classic single-step odd-even. |
 | `temperature` | **0** | 0–0.5 | Fraction of pair-verdicts inverted per pass. The sort simmers at its equilibrium instead of settling into it: ribbons boil at their edges and the picture never comes to rest. Applies in straight sort and feedback alike; barriers still hold (the boil stays inside bright spans). 0.5 = a pure random walk, no net sorting. |
 | `motionGate` | **0** | 0–1 | *Feedback modes only.* A pair may only trade when BOTH members' motion trail clears this, so damage stays strictly inside what the transmission itself is changing: action smears, stillness holds and heals. The trail decays ~1 s; each keyframe floods it hot, so a reset briefly sorts everywhere before confinement returns. 0 = sort regardless of motion. |
-| `flowAmount` | **0** | 0–1 | 0 = the classic vertical grammar, bit-identical. Up = sorting follows a slowly morphing **curl-noise flow field**: ribbons meander and curl along streamlines instead of climbing columns. Directions quantize to 16 sectors with a per-pass dithered boundary, so material rounds curves instead of pooling at fixed seams. Still a permutation — nothing added, nothing lost, harness-pinned. **Every element draws its own seed, rerolled when its content changes** (a new video in YouTube's reused player is new content): pattern, phase, morph rate, swirl size, and handedness all differ per medium — no two screens show the same deflection, and no knob controls this (it is identity, not a parameter). |
-| `flowMode` | **paths** | paths / facets | *Flow only.* Two quantizers, both kept (John liked both). **paths**: 16 sectors, boundary dithered per pass — seams wander, material rounds curves, ribbons meander. **facets**: 8 fixed sectors, no dither — the first cut's grammar: straight runs inside each patch, pooling at anchored seams where the field bends. |
-| `flowScale` | 4 | 1–12 | *Flow only.* Noise cells across the frame: higher = tighter, busier swirls; lower = broad sweeping currents. |
-| `flowSpeed` | 0.02 | 0–0.2 | *Flow only.* How fast the field morphs (streamlines re-carve in place rather than marching). 0 = frozen geometry — flow without evolution. |
-| `decay` | **0.906** | 0.8–0.999 | *Feedback modes only (shared).* Accumulator retention per frame. Higher = smear lingers longer. |
+| `flowAmount` | **0.5** | 0–1 | **The resting state flows** (John's sweet spot, 2026-08-12). 0 = the classic vertical grammar, bit-identical. Up = sorting follows a slowly morphing **curl-noise flow field**: ribbons meander and curl along streamlines instead of climbing columns. Directions quantize to 16 sectors with a per-pass dithered boundary, so material rounds curves instead of pooling at fixed seams. Still a permutation — nothing added, nothing lost, harness-pinned. **Every element draws its own seed, rerolled when its content changes** (a new video in YouTube's reused player is new content): pattern, phase, morph rate, swirl size, and handedness all differ per medium — no two screens show the same deflection, and no knob controls this (it is identity, not a parameter). |
+| `flowMode` | **facets** | paths / facets | *Flow only.* Two quantizers, both kept (John liked both; facets is his resting pick). **facets**: 8 fixed sectors, no dither — straight runs inside each patch, pooling at anchored seams where the field bends. **paths**: 16 sectors, boundary dithered per pass — seams wander, material rounds curves, ribbons meander. |
+| `flowScale` | **2.5** | 1–12 | *Flow only.* Noise cells across the frame: higher = tighter, busier swirls; lower = broad sweeping currents. |
+| `flowSpeed` | **0.045** | 0–0.2 | *Flow only.* How fast the field morphs (streamlines re-carve in place rather than marching). 0 = frozen geometry — flow without evolution. |
+| `decay` | **0.81** | 0.8–0.999 | *Feedback modes only (shared).* Accumulator retention per frame. Higher = smear lingers longer. |
 | `driftX` | **−0.0025** | ±0.01 | *Feedback modes only (shared).* Horizontal smear, UV units per frame (negative = leftward). |
 | `driftY` | **0.0020** | ±0.01 | *Feedback modes only (shared).* Vertical smear; **positive = upward** — the resting state climbs gently. Purely visual — the audio wobble it used to drive is now `audioFbWobble`. |
 | `resetMinS` / `resetMaxS` | **30 / 60** | 1–30 / 2–60 | *Feedback modes only (shared).* Keyframe rhythm: the accumulator resets to a clean frame at a random interval in this window. Slow by default — damage accumulates for half a minute or more before clearing. |
@@ -30,8 +30,8 @@ Kill switch: Ctrl+Shift+D toggles `enabled` without the panel.
 | `maxVideos` | **12** | 1–16 | Concurrent video jobs, biggest visible first. Paused videos count too — they get a one-shot sorted still (rVFC never fires for them). Raised from 8 for grid feeds (Instagram explore) where a dozen previews are on screen at once. |
 | `imageFps` | **6** | 1–30 | *Image feedback only.* Tick rate for animated images. Straight-sort stills don't animate at all. |
 | `imageAnimCap` | 12 | 0–24 | *Image feedback only.* Max concurrently animated images (≥200 px side, biggest visible first); the rest stay stills. |
-| `textScramble` | **off** | on/off | The text mode. On = letters rearrange inside each word, page-wide; anything that isn't a letter (space, punctuation, digit, emoji) is a barrier no glyph crosses, so every word keeps its length and the page keeps its shape. Off restores every run. **Decide in the room** — see the text mode below. |
-| `textMin` | **12** | 1–40 | *Text only.* Shortest run of text that scrambles. At 12 prose dissolves while short interface labels (Home, Subscribe) survive — the navigability dial. Wind it down and the furniture goes too. |
+| `textScramble` | **on** | on/off | The text mode — **on in the resting state** (the call the proposal deferred to the room; John made it 2026-08-12). Letters rearrange inside each word, page-wide; anything that isn't a letter (space, punctuation, digit, emoji) is a barrier no glyph crosses, so every word keeps its length and the page keeps its shape. Off restores every run. |
+| `textMin` | **8** | 1–40 | *Text only.* Shortest run of text that scrambles. At 8 (John's setting) prose and most labels dissolve while the shortest furniture (Home, OK) survives — the navigability dial. |
 | `audioEnabled` | on | on/off | Audio master. Off ramps every tap to dry — the tap itself is permanent by design. |
 | `audioMix` | 1 | 0–1 | Wet/dry in the tap graph (30 ms ramps). 0 = the internet as transmitted. |
 | `audioFeedback` | **on** | on/off | The smear: the body's output recirculates through a 0.35 s delay line (0.1 Hz wobble, tanh-clipped write-back), continuously — see `audioFbClear`. |
@@ -74,7 +74,7 @@ finiteness-checked before recursive state; the output gate snaps to exact
 zeros once input is absent and the engines reach the floor; `process()`
 never throws (a dead processor is permanently silent media).
 
-## The text mode (`textScramble`, off by default)
+## The text mode (`textScramble`, ON in the resting state)
 
 The sorting grammar applied to language, page-wide. Letters rearrange
 **inside their own word**; anything that isn't a letter — space,

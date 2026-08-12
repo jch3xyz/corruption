@@ -367,7 +367,20 @@ async function run() {
   // straight sorting leaves no trail. feedbackImage stays off — the image
   // tests are route/still tests, and the ticker check flips it itself.
   // maxVideos pinned to 4 so the cap/promotion tests stay meaningful.
-  const params = { ...DEFAULTS, enabled: true, feedbackVideo: true, maxVideos: 4 };
+  // textScramble pinned OFF: it defaults on now, and letting it run would
+  // scramble this page's own PASS/FAIL output mid-suite.
+  // decay/flowAmount pinned to the classic grammar: the trail assertions
+  // are calibrated against decay 0.906 and vertical sorting. DEFAULTS
+  // follow John's taste and will keep moving; tier 0 owns the new knobs.
+  const params = {
+    ...DEFAULTS,
+    enabled: true,
+    feedbackVideo: true,
+    maxVideos: 4,
+    textScramble: false,
+    decay: 0.906,
+    flowAmount: 0,
+  };
   const registry = new Registry(params);
   registry.start();
   window.__deflection = { params, registry };

@@ -1,29 +1,32 @@
 // Single source of truth for effect parameters. chrome.storage.local holds
 // the live values; the panel writes, every content script subscribes.
 
-// Defaults = John's live-iterated settings (2026-08-11, revised 2026-08-12).
-// The piece rests on temporal feedback on VIDEOS (slow 30–60 s keyframes,
-// upward drift) over straight-sorted image stills, plus the audio smear.
-// The two visual feedback toggles share every shaping knob below.
+// Defaults = John's live-iterated settings (2026-08-11; sweet spot settled
+// 2026-08-12). The piece rests on temporal feedback on VIDEOS — a fast
+// decay (0.81) smearing through a half-blended FACET flow field (small
+// slow swirls, every element seeded its own) — over straight-sorted image
+// stills, with page-wide text scrambling ON at textMin 8, plus the audio
+// smear. The two visual feedback toggles share every shaping knob below.
 export const DEFAULTS = {
   enabled: true,
   feedbackVideo: true,  // temporal feedback on videos — the resting state
   feedbackImage: false, // temporal feedback animates images; off = one-shot stills
-  threshold: 0,      // luma above this is eligible; 0 = the whole frame sorts
+  threshold: 0.05,   // luma above this is eligible; near-zero = the whole
+                     // frame sorts but true black holds as a barrier
   passes: 64,        // sort passes per frame (~3.5 cycles of a 256→1 ladder)
   streak: 256,       // max compare-exchange stride: longer = longer ribbons
   temperature: 0,    // fraction of pair-verdicts inverted per pass: the sort
                      // simmers at its equilibrium instead of settling into it
   motionGate: 0,     // feedback modes: a pair trades only when both members'
                      // motion trail clears this; 0 = sort regardless of motion
-  flowAmount: 0,     // 0 = classic vertical columns; 1 = sorting follows the
-                     // curl-noise flow field (ribbons meander and swirl)
-  flowMode: 'paths', // 'paths' = 16 dithered sectors, ribbons curve ·
-                     // 'facets' = 8 fixed sectors, straight runs pooling at
-                     // anchored seams (the first cut — John liked both)
-  flowScale: 4,      // flow only: noise cells across the frame — bigger = tighter swirls
-  flowSpeed: 0.02,   // flow only: how fast the field morphs; 0 = frozen streamlines
-  decay: 0.906,      // feedback modes: accumulator retention per frame
+  flowAmount: 0.5,   // the resting state flows: half-blend toward the field
+                     // (0 = classic vertical columns, 1 = full field)
+  flowMode: 'facets', // John's resting pick: 8 fixed sectors, straight runs
+                     // pooling at anchored seams · 'paths' = 16 dithered
+                     // sectors, ribbons curve
+  flowScale: 2.5,    // flow only: noise cells across the frame — bigger = tighter swirls
+  flowSpeed: 0.045,  // flow only: how fast the field morphs; 0 = frozen streamlines
+  decay: 0.81,       // feedback modes: accumulator retention per frame
   driftX: -0.0025,   // feedback modes: smear direction, UV units per frame
   driftY: 0.0020,    // feedback modes: positive = upward smear
   resetMinS: 30,     // feedback modes: accumulator "keyframe" reset window
@@ -32,8 +35,9 @@ export const DEFAULTS = {
   maxVideos: 12,     // concurrent video jobs, biggest visible first
   imageFps: 6,       // animated image tick rate
   imageAnimCap: 12,  // max concurrently animated images
-  textScramble: false, // letters rearranged inside each word, page-wide
-  textMin: 12,       // shortest run of text that scrambles; short labels survive
+  textScramble: true, // letters rearranged inside each word, page-wide —
+                      // ON in the resting state (John's call, 2026-08-12)
+  textMin: 8,        // shortest run of text that scrambles; short labels survive
 
   // --- audio (the body engine — bake-off verdict; timebase at tag audio-bakeoff) ---
   audioEnabled: true,

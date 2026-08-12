@@ -12,17 +12,18 @@ recirculating delay. Nothing added, nothing lost, unreadable anyway.
 
 Conceptually the project has grown from "codec-corruption aesthetic" into a
 device that turns the live internet into a generative artwork with code
-aesthetics. **The piece's resting state** (John, 2026-08-11; revised
-2026-08-12): **temporal feedback on videos** — smear accumulating under a
-gentle up-left drift, clearing at slow 30–60 s keyframes — over
-**straight-sorted image stills**, plus **the body engine continuously
-driven + a never-clearing audio smear** whose loop gain is its own decay.
-The two visual feedback toggles (`feedbackVideo` on, `feedbackImage` off)
-share every shaping knob; the audio smear is independent of both
-(`audioFeedback`), and since the detangle no visual slider reaches it. The text mode (page-wide word
-scrambling, John's choice over the proposal's swap design) is **off** in
-that resting state: built and verified, awaiting the call the proposal
-always deferred to the room.
+aesthetics. **The piece's resting state** (John, 2026-08-11; sweet spot
+settled 2026-08-12): **temporal feedback on videos** — a fast decay
+(0.81) smearing through a **half-blended facet flow field** (small slow
+swirls, flowScale 2.5 / flowSpeed 0.045, every element seeded its own),
+threshold 0.05 so true black still bars the sort, slow 30–60 s
+keyframes — over **straight-sorted image stills**, with **page-wide text
+scrambling ON at textMin 8** (the call the proposal deferred to the
+room: made), plus **the body engine continuously driven + a
+never-clearing audio smear** whose loop gain is its own decay. The two
+visual feedback toggles (`feedbackVideo` on, `feedbackImage` off) share
+every shaping knob; the audio smear is independent of both
+(`audioFeedback`), and since the detangle no visual slider reaches it.
 
 Runs on a kiosk (Mac mini M4) for weeks unattended. Vanilla JS, Manifest V3,
 no build step — "Load unpacked" points at `source/`.
@@ -47,6 +48,7 @@ no build step — "Load unpacked" points at `source/`.
 | split feedback | Visual feedback became **two toggles sharing one knob set**: `feedbackVideo` (**on** — the resting state flipped, John 2026-08-12) and `feedbackImage` (**off** — stills stay one-shot; the ticker rides this toggle alone). New shared defaults: driftY +0.0020 (upward), reset window 30–60 s. Visual suite +2 ticker checks (pane-immune). |
 | dynamism 1/2 | **`temperature`** (stochastic pair-verdict inversion — the sort simmers instead of settling; hash keyed on the pair so every pass stays a permutation) and **`motionGate`** (pairs trade only where the motion trail — |frame − prev frame|, carried in accumulator alpha against a new per-bundle `prev` snapshot — clears the gate: damage follows the action, stillness heals). Both inert at 0, both barrier-preserving. New tier 0 in the visual harness: direct-pipeline micro-tests (static sources, pane-immune) pinning determinism, permutation, disorder persistence, and strict gate containment. |
 | dynamism 2/2 — flow | **The pairing axis became a parameter.** `flowAmount` blends the sort's direction from vertical toward a curl-noise flow field (¼-res RG8 per bundle, rendered once per frame, quantized to the 8 integer offsets); `flowScale`/`flowSpeed` shape it. Pairs trade only when both endpoints agree on direction — flow seams are barriers — which is what keeps every pass a permutation along arbitrary streamlines. Tier 0 pins: bit-identity at 0, global conservation at 1, determinism at fixed field time, field evolution. |
+| sweet spot | **John's settled defaults from live iteration** (2026-08-12): threshold 0.05, decay 0.81, flow ON at 0.5 in facets mode (scale 2.5, speed 0.045), temperature/motionGate parked at 0, **text scramble ON at textMin 8** — the room-call the proposal deferred, now made. Visual harness pins textScramble off for its own boot (it would scramble the suite's output). |
 | flow seeds | **Each element is its own instrument** (John: "each element should be unique... not just offset, they're all also flowing exactly the same way"): per-job seeds derive five characters in the field shader — noise home, phase, morph rate, swirl size, handedness (half the magnets poled opposite). Seeds key to CONTENT, not element (rerolled on src change), because YouTube reuses one <video> across navigations. Pipeline stays pure (seed is an input); tier 0 18/18 incl. seed differentiation + conservation under any seed. |
 | flow modes | The 8-direction facet grammar came back as a peer, not a casualty: `flowMode` selects **paths** (16 dithered sectors, curving — default) or **facets** (8 fixed sectors, anchored seams — the first cut, which John liked on sight). One field texture (continuous directions), two quantizers in the sort pass. Tier 0 16/16: facet determinism + global conservation + the two modes provably differ. |
 | flow paths | The flow field's promise made good (John: "I would still like to see flow-field paths"): directions now quantize to **16 sectors with a per-pass dithered boundary** instead of 8 fixed ones. Fixed quantization anchored refusal seams and material pooled at them instead of rounding curves; with the boundary wandering (golden-ratio sweep, keyed on pass index so runs stay reproducible), average motion follows the true continuous angle — ribbons meander and curl. Field texture now stores the continuous direction; tier 0 still 13/13 incl. global conservation and bit-identity at 0. |
@@ -59,23 +61,22 @@ critics); body won on John's ears, and the losing timebase engine is tag
 `audio-bakeoff`. The run's corrections are baked into the implementation —
 see "The audio engine" in parameters.md.
 
-**John's live-chosen settings are now the DEFAULTS** (2026-08-11, revised
-2026-08-12): **video feedback on / image feedback off** (decay 0.906,
-driftX −0.0025, driftY +0.0020 — a gentle climb, reset 30–60 s — slow
-keyframes, imageFps 6 for when images join); audio fb on at fbDecay 0.999 with
+**John's live-chosen settings are now the DEFAULTS** (2026-08-11; sweet
+spot 2026-08-12): **video feedback on / image feedback off** (decay 0.81,
+threshold 0.05, driftX −0.0025, driftY +0.0020, reset 30–60 s, flow at
+0.5 in **facets** mode, scale 2.5, speed 0.045, temperature and motion
+gate at 0, text scramble ON at textMin 8, imageFps 6 for when images
+join); audio fb on at fbDecay 0.999 with
 **clears off** (`audioFbClear` — his call: the smear's gain < 1 is its own
 decay, continuous sounds nicer; the video keyframe still clears), maxTaps 8,
 body at sustain 12 / drive 1.0 / continuous exciter.
 
 **Remaining:**
 
-- **Phase 5 — text mode**: built and harness-verified, `textScramble` **off**
-  by default (page-wide scrambling; `textMin` is the navigability dial; the
-  earlier swap design is tag `text-swap`). What remains is not code but
-  John's call, and the proposal always said so: *"decide during install, in
-  the room, with the actual wall behind it."* Flip it on in the panel and
-  browse. The knob is a toggle because that decision was deferred, not
-  because the mode is unfinished.
+- **Phase 5 — text mode**: built, harness-verified, and **decided**:
+  `textScramble` defaults ON at `textMin` 8 (John, 2026-08-12 — the call
+  the proposal deferred to the room). The earlier swap design remains tag
+  `text-swap`; the toggle remains for performance and for the kill switch.
 - **Floated, undecided (John, 2026-08-12): a separate CSS-scramble toggle**
   — deforming the page's own stylesheets as a distinct layer. Not built;
   needs a feasibility read first (cross-origin stylesheets are the
