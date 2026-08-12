@@ -11,7 +11,7 @@ Kill switch: Ctrl+Shift+D toggles `enabled` without the panel.
 | Param | Default | Range | What it does |
 |---|---|---|---|
 | `enabled` | on | on/off | Master switch. Off restores every video/image untouched. |
-| `feedback` | **on** | on/off | **On is the piece** (John, 2026-08-11): temporal feedback — smear accumulates, drifts, decays, clears at keyframe resets. Off = straight per-frame pixel sorting. |
+| `feedback` | **off** | on/off | Off = straight per-frame pixel sorting — the resting state (John's final call; the audio smear runs independently of this). On = temporal feedback — smear accumulates, drifts, decays, clears at keyframe resets; the values below are live-tuned for it. |
 | `threshold` | **0** | 0–1 | Luma above this is eligible for sorting (and feedback). 0 = whole frame corrupts; 1 = untouched. The single most expressive knob. |
 | `passes` | **64** | 0–64 | Sort passes per frame. A full 256→1 stride ladder is 18 passes, so 64 runs ~3.5 settling cycles. |
 | `streak` | **256** | 1–256 | Longest compare-exchange stride (rounded down to a power of two). Directly sets how far pixels can travel per frame — the ribbon-length knob. 1 = classic single-step odd-even. |

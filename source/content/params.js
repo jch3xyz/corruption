@@ -1,12 +1,12 @@
 // Single source of truth for effect parameters. chrome.storage.local holds
 // the live values; the panel writes, every content script subscribes.
 
-// Defaults = John's live-iterated settings, 2026-08-11: temporal feedback ON
-// is the piece now (it had been the toggle; straight sorting is now the
-// toggle-off state).
+// Defaults = John's live-iterated settings, 2026-08-11. The piece rests on
+// straight visual sorting + the audio smear; visual temporal feedback is a
+// toggle whose values below are live-tuned for when it's on.
 export const DEFAULTS = {
   enabled: true,
-  feedback: true,    // ON is the piece; off = straight per-frame pixel sorting
+  feedback: false,   // off = straight per-frame pixel sorting (the resting state)
   threshold: 0,      // luma above this is eligible; 0 = the whole frame sorts
   passes: 64,        // sort passes per frame (~3.5 cycles of a 256→1 ladder)
   streak: 256,       // max compare-exchange stride: longer = longer ribbons
