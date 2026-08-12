@@ -11,28 +11,29 @@ Kill switch: Ctrl+Shift+D toggles `enabled` without the panel.
 | Param | Default | Range | What it does |
 |---|---|---|---|
 | `enabled` | on | on/off | Master switch. Off restores every video/image untouched. |
-| `feedback` | **off** | on/off | Off = straight per-frame pixel sorting (each frame sorted independently). On = temporal feedback: smear accumulates, drifts, decays, clears at keyframe resets. |
+| `feedback` | **on** | on/off | **On is the piece** (John, 2026-08-11): temporal feedback — smear accumulates, drifts, decays, clears at keyframe resets. Off = straight per-frame pixel sorting. |
 | `threshold` | **0** | 0–1 | Luma above this is eligible for sorting (and feedback). 0 = whole frame corrupts; 1 = untouched. The single most expressive knob. |
 | `passes` | **64** | 0–64 | Sort passes per frame. A full 256→1 stride ladder is 18 passes, so 64 runs ~3.5 settling cycles. |
 | `streak` | **256** | 1–256 | Longest compare-exchange stride (rounded down to a power of two). Directly sets how far pixels can travel per frame — the ribbon-length knob. 1 = classic single-step odd-even. |
-| `decay` | 0.96 | 0.8–0.999 | *Feedback only.* Accumulator retention per frame. Higher = smear lingers longer. |
-| `driftX` | 0 | ±0.01 | *Feedback only.* Horizontal smear, UV units per frame. |
-| `driftY` | +0.0015 | ±0.01 | *Feedback only.* Vertical smear. **Positive = upward** (texture v grows toward the video's bottom). |
-| `resetMinS` / `resetMaxS` | 4 / 10 | 1–30 / 2–60 | *Feedback only.* Keyframe rhythm: the accumulator resets to a clean frame at a random interval in this window. |
+| `decay` | **0.906** | 0.8–0.999 | *Feedback only.* Accumulator retention per frame. Higher = smear lingers longer. |
+| `driftX` | **−0.0025** | ±0.01 | *Feedback only.* Horizontal smear, UV units per frame (negative = leftward). |
+| `driftY` | **0** | ±0.01 | *Feedback only.* Vertical smear; **positive = upward**. 0 = purely horizontal drift — and no audio smear wobble (the coupling below). |
+| `resetMinS` / `resetMaxS` | **1 / 60** | 1–30 / 2–60 | *Feedback only.* Keyframe rhythm: the accumulator resets to a clean frame at a random interval in this window. |
 | `maxRes` | 1920 | 480–1920 | Processing resolution cap, long axis. Lower it on weak GPUs; output upscales through the overlay. |
 | `maxVideos` | 8 | 1–16 | Concurrent video jobs, biggest visible first. Paused videos count too — they get a one-shot sorted still (rVFC never fires for them). |
-| `imageFps` | 12 | 1–30 | *Feedback only.* Tick rate for animated images. Straight-sort stills don't animate at all. |
+| `imageFps` | **6** | 1–30 | *Feedback only.* Tick rate for animated images. Straight-sort stills don't animate at all. |
 | `imageAnimCap` | 12 | 0–24 | *Feedback only.* Max concurrently animated images (≥200 px side, biggest visible first); the rest stay stills. |
 | `audioEnabled` | on | on/off | Audio master. Off ramps every tap to dry — the tap itself is permanent by design. |
 | `audioMode` | **body** | body / timebase | Which engine speaks. **The bake-off knob**: switches live with a 100 ms crossfade, so A/B the two on the same material. |
 | `audioMix` | 1 | 0–1 | Wet/dry in the tap graph (30 ms ramps). 0 = the internet as transmitted. |
-| `audioFeedback` | **off** | on/off | The smear: engine output recirculates through a 0.35 s delay line (0.1 Hz wobble, tanh-clipped write-back), hard-cleared on the shared `resetMinS`/`resetMaxS` keyframe rhythm. Works in both modes; sits after the crossfade, so the smear carries across a live A/B. |
-| `audioFbDecay` | 0.96 | 0.8–0.999 | *Audio fb only.* Echo retention (maps to feedback gain 0.5–0.95) — the visual `decay` knob's range, so it feels like the same knob. `driftY` sets the delay wobble depth (×100), exactly as the first audio phase had it — **`driftY` 0 = no wobble, a static echo stack**. |
-| `audioFbClearS` | 1 | 0–4 | *Audio fb only.* The keyframe clear fades the wash out over ~this many seconds before the line wipes, instead of cutting in one sample. **0 = the original hard cut.** The video keyframe stays a hard cut by design — one frame hides in a glitching image; a vanished wash doesn't. |
-| `audioMaxTaps` | 4 | 1–8 | Concurrent *engaged* taps, most recently playing first — the audio sibling of `maxVideos`. Everything safe gets tapped; beyond the cap, elements play dry (idle processors cost ~nothing). Matters on feed pages with several sounding videos; each engaged tap is its own worklet (and its own 45 s reservoir in timebase mode). |
-| `audioSustain` | 6 | 2–12 | *Body only.* T60 at the lowest string (55 Hz), seconds. Higher modes always die faster ((55/f)^0.7) — the ring-length knob. |
-| `audioDrive` | 0.5 | 0–1 | *Body only.* Strike force into the resonators. Per-mode caps bound runaway, so drive shapes attack more than loudness. |
-| `audioExciter` | **gated** | gated / continuous | *Body only.* Gated = onsets open a 60 ms window and the body is *struck*. Continuous = the stream drives it always — the honest drone test, bounded but relentless. |
+| `audioFeedback` | **on** | on/off | The smear: engine output recirculates through a 0.35 s delay line (0.1 Hz wobble, tanh-clipped write-back). Works in both modes; sits after the crossfade, so the smear carries across a live A/B. |
+| `audioFbDecay` | **0.999** | 0.8–0.999 | *Audio fb only.* Echo retention (maps to feedback gain 0.5–0.95) — the visual `decay` knob's range, so it feels like the same knob. `driftY` sets the delay wobble depth (×100), exactly as the first audio phase had it — **`driftY` 0 = no wobble, a static echo stack**. |
+| `audioFbClear` | **off** | on/off | *Audio fb only.* Whether the smear clears on the `resetMinS`/`resetMaxS` keyframe rhythm at all. **Off is the piece**: the loop gain (< 1) is already a natural decay, so unlike the video accumulator the smear needs no clearing — it stays continuous. |
+| `audioFbClearS` | 1 | 0–4 | *Audio fb clear only.* When clearing is on, the keyframe fades the wash out over ~this many seconds before the line wipes, instead of cutting in one sample. **0 = the original hard cut.** The video keyframe stays a hard cut by design — one frame hides in a glitching image; a vanished wash doesn't. |
+| `audioMaxTaps` | **8** | 1–8 | Concurrent *engaged* taps, most recently playing first — the audio sibling of `maxVideos`. Everything safe gets tapped; beyond the cap, elements play dry (idle processors cost ~nothing). Matters on feed pages with several sounding videos; each engaged tap is its own worklet (and its own 45 s reservoir in timebase mode). |
+| `audioSustain` | **12** | 2–12 | *Body only.* T60 at the lowest string (55 Hz), seconds. Higher modes always die faster ((55/f)^0.7) — the ring-length knob. |
+| `audioDrive` | **1.0** | 0–1 | *Body only.* Strike force into the resonators. Per-mode caps bound runaway, so drive shapes attack more than loudness. |
+| `audioExciter` | **continuous** | gated / continuous | *Body only.* Gated = onsets open a 60 ms window and the body is *struck*. Continuous = the stream drives it always — the honest drone test, bounded but relentless. |
 | `audioDepth` | 0.8 | 0–1.5 | *Timebase only.* Octaves of lag bend under the field. 0 = a transparent multi-tap of the actual browsing; up = heads fan across time. |
 | `audioFieldRate` | 1 | 0.25–4 | *Timebase only.* Deflection field speed. The field never repeats (four incommensurate periods, 40 s–47 min at 1×). |
 | `audioTail` | 1.5 | 0–5 | *Timebase only.* Seconds the heads may keep speaking after input stops — the silence-semantics knob. 0 = strict silence-in/silence-out. |
@@ -55,9 +56,12 @@ them (100 ms, equal-power). The loser is removed after the live verdict.
   [0.25×, 1.75×]. Latency is the material, by construction.
 
 The feedback layer (ported intact from the first audio phase) is a *layer*,
-not a mode: it smears whichever engine is speaking. At high `audioFbDecay`
-its tail can outlive input by tens of seconds; the jittered keyframe clears
-(and the output gate at the floor) are what keep that honest.
+not a mode: it smears whichever engine is speaking, continuously by default —
+its loop gain (< 1) is a built-in decay, so unlike the video accumulator it
+never needs a clear to stay clean. At high `audioFbDecay` its tail can
+outlive input by tens of seconds; the output gate at the floor is what keeps
+silence-in/silence-out honest, and `audioFbClear` restores the keyframe
+rhythm if the piece ever wants it back.
 
 Rules the implementation lives by: safety is predicted before tapping
 (same-origin / blob / data / MediaStream / `crossorigin="anonymous"` only);

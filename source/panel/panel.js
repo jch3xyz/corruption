@@ -26,6 +26,7 @@ const DEFS = [
   { key: 'audioMix', label: 'audio mix', min: 0, max: 1, step: 0.01 },
   { key: 'audioFeedback', label: 'audio fb', type: 'toggle' },
   { key: 'audioFbDecay', label: 'fb decay', min: 0.8, max: 0.999, step: 0.001 },
+  { key: 'audioFbClear', label: 'fb clear', type: 'toggle' },
   { key: 'audioFbClearS', label: 'fb clear s', min: 0, max: 4, step: 0.1 },
   { key: 'audioMaxTaps', label: 'max taps', min: 1, max: 8, step: 1 },
   { key: 'audioSustain', label: 'sustain s', min: 2, max: 12, step: 0.5 },
@@ -55,6 +56,7 @@ const AUDIO_ONLY = [
   'audioMix',
   'audioFeedback',
   'audioFbDecay',
+  'audioFbClear',
   'audioFbClearS',
   'audioMaxTaps',
   'audioSustain',
@@ -66,7 +68,8 @@ const AUDIO_ONLY = [
 ];
 const BODY_ONLY = ['audioSustain', 'audioDrive', 'audioExciter'];
 const TIMEBASE_ONLY = ['audioDepth', 'audioFieldRate', 'audioTail'];
-const AUDIO_FB_ONLY = ['audioFbDecay', 'audioFbClearS'];
+const AUDIO_FB_ONLY = ['audioFbDecay', 'audioFbClear', 'audioFbClearS'];
+const AUDIO_FB_CLEAR_ONLY = ['audioFbClearS']; // needs fb clear on too
 
 const hasChrome = typeof chrome !== 'undefined' && !!chrome.storage?.local;
 const shim = { data: { ...DEFAULTS }, listeners: [] };
@@ -142,7 +145,7 @@ for (const def of DEFS) {
     queueWrite(def.key, v);
     valueEls[def.key].textContent = fmt(def, v);
     if (def.key === 'feedback') syncFeedbackUI(input.checked);
-    if (['audioEnabled', 'audioMode', 'audioFeedback'].includes(def.key)) syncAudioUI();
+    if (['audioEnabled', 'audioMode', 'audioFeedback', 'audioFbClear'].includes(def.key)) syncAudioUI();
   });
 
   const value = document.createElement('span');
@@ -168,7 +171,7 @@ function setUI(key, v) {
   else inputs[key].value = v;
   valueEls[key].textContent = fmt(def, v);
   if (key === 'feedback') syncFeedbackUI(!!v);
-  if (['audioEnabled', 'audioMode', 'audioFeedback'].includes(key)) syncAudioUI();
+  if (['audioEnabled', 'audioMode', 'audioFeedback', 'audioFbClear'].includes(key)) syncAudioUI();
 }
 
 function syncFeedbackUI(on) {
@@ -182,12 +185,14 @@ function syncAudioUI() {
   const on = inputs.audioEnabled.checked;
   const mode = inputs.audioMode.value;
   const fbOn = inputs.audioFeedback.checked;
+  const clearOn = inputs.audioFbClear.checked;
   for (const key of AUDIO_ONLY) {
     const inert =
       !on ||
       (BODY_ONLY.includes(key) && mode !== 'body') ||
       (TIMEBASE_ONLY.includes(key) && mode !== 'timebase') ||
-      (AUDIO_FB_ONLY.includes(key) && !fbOn);
+      (AUDIO_FB_ONLY.includes(key) && !fbOn) ||
+      (AUDIO_FB_CLEAR_ONLY.includes(key) && !clearOn);
     inputs[key].disabled = inert;
     inputs[key].closest('.row').classList.toggle('inert', inert);
   }

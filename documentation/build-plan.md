@@ -12,9 +12,12 @@ treatment but the effect is **not yet chosen** — see below.
 
 Conceptually the project has grown from "codec-corruption aesthetic" into a
 device that turns the live internet into a generative artwork with code
-aesthetics. **Straight sorting (no feedback) is the piece's resting state**,
-chosen by John on real footage; the temporal-feedback mode survives as a
-single toggle.
+aesthetics. **Temporal feedback ON is the piece** (John, 2026-08-11, chosen
+live during the audio bake-off — it reverses the earlier straight-sort
+resting state): visual smear with leftward drift and 1–60 s keyframes, the
+body engine continuously driven, and a never-clearing audio smear whose
+loop gain is its own decay. Straight sorting survives as the toggle-off
+state.
 
 Runs on a kiosk (Mac mini M4) for weeks unattended. Vanilla JS, Manifest V3,
 no build step — "Load unpacked" points at `source/`.
@@ -40,14 +43,12 @@ The current two engines came out of a multiple-perspectives run (5 isolated
 probes, 5 blind critics); the corrections that run produced are baked into
 the implementations — see "Audio engines (bake-off)" in parameters.md.
 
-**John's live-chosen settings (2026-08-11, mid-bake-off — in storage, not yet
-DEFAULTS):** feedback **on**, threshold 0, passes 64, streak 256, decay 0.906,
-driftX −0.0025, **driftY 0** (= audio smear wobble off — the coupling), reset
-1–60 s, maxRes 1920, maxVideos 8, imageFps 6, imageAnimCap 12; audio on,
-mode **body**, mix 1, **audio fb on**, fbDecay **0.999**, maxTaps 8, sustain
-**12**, drive **1.0**, exciter **continuous**. Note feedback-on contradicts
-the documented "straight sorting is the resting state" — baking these into
-DEFAULTS is John's call, not yet made.
+**John's live-chosen settings are now the DEFAULTS** (2026-08-11): feedback
+on, decay 0.906, driftX −0.0025, driftY 0 (= audio smear wobble off — the
+coupling), reset 1–60 s, imageFps 6; audio fb on at fbDecay 0.999 with
+**clears off** (`audioFbClear` — his call: the smear's gain < 1 is its own
+decay, continuous sounds nicer; the video keyframe still clears), maxTaps 8,
+body at sustain 12 / drive 1.0 / continuous exciter.
 
 **Remaining:**
 

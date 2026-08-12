@@ -40,18 +40,19 @@ const BODY_CONT_BOOST = 4; // continuous-path peak gain = amp × this
 
 const DEFAULT_PARAMS = {
   mode: 'body',
-  sustain: 6,
-  drive: 0.5,
-  exciter: 'gated',
+  sustain: 12,
+  drive: 1.0,
+  exciter: 'continuous',
   depth: 0.8,
   fieldRate: 1,
   tail: 1.5,
-  fb: false,
-  fbDecay: 0.96,
-  fbClearS: 1, // keyframe clears fade the wash over ~this long; 0 = hard cut
-  driftY: 0.0015, // |driftY|·100 = delay wobble depth, as the first audio phase had it
-  resetMinS: 4,
-  resetMaxS: 10,
+  fb: true,
+  fbDecay: 0.999,
+  fbClear: false, // smear runs continuous by default: gain < 1 IS its decay
+  fbClearS: 1, // when clearing: fade the wash over ~this long; 0 = hard cut
+  driftY: 0, // |driftY|·100 = delay wobble depth, as the first audio phase had it
+  resetMinS: 1,
+  resetMaxS: 60,
 };
 
 // --- Engine: fixed resonant body ------------------------------------------
@@ -346,19 +347,26 @@ class FeedbackLayer {
     const modDepth = Math.min(0.4, Math.abs(p.driftY ?? 0) * 100);
     const phaseInc = (2 * Math.PI * 0.1) / this.sr;
 
-    // The keyframe. Hard cut works for video (one frame in an already
-    // glitching image) but audio hears the wash vanish in a sample, so the
-    // clear fades the echo return over ~fbClearS seconds first, then wipes
-    // the line while it is inaudible. fbClearS 0 = the original hard cut.
+    // The keyframe — optional for audio, and OFF by default (John's call:
+    // the loop gain < 1 is already a natural decay, so unlike the video
+    // accumulator the smear needs no clearing to stay clean; continuous
+    // sounds nicer). When on: hard cut works for video (one frame in an
+    // already glitching image) but audio hears the wash vanish in a sample,
+    // so the clear fades the echo return over ~fbClearS seconds first, then
+    // wipes the line while it is inaudible. fbClearS 0 = a hard cut.
     const clearS = Math.max(0, p.fbClearS ?? 1);
-    if (this.nextResetAt < 0) this.nextResetAt = this.scheduleReset(p);
-    if (!this.clearing && currentFrame >= this.nextResetAt) {
-      if (clearS < 0.01) {
-        for (const line of this.lines) line.fill(0);
-      } else {
-        this.clearing = true; // rhythm counts from the start of the fade
+    if (p.fbClear) {
+      if (this.nextResetAt < 0) this.nextResetAt = this.scheduleReset(p);
+      if (!this.clearing && currentFrame >= this.nextResetAt) {
+        if (clearS < 0.01) {
+          for (const line of this.lines) line.fill(0);
+        } else {
+          this.clearing = true; // rhythm counts from the start of the fade
+        }
+        this.nextResetAt = this.scheduleReset(p);
       }
-      this.nextResetAt = this.scheduleReset(p);
+    } else {
+      this.nextResetAt = -1; // clears re-enabled → rhythm restarts fresh
     }
     // τ = clearS/7 → the envelope reaches its floor in ≈ clearS seconds.
     const clearCoef = clearS >= 0.01 ? 1 - Math.exp(-7 / (clearS * this.sr)) : 1;

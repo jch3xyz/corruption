@@ -191,6 +191,7 @@ const BODY = {
   depth: 0.8,
   fieldRate: 1,
   tail: 1.5,
+  fb: false, // engine tests isolate the engines; DEFAULT_PARAMS now has fb on
 };
 const TIMEBASE = { ...BODY, mode: 'timebase' };
 
@@ -434,6 +435,7 @@ async function tier2() {
       ...BODY,
       fb: true,
       fbDecay: 0.96,
+      fbClear: true, // the clear tests exercise the optional clear path
       fbClearS: 0, // hard-cut clears; the smooth path has its own check
       driftY: 0,
       resetMinS: 1000,
@@ -486,6 +488,21 @@ async function tier2() {
     check(
       `feedback: smooth clear fades instead of cutting (${s1.toFixed(4)} → ${s2.toFixed(4)} → ${s3.toFixed(4)})`,
       s1 > 0.002 && s2 > 0.03 * s1 && s2 < 0.75 * s1 && s3 < 0.1 * s1
+    );
+
+    // Clears OFF (the default): the reset rhythm must not touch the smear —
+    // echoes ride through the same 0.6 s reset window at full strength,
+    // decaying only by their own loop gain.
+    const { out: outC } = await renderThrough(
+      { ...FB, fbClear: false, resetMinS: 0.6, resetMaxS: 0.6 },
+      burst,
+      1.6
+    );
+    const c1 = rmsOf(outC, (0.05 + 0.35) * SR, 0.03 * SR);
+    const c2 = rmsOf(outC, (0.05 + 0.7) * SR, 0.03 * SR);
+    check(
+      `feedback: clears off → smear is continuous through the reset window (${c1.toFixed(4)} → ${c2.toFixed(4)})`,
+      c1 > 0.002 && c2 > 0.5 * c1
     );
   } catch (e) {
     check(`feedback render (${e.message})`, false);

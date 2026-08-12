@@ -59,21 +59,23 @@ export function tapSafety(el) {
 export function workletParams(p) {
   return {
     mode: p.audioMode ?? 'body',
-    sustain: p.audioSustain ?? 6,
-    drive: p.audioDrive ?? 0.5,
-    exciter: p.audioExciter ?? 'gated',
+    sustain: p.audioSustain ?? 12,
+    drive: p.audioDrive ?? 1.0,
+    exciter: p.audioExciter ?? 'continuous',
     depth: p.audioDepth ?? 0.8,
     fieldRate: p.audioFieldRate ?? 1,
     tail: p.audioTail ?? 1.5,
     // Smear layer: its own toggle+decay, but the delay wobble and the
     // keyframe rhythm deliberately ride the visual params, exactly as the
-    // first audio phase had it.
-    fb: !!p.audioFeedback,
-    fbDecay: p.audioFbDecay ?? 0.96,
+    // first audio phase had it. Clears default OFF: gain < 1 is already
+    // the smear's decay.
+    fb: p.audioFeedback ?? true,
+    fbDecay: p.audioFbDecay ?? 0.999,
+    fbClear: !!p.audioFbClear,
     fbClearS: p.audioFbClearS ?? 1,
-    driftY: p.driftY ?? 0.0015,
-    resetMinS: p.resetMinS ?? 4,
-    resetMaxS: p.resetMaxS ?? 10,
+    driftY: p.driftY ?? 0,
+    resetMinS: p.resetMinS ?? 1,
+    resetMaxS: p.resetMaxS ?? 60,
   };
 }
 
