@@ -288,6 +288,50 @@ source/params change and immediately releases its GPU bundle. Feedback mode
 animates images ≥200 px from a registry-owned ticker at `imageFps`, capped at
 `imageAnimCap` biggest-visible — those jobs retain their bundles.
 
+### 2.10 The text mode (optional, off by default)
+
+The same argument as the pixel sort, made in language: captions are
+**rearranged, never scrambled**. Every title on the page stays a real,
+correctly spelled title — attached to the wrong thing. Nothing added,
+nothing lost, unreliable anyway. (Scrambling glyphs was the rejected
+version: an unreadable interface is an unnavigable one.)
+
+Eligibility is defined by the picture, not by a selector. For each medium
+the pipeline is corrupting, the module climbs at most six levels to the
+**card**: the shallowest ancestor holding that medium, a caption, and no
+medium belonging to a different card. Navigation, search and buttons are
+therefore clean *by construction* — they don't live in a corrupted card —
+and media that abandoned (DRM, taint) keeps its real caption, because its
+picture is real too.
+
+Two structural rules, both harness-guarded:
+
+1. **Only `Text.nodeValue` is written.** Character data is not a childList
+   mutation, so the registry's MutationObserver cannot see the swap and
+   cannot loop on it. Writing `textContent` or replacing nodes would.
+2. **Records are self-invalidating.** If a site re-renders a node we hold,
+   the value we wrote is gone, so the record is dropped rather than
+   restored — a stale title can never be written back over live content.
+   This is the case that matters on YouTube, which reuses the same DOM
+   nodes for the next video.
+
+Swaps stay inside a length class so the layout underneath holds, and within
+a class the fresh candidates are shuffled then rotated by one — a perfect
+derangement that conserves the page's text exactly. A card arriving alone on
+infinite scroll trades with the pool of originals seen earlier.
+
+The card boundary has one subtlety worth keeping: a feed tile stacks a
+preview `<video>` over its own thumbnail `<img>` (Instagram explore), so a
+second tracked medium does *not* always mean a second card. Media that
+overlaps the medium we started from is part of the same tile. Both then
+resolve to the same caption node, which is why a single pass claims each
+node once — letting it in twice would write it twice and record the second
+"original" from already-swapped text, poisoning the restore. The harness
+caught exactly that.
+
+All rect reads happen during collection, before any caption is written, so a
+sweep costs one layout flush rather than one per card.
+
 ---
 
 ## 3. The audio side
@@ -471,6 +515,7 @@ source/
 │   ├── video-job.js       rVFC loop, DRM gate, CORS mirror, black probe, governor
 │   ├── image-job.js       3-route CORS resolution, one-shot stills, animation
 │   ├── audio-job.js       playback-driven tap lifecycle, safety gate, bypass
+│   ├── text-swap.js       optional text mode: captions traded between cards
 │   ├── overlay.js         sibling canvas, object-fit replication
 │   └── metrics.js         FrameGovernor
 ├── gl/    context.js · pipeline.js · shaders/{common,passthrough,composite,sort}.js

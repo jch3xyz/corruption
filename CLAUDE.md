@@ -16,13 +16,18 @@ Two rejected designs live in tags — `audio-v1` (spectral sorting, mirrored
 the pixel-sort grammar) and `audio-bakeoff` (the timebase engine, lost on
 John's ears). Do not resurrect either.
 
+**The text mode is built and defaulted off** (`textSwap`). Captions are
+traded between cards, never scrambled. Whether the piece uses it at all is
+John's call, to be made in the room — don't argue it on or off in code.
+
 Quick facts:
 
 - Load unpacked from `source/`. Vanilla JS, no build step, no dependencies.
 - Dev server for harnesses: `python3 test/serve.py` (no-store — plain
   http.server serves stale modules). Visual suite at
   `/test/harness/index.html` (needs a visible tab), audio suite at
-  `/test/harness/audio.html` (deterministic offline tiers + live-tap button).
+  `/test/harness/audio.html` (deterministic offline tiers + live-tap button),
+  text suite at `/test/harness/text.html` (pure DOM, deterministic).
 - Params live in chrome.storage.local; stored values beat code defaults —
   use the panel's "restore defaults" after changing DEFAULTS.
 - How both pipelines actually work: [documentation/how-it-works.md](documentation/how-it-works.md).

@@ -1,0 +1,30 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>DEFLECTION text harness</title>
+<style>
+  body { background: #1a1a1c; color: #ddd; font-family: monospace; margin: 20px; }
+  #status div { padding: 2px 0; }
+  .pass { color: #7fd97f; }
+  .fail { color: #ff7070; font-weight: bold; }
+  #stage { margin-top: 18px; border-top: 1px solid #2e2e36; padding-top: 12px;
+           color: #8a8a92; font-size: 12px; }
+  #stage .grid { display: flex; flex-wrap: wrap; gap: 10px; }
+  #stage .card { width: 240px; }
+  #stage img { width: 240px; height: 135px; background: #24242a; display: block; }
+  #stage .title { color: #c8c8d0; display: block; }
+  #stage .thumb { position: relative; }
+  #stage .preview { position: absolute; inset: 0; width: 240px; height: 135px; }
+</style>
+</head>
+<body>
+<h3>DEFLECTION text harness — the swap grammar</h3>
+<p>Pure DOM: no rVFC, no GL, no AudioContext. Unlike the visual suite this one
+is immune to pane visibility. The stage below is left in its final (restored)
+state for inspection.</p>
+<div id="status"><div>running…</div></div>
+<div id="stage"></div>
+<script type="module" src="./text-harness.js"></script>
+</body>
+</html>

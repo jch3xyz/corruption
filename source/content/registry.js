@@ -6,6 +6,7 @@
 import { VideoJob } from './video-job.js';
 import { ImageJob } from './image-job.js';
 import { AudioJob } from './audio-job.js';
+import { TextSwap } from './text-swap.js';
 
 const SCAN_DEBOUNCE_MS = 100;
 const SWEEP_MS = 2000;
@@ -16,6 +17,7 @@ export class Registry {
     this.params = params;
     this.jobs = new Map(); // element → VideoJob | ImageJob
     this.audioJobs = new Map(); // element → AudioJob (videos carry both)
+    this.text = new TextSwap(params); // off unless params.textSwap
     this.visibleArea = new Map(); // element → px² in viewport
     this.routeStats = { direct: 0, cors: 0, sw: 0, failed: 0 };
     this.scanTimer = 0;
@@ -137,6 +139,18 @@ export class Registry {
     for (const job of this.jobs.values()) job.checkHealth(now);
     this.syncAll();
     this.ensureImageTicker();
+    this.text.update(this.corruptedMedia());
+  }
+
+  // What the text mode is allowed to follow: media the pipeline is actually
+  // corrupting. Abandoned jobs (DRM, unrecoverable taint) show the real
+  // picture, so their captions stay real too.
+  corruptedMedia() {
+    const els = new Set();
+    for (const [el, job] of this.jobs) {
+      if (!job.abandoned && !job.destroyed) els.add(el);
+    }
+    return els;
   }
 
   syncAll() {
@@ -151,6 +165,7 @@ export class Registry {
     if (!this.params.enabled) {
       for (const job of this.jobs.values()) job.suspend();
       for (const job of this.audioJobs.values()) job.suspend();
+      this.text.restoreAll(); // the kill switch puts the captions back too
       this.ensureImageTicker();
       return;
     }
@@ -201,6 +216,16 @@ export class Registry {
   paramsChanged(changed) {
     for (const j of this.audioJobs.values()) j.applyParams();
     this.rebalance();
+
+    // The text toggle answers immediately rather than on the next sweep.
+    // (rebalance() has already restored everything if `enabled` went off.)
+    if ('textSwap' in changed) {
+      if (this.params.enabled && this.params.textSwap) {
+        this.text.update(this.corruptedMedia());
+      } else {
+        this.text.restoreAll();
+      }
+    }
     const effectKeys = ['threshold', 'passes', 'streak', 'feedback', 'maxRes'];
     if (Object.keys(changed).some((k) => effectKeys.includes(k))) {
       clearTimeout(this.imageDirtyTimer);
@@ -279,6 +304,7 @@ export class Registry {
         engaged: audioEngaged,
         abandoned: audioAbandoned,
       },
+      text: this.text.stats(),
     };
   }
 }

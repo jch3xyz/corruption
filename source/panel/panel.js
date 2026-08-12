@@ -21,6 +21,7 @@ const DEFS = [
   { key: 'maxVideos', label: 'max videos', min: 1, max: 16, step: 1 },
   { key: 'imageFps', label: 'image fps', min: 1, max: 30, step: 1 },
   { key: 'imageAnimCap', label: 'image anim cap', min: 0, max: 24, step: 1 },
+  { key: 'textSwap', label: 'text swap', type: 'toggle' },
   { key: 'audioEnabled', label: 'audio', type: 'toggle' },
   { key: 'audioMix', label: 'audio mix', min: 0, max: 1, step: 0.01 },
   { key: 'audioFeedback', label: 'audio fb', type: 'toggle' },

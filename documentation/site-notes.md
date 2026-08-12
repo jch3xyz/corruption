@@ -17,6 +17,13 @@ nothing here is load-bearing — these are hints and known limitations.
   letterboxing aligns.
 - YouTube Movies / anything EME-encrypted: the `encrypted` event /
   `mediaKeys` gate abandons the job and leaves the video untouched.
+- Text mode, checked against live search results (2026-08-12): every tracked
+  thumbnail resolves to its real video title at **depth 3**, in the light DOM
+  — `yt-formatted-string` wraps the text but does not hide it in a shadow
+  root, so the 6-level cap is comfortable. Writing `nodeValue` produced
+  **zero** childList mutations (correction #1 holds against Polymer) and the
+  framework did not revert the swap within 2 s. Grid feeds on a signed-in
+  home page are still John's to confirm.
 
 ## Instagram
 
@@ -32,6 +39,11 @@ nothing here is load-bearing — these are hints and known limitations.
 - Reel-tile thumbnails are plain `<img>`s (image route 2); when a tile looks
   untouched it is usually the preview *video* stacked above the (distorted)
   thumbnail, so fixing the video fixes the tile.
+- That same stack shapes the text mode's card rule: a tile holds **two**
+  tracked media, so "a second medium means a second card" would have skipped
+  every Instagram caption. Media overlapping the one we started from counts
+  as the same tile (text-swap.js), and each caption node is claimed once per
+  pass so the pair can't write it twice.
 
 ## General / known limitations
 
@@ -42,7 +54,8 @@ nothing here is load-bearing — these are hints and known limitations.
   native controls.
 - Shadow-DOM-hosted media is not discovered (`querySelectorAll` doesn't
   pierce shadow roots). No mainstream target does this for its main player
-  today; log here if one appears.
+  today; log here if one appears. The text mode inherits this: a caption
+  inside a shadow root is invisible to it for the same reason.
 - Hidden tabs stop rendering entirely (no rVFC, no IntersectionObserver).
   This is correct behavior — the kiosk tab is always visible — but it means
   the test harness must run in a visible tab.

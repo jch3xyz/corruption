@@ -18,7 +18,9 @@ continuously driven + a never-clearing audio smear** whose loop gain is its
 own decay. The visual and audio feedback are decoupled: `audioFeedback` on,
 visual `feedback` off — the visual temporal-feedback mode survives as a
 toggle whose knobs (decay 0.906, leftward drift, 1–60 s keyframes) are
-live-tuned for when it's flipped on.
+live-tuned for when it's flipped on. The text mode is **off** in that
+resting state: built and verified, awaiting the call the proposal always
+deferred to the room.
 
 Runs on a kiosk (Mac mini M4) for weeks unattended. Vanilla JS, Manifest V3,
 no build step — "Load unpacked" points at `source/`.
@@ -39,6 +41,7 @@ no build step — "Load unpacked" points at `source/`.
 | audio fb layer | The first phase's feedback/smear layer ported intact (`audioFeedback` + `audioFbDecay`; wobble from `driftY`): 0.35 s modulated delay on the engine output. Clears optional (`audioFbClear`, off) with a smooth fade (`audioFbClearS`). |
 | verdict | **Body won** (John, on live browsing: body + continuous exciter + smear). Timebase engine, `audioMode`, and its knobs removed; the two-engine state is tag `audio-bakeoff`. DEFAULTS = John's live-iterated settings. Audio harness 25/25. |
 | tainted-video mirror | The Phase 4 IOU paid: videos whose GL upload throws SecurityError (direct cross-origin src, no-cors — Instagram explore reel previews) recover via a detached `crossorigin` mirror element riding the DNR ACAO rule; page element untouched, mirror failure abandons as before. Harness check behind the :8439 gate. |
+| Phase 5 — text mode | **Built, defaulted off, undecided.** Captions traded between cards (swap, not scramble — the proposal's own conclusion); eligibility follows the corrupted picture, so chrome stays clean by construction. Character-data writes only, self-invalidating records, restore on either toggle. New deterministic suite: 26/26. |
 
 Audio lineage: the first phase (spectral/granular sorting) was removed for
 mirroring the pixel-sort grammar — tag `audio-v1`. The bake-off's two
@@ -57,8 +60,11 @@ body at sustain 12 / drive 1.0 / continuous exciter.
 
 **Remaining:**
 
-- **Phase 5 — text swap** (titles/captions swapped between elements, behind a
-  toggle): **ON HOLD by John's instruction.** Don't build unprompted.
+- **Phase 5 — text mode**: built and harness-verified, `textSwap` **off** by
+  default. What remains is not code but John's call, and the proposal always
+  said so: *"decide during install, in the room, with the actual wall behind
+  it."* Flip it on in the panel and browse a feed. The knob is a toggle
+  because that decision was deferred, not because the mode is unfinished.
 - **Phase 6 — kiosk hardening + soak**: not started. Chrome for Testing at a
   pinned version (branded Chrome ≥137 removed `--load-extension`), template
   profile restored nightly via launchd (doubles as the consent-signage
@@ -86,6 +92,7 @@ source/
 │   ├── video-job.js               # rVFC → GL pipeline; DRM gate; black-output probe; governor
 │   ├── image-job.js               # 3-route CORS; one-shot stills; feedback-mode animation
 │   ├── audio-job.js               # playback-driven tap lifecycle; safety gate; bypass semantics
+│   ├── text-swap.js               # optional text mode: captions traded between cards (off)
 │   ├── overlay.js                 # sibling canvas; object-fit/position replication
 │   └── metrics.js                 # FrameGovernor (rVFC presentedFrames deltas)
 ├── gl/  context.js · pipeline.js · shaders/{common,passthrough,composite,sort}.js
@@ -154,11 +161,17 @@ python3 test/serve.py 8439   # second origin for the image CORS-route test
   adds 9 live-tap checks incl. tap permanence and re-tap reuse. Last full
   run: 25/25. Unlike the visual suite it is immune to pane visibility
   (offline rendering).
+- Text suite: `http://localhost:8437/test/harness/text.html` — 26 checks,
+  pure DOM (no rVFC, no GL, no AudioContext), so it is deterministic and
+  likewise immune to pane visibility. Tier 1 drives the module against a
+  synthetic page (cards, page chrome, a stacked Instagram-shaped tile, an
+  abandoned card); tier 2 asserts the registry actually calls it on the
+  sweep and on both toggles. Last run: 26/26.
 - Extension: chrome://extensions → Load unpacked → `source/`. Reload after
   edits; Chrome writes `source/_metadata/` (gitignored).
 - Proof-of-interception tricks: invert/hide `canvas[data-deflection]`;
   `__deflection.registry.stats()` from the DEFLECTION console context
-  (route counters, audio tap counts).
+  (route counters, audio tap counts, swapped-caption count).
 
 ## John's manual checklist (needs real Chrome; not yet all exercised)
 
@@ -168,6 +181,14 @@ python3 test/serve.py 8439   # second origin for the image CORS-route test
   site stays untouched w/ console log; MIDI sweep.
 - Visual: fullscreen/theater tracking, 5× SPA navigation canvas-leak check,
   DRM trailer untouched, 30-min GPU-memory flatness (rides Phase 6 soak).
+- Text mode — **the aesthetic call is the only thing left**: flip `textSwap`
+  on and browse. The grammar is covered by the synthetic suite, and the
+  mechanism was checked against live YouTube search results (captions found
+  at depth 3 in the light DOM, zero childList mutations from the write, no
+  Polymer revert within 2 s — see site-notes). What remains for real Chrome
+  is a signed-in home feed and an Instagram feed: watch for a title
+  flickering between real and swapped, confirm search/nav stay clean, and
+  confirm the toggle and Ctrl+Shift+D put every caption back.
 
 ## Conventions
 
