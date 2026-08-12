@@ -26,6 +26,8 @@ Kill switch: Ctrl+Shift+D toggles `enabled` without the panel.
 | `audioEnabled` | on | on/off | Audio master. Off ramps every tap to dry — the tap itself is permanent by design. |
 | `audioMode` | **body** | body / timebase | Which engine speaks. **The bake-off knob**: switches live with a 100 ms crossfade, so A/B the two on the same material. |
 | `audioMix` | 1 | 0–1 | Wet/dry in the tap graph (30 ms ramps). 0 = the internet as transmitted. |
+| `audioFeedback` | **off** | on/off | The smear: engine output recirculates through a 0.35 s delay line (0.1 Hz wobble, tanh-clipped write-back), hard-cleared on the shared `resetMinS`/`resetMaxS` keyframe rhythm. Works in both modes; sits after the crossfade, so the smear carries across a live A/B. |
+| `audioFbDecay` | 0.96 | 0.8–0.999 | *Audio fb only.* Echo retention (maps to feedback gain 0.5–0.95) — the visual `decay` knob's range, so it feels like the same knob. `driftY` sets the delay wobble depth (×100), exactly as the first audio phase had it. |
 | `audioMaxTaps` | 4 | 1–8 | Concurrent engaged taps, most recently playing first. |
 | `audioSustain` | 6 | 2–12 | *Body only.* T60 at the lowest string (55 Hz), seconds. Higher modes always die faster ((55/f)^0.7) — the ring-length knob. |
 | `audioDrive` | 0.5 | 0–1 | *Body only.* Strike force into the resonators. Per-mode caps bound runaway, so drive shapes attack more than loudness. |
@@ -50,6 +52,11 @@ them (100 ms, equal-power). The loser is removed after the live verdict.
   lags bend under a shaped never-repeating field. Lag is the controlled
   variable; its slope is clamped to ±0.75 s/s so read rates stay inside
   [0.25×, 1.75×]. Latency is the material, by construction.
+
+The feedback layer (ported intact from the first audio phase) is a *layer*,
+not a mode: it smears whichever engine is speaking. At high `audioFbDecay`
+its tail can outlive input by tens of seconds; the jittered keyframe clears
+(and the output gate at the floor) are what keep that honest.
 
 Rules the implementation lives by: safety is predicted before tapping
 (same-origin / blob / data / MediaStream / `crossorigin="anonymous"` only);

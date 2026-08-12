@@ -425,6 +425,55 @@ async function tier2() {
     check(`timebase tail render (${e.message})`, false);
   }
 
+  // Feedback/smear layer: silence stays exact zeros; echoes recirculate at
+  // 0.35 s and decay; the keyframe reset hard-clears the line. driftY 0
+  // pins the delay (no LFO wobble) and resetMin=Max removes the jitter, so
+  // every window lands deterministically.
+  try {
+    const FB = {
+      ...BODY,
+      fb: true,
+      fbDecay: 0.96,
+      driftY: 0,
+      resetMinS: 1000,
+      resetMaxS: 1000,
+    };
+    const { out: zout } = await renderThrough(FB, () => {}, 1.2);
+    let maxAbs = 0;
+    for (let i = 0; i < zout.length; i++) maxAbs = Math.max(maxAbs, Math.abs(zout[i]));
+    check('feedback: digital silence in → exact zeros out', maxAbs === 0);
+
+    const burst = (data) => {
+      const start = Math.round(0.05 * SR);
+      for (let i = 0; i < Math.round(0.01 * SR); i++) {
+        data[start + i] = 0.8 * Math.sin((2 * Math.PI * 1000 * i) / SR);
+      }
+    };
+    const { out } = await renderThrough(FB, burst, 1.6);
+    const at = (sec) => rmsOf(out, sec * SR, 0.03 * SR);
+    const pre = at(0.28); // gap: body ring has faded, first echo not yet due
+    const e1 = at(0.05 + 0.35);
+    const e2 = at(0.05 + 0.7);
+    check(
+      `feedback: echoes present and decaying (pre ${pre.toFixed(4)}, e1 ${e1.toFixed(4)}, e2 ${e2.toFixed(4)})`,
+      e1 > Math.max(0.002, 3 * pre) && e2 < e1 && e2 > 0.2 * e1
+    );
+
+    const { out: outR } = await renderThrough(
+      { ...FB, resetMinS: 0.6, resetMaxS: 0.6 },
+      burst,
+      1.6
+    );
+    const r1 = rmsOf(outR, (0.05 + 0.35) * SR, 0.03 * SR);
+    const r2 = rmsOf(outR, (0.05 + 0.7) * SR, 0.03 * SR);
+    check(
+      `feedback: keyframe reset clears the line (${r1.toFixed(4)} → ${r2.toFixed(4)})`,
+      r1 > 0.002 && r2 < r1 * 0.15
+    );
+  } catch (e) {
+    check(`feedback render (${e.message})`, false);
+  }
+
   // Live A/B: a scripted mid-render mode switch must not click. Gated
   // exciter keeps the body side quiet enough that the delta threshold
   // means something (continuous body on broadband noise lives near the

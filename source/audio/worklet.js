@@ -46,6 +46,11 @@ const DEFAULT_PARAMS = {
   depth: 0.8,
   fieldRate: 1,
   tail: 1.5,
+  fb: false,
+  fbDecay: 0.96,
+  driftY: 0.0015, // |driftY|·100 = delay wobble depth, as the first audio phase had it
+  resetMinS: 4,
+  resetMaxS: 10,
 };
 
 // --- Engine: fixed resonant body ------------------------------------------
@@ -295,6 +300,71 @@ class TimebaseEngine {
   }
 }
 
+// --- Feedback/smear layer ---------------------------------------------------
+//
+// A LAYER, not a mode (ported intact from the first audio phase): the mixed
+// engine output recirculates through a 0.35 s delay line whose read point
+// wobbles on a 0.1 Hz LFO, tanh-clipped on write-back, hard-cleared on the
+// same jittered keyframe rhythm as the video accumulator. It sits after the
+// mode crossfade, so it smears whichever engine is speaking — and the smear
+// itself carries across a live A/B switch.
+
+class FeedbackLayer {
+  constructor(sr, channels) {
+    this.sr = sr;
+    this.channels = channels;
+    this.len = Math.ceil(2 * sr);
+    this.lines = Array.from({ length: channels }, () => new Float32Array(this.len));
+    this.w = 0;
+    this.phase = 0;
+    this.nextResetAt = -1; // scheduled on first process (needs params)
+  }
+
+  reset() {
+    for (const line of this.lines) line.fill(0);
+    this.nextResetAt = -1;
+  }
+
+  scheduleReset(p) {
+    const minS = p.resetMinS ?? 4;
+    const maxS = Math.max(minS, p.resetMaxS ?? 10);
+    return currentFrame + (minS + Math.random() * (maxS - minS)) * this.sr;
+  }
+
+  process(bufs, channels, n, p) {
+    // fbDecay 0.8..0.999 → feedback gain 0.5..0.95 (the visual decay
+    // knob's range, so the knob feels like the same knob).
+    const gain = Math.min(0.95, 0.5 + (((p.fbDecay ?? 0.96) - 0.8) / 0.199) * 0.45);
+    const base = 0.35 * this.sr;
+    const modDepth = Math.min(0.4, Math.abs(p.driftY ?? 0) * 100);
+    const phaseInc = (2 * Math.PI * 0.1) / this.sr;
+
+    if (this.nextResetAt < 0) this.nextResetAt = this.scheduleReset(p);
+    if (currentFrame >= this.nextResetAt) {
+      for (const line of this.lines) line.fill(0); // the keyframe: hard clear
+      this.nextResetAt = this.scheduleReset(p);
+    }
+
+    for (let i = 0; i < n; i++) {
+      this.phase += phaseInc;
+      const delay = base * (1 + modDepth * Math.sin(this.phase));
+      for (let c = 0; c < channels; c++) {
+        const line = this.lines[c];
+        const readPos = this.w - delay;
+        const r0 = Math.floor(readPos);
+        const frac = readPos - r0;
+        const a = line[((r0 % this.len) + this.len) % this.len];
+        const b = line[(((r0 + 1) % this.len) + this.len) % this.len];
+        const echo = a + (b - a) * frac;
+        const y = bufs[c][i] + gain * echo;
+        line[this.w % this.len] = Math.tanh(y);
+        bufs[c][i] = y;
+      }
+      this.w++;
+    }
+  }
+}
+
 // --- The shared shell ------------------------------------------------------
 
 class DeflectionAudio extends AudioWorkletProcessor {
@@ -358,6 +428,7 @@ class DeflectionAudio extends AudioWorkletProcessor {
     this.dcY = new Float32Array(channels);
     this.body = new BodyEngine(sampleRate, channels, this.p);
     this.timebase = new TimebaseEngine(sampleRate, channels);
+    this.fbLayer = new FeedbackLayer(sampleRate, channels);
   }
 
   engine(name) {
@@ -435,26 +506,30 @@ class DeflectionAudio extends AudioWorkletProcessor {
       }
 
       this.renderEngine(this.p.mode, this.outA, channels, n);
-      let mix = null;
       if (this.xfadeLeft > 0 && this.prevMode) {
         this.renderEngine(this.prevMode, this.outB, channels, n);
         const w = this.xfadeLeft / (XFADE_S * sampleRate); // 1 → 0
         const gNew = Math.cos((w * Math.PI) / 2);
         const gOld = Math.sin((w * Math.PI) / 2);
-        mix = [gNew, gOld];
+        for (let c = 0; c < channels; c++) {
+          const a = this.outA[c];
+          const b = this.outB[c];
+          for (let s = 0; s < n; s++) a[s] = a[s] * gNew + b[s] * gOld;
+        }
         this.xfadeLeft = Math.max(0, this.xfadeLeft - n);
         if (this.xfadeLeft === 0) this.prevMode = null;
       }
+
+      // The smear layer runs on the mixed engine output, pre-clip.
+      if (this.p.fb) this.fbLayer.process(this.outA, channels, n, this.p);
 
       // Soft clip at −6 dBFS and write out; the gate below may still zero it.
       let outPeak = 0;
       for (let c = 0; c < channels; c++) {
         const dst = output[c];
         const a = this.outA[c];
-        const b = this.outB[c];
         for (let s = 0; s < n; s++) {
-          const v = mix ? a[s] * mix[0] + b[s] * mix[1] : a[s];
-          const clipped = 0.5 * Math.tanh(v * 2);
+          const clipped = 0.5 * Math.tanh(a[s] * 2);
           dst[s] = clipped;
           const abs = Math.abs(clipped);
           if (abs > outPeak) outPeak = abs;
@@ -472,6 +547,7 @@ class DeflectionAudio extends AudioWorkletProcessor {
           this.muted = true;
           this.body?.reset();
           this.timebase?.reset();
+          this.fbLayer?.reset(); // stale echoes must not return with presence
           for (let c = 0; c < output.length; c++) output[c].fill(0);
         }
       }

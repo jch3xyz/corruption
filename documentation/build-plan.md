@@ -31,7 +31,8 @@ no build step — "Load unpacked" points at `source/`.
 | maxVideos | Cap became a param (default 8); paused videos get one-shot sorted stills (rVFC never fires for them) |
 | Phase 4 | Image path: DNR ACAO rule enabled + 3-route CORS strategy (direct / detached-crossorigin / SW base64), still re-render on param change, feedback-mode image ticker; video black-output probe |
 | defaults | threshold 0, passes 64, streak 256 (full-frame sorting), feedback off |
-| audio bake-off | Two complete engines behind one worklet, live-switchable via `audioMode` (100 ms crossfade): **body** (48 modal resonators, struck) and **timebase** (45 s reservoir, 5 lag-controlled heads). Plumbing restored from `audio-v1` with its latent bugs fixed. Audio harness 31/31 (tiers 1–3). **Verdict pending — John judges on live browsing and the loser is removed.** |
+| audio bake-off | Two complete engines behind one worklet, live-switchable via `audioMode` (100 ms crossfade): **body** (48 modal resonators, struck) and **timebase** (45 s reservoir, 5 lag-controlled heads). Plumbing restored from `audio-v1` with its latent bugs fixed. **Verdict pending — John judges on live browsing and the loser is removed.** Early lean: body + continuous exciter. |
+| audio fb layer | The first phase's feedback/smear layer ported intact (`audioFeedback` + `audioFbDecay`; wobble from `driftY`, keyframe clears from `resetMinS/MaxS`): 0.35 s modulated delay on the mixed engine output, post-crossfade so the smear survives a live A/B. Audio harness 34/34 (tiers 1–3). |
 
 The first audio phase (spectral/granular sorting) was built, verified, then
 removed for mirroring the pixel-sort grammar; it survives at tag `audio-v1`.
@@ -136,10 +137,10 @@ python3 test/serve.py 8439   # second origin for the image CORS-route test
   produce false timeouts (documented in harness header). In John's Chrome it
   runs clean; in Claude's embedded pane expect visibility roulette.
 - Audio suite: `http://localhost:8437/test/harness/audio.html` — tier 1 (pure
-  DSP) + tier 2 (both engines through OfflineAudioContext) are fully
-  deterministic, 22 checks; tier 3 ("run live tap tests" button) adds 9
-  live-tap checks incl. tap permanence, re-tap reuse, and a live mode flip.
-  Last full run: 31/31. Unlike the visual suite it is immune to pane
+  DSP) + tier 2 (both engines + feedback layer through OfflineAudioContext)
+  are fully deterministic, 25 checks; tier 3 ("run live tap tests" button)
+  adds 9 live-tap checks incl. tap permanence, re-tap reuse, and a live mode
+  flip. Last full run: 34/34. Unlike the visual suite it is immune to pane
   visibility (offline rendering).
 - Extension: chrome://extensions → Load unpacked → `source/`. Reload after
   edits; Chrome writes `source/_metadata/` (gitignored).

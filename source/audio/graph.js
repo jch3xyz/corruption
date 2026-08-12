@@ -65,6 +65,14 @@ export function workletParams(p) {
     depth: p.audioDepth ?? 0.8,
     fieldRate: p.audioFieldRate ?? 1,
     tail: p.audioTail ?? 1.5,
+    // Smear layer: its own toggle+decay, but the delay wobble and the
+    // keyframe rhythm deliberately ride the visual params, exactly as the
+    // first audio phase had it.
+    fb: !!p.audioFeedback,
+    fbDecay: p.audioFbDecay ?? 0.96,
+    driftY: p.driftY ?? 0.0015,
+    resetMinS: p.resetMinS ?? 4,
+    resetMaxS: p.resetMaxS ?? 10,
   };
 }
 
