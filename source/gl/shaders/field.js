@@ -22,6 +22,7 @@ uniform float uScale;
 uniform float uSpeed;
 uniform float uTime;
 uniform float uAmount;
+uniform float uFlowSeed;
 out vec4 outColor;
 
 float hash(vec2 p) {
@@ -43,14 +44,25 @@ float n2(vec2 p, float t) {
   return vnoise(p + vec2(t, 0.0)) + 0.5 * vnoise(p * 1.7 - vec2(0.0, t * 0.7));
 }
 void main() {
+  // Five characters drawn from the element's seed (John, 2026-08-12:
+  // "each element should be unique" — and not just in pattern, in motion):
+  // where in the noise it lives, its phase, its morph rate, its swirl
+  // size, and its handedness. One magnet per screen, no two poled alike.
+  // All of it cancels at uAmount 0, which stays exact vertical.
+  vec2 home = vec2(hash(vec2(uFlowSeed, 1.7)), hash(vec2(uFlowSeed, 9.2))) * 64.0;
+  float phase = hash(vec2(uFlowSeed, 3.1)) * 100.0;
+  float rate = 0.6 + hash(vec2(uFlowSeed, 5.4));
+  float size = 0.8 + 0.45 * hash(vec2(uFlowSeed, 7.8));
+  float pole = hash(vec2(uFlowSeed, 2.6)) < 0.5 ? -1.0 : 1.0;
+
   // Each field texel covers a 4x4 cell of the accumulator.
   vec2 uv = (gl_FragCoord.xy * 4.0 + 2.0) / uProcSize;
-  vec2 q = uv * uScale;
-  float t = uTime * uSpeed * 10.0;
+  vec2 q = uv * uScale * size + home;
+  float t = uTime * uSpeed * 10.0 * rate + phase;
   float e = 0.35;
   float dx = n2(q + vec2(e, 0.0), t) - n2(q - vec2(e, 0.0), t);
   float dy = n2(q + vec2(0.0, e), t) - n2(q - vec2(0.0, e), t);
-  vec2 curl = vec2(dy, -dx);
+  vec2 curl = pole * vec2(dy, -dx);
   float len = length(curl);
   vec2 dir = len > 1e-5 ? curl / len : vec2(0.0, 1.0);
   // The epsilon keeps normalize() defined when the mix cancels exactly.

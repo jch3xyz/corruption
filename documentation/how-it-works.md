@@ -236,7 +236,14 @@ blocking arithmetic points straight back at p, and every refusal
 condition is computed identically by both members. The curl is
 divergence-free (streamlines swirl rather than draining), and the field
 morphs in place over `flowSpeed`, so the ribbon geometry itself
-re-carves over time. At `flowAmount 0` the sort is bit-identical to the
+re-carves over time. **Each element is its own instrument**: every job
+draws a flow seed (rerolled when the element's SOURCE changes — YouTube
+reuses one `<video>` across navigations, so the seed keys to content,
+not element) from which the field shader derives five characters —
+noise-domain home, phase, morph rate, swirl size, and handedness. Feeds
+become a wall of distinct instruments and every clicked video deflects
+its own way; the pipeline itself stays a pure function (the seed is an
+input), which is what keeps the harness byte-reproducible. At `flowAmount 0` the sort is bit-identical to the
 vertical grammar — harness-pinned, along with global pixel conservation
 at full flow.
 

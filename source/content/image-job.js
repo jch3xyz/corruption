@@ -41,6 +41,7 @@ export class ImageJob {
     this.natH = 0;
     this.fitRect = null;
     this.nextResetAt = 0;
+    this.flowSeed = Math.random() * 1024; // per-content; onLoad rerolls
 
     this.onGLRestore = () => {
       this.bundle = null;
@@ -48,6 +49,7 @@ export class ImageJob {
     };
     // src swap (carousels, lazy-load upgrades): re-resolve and re-render.
     this.onLoad = () => {
+      this.flowSeed = Math.random() * 1024; // new content, new deflection
       this.source = null;
       this.route = null;
       this.corsTried = false;
@@ -145,6 +147,7 @@ export class ImageJob {
         scale: params.flowScale ?? 4,
         speed: params.flowSpeed ?? 0.02,
         time: performance.now() / 1000,
+        seed: this.flowSeed,
       });
     }
     p.runSortPasses(b, params.passes ?? 12, params.threshold ?? 0.55, params.streak ?? 32, {
@@ -201,6 +204,7 @@ export class ImageJob {
           scale: params.flowScale ?? 4,
           speed: params.flowSpeed ?? 0.02,
           time: now / 1000,
+          seed: this.flowSeed,
         });
       }
       p.runSortPasses(b, params.passes ?? 12, params.threshold ?? 0.55, params.streak ?? 32, {

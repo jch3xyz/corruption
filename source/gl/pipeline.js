@@ -59,6 +59,7 @@ export function createPipeline(gl) {
     'uSpeed',
     'uTime',
     'uAmount',
+    'uFlowSeed',
   ]);
 
   // Advances once per sort pass so the temperature hash draws fresh pairs
@@ -158,7 +159,7 @@ export function createPipeline(gl) {
     // settles the local order.
     // Renders the direction field for this frame (call once per frame,
     // before the sort passes, whenever flow is in play).
-    runFieldPass(bundle, { amount, scale, speed, time }) {
+    runFieldPass(bundle, { amount, scale, speed, time, seed }) {
       gl.bindFramebuffer(gl.FRAMEBUFFER, bundle.field.fbo);
       gl.viewport(0, 0, bundle.fieldW, bundle.fieldH);
       gl.useProgram(field.handle);
@@ -167,6 +168,7 @@ export function createPipeline(gl) {
       gl.uniform1f(field.uniforms.uSpeed, speed);
       gl.uniform1f(field.uniforms.uTime, time);
       gl.uniform1f(field.uniforms.uAmount, amount);
+      gl.uniform1f(field.uniforms.uFlowSeed, seed ?? 0);
       drawQuad();
     },
 

@@ -283,11 +283,11 @@ function tier0() {
 
   // The flow field: sorting along curl-noise streamlines. Time is a fixed
   // uniform here, so every render is exactly reproducible.
-  const flowSteps = (amount, time, facets = false) => (p, b) => {
+  const flowSteps = (amount, time, facets = false, seed = 7) => (p, b) => {
     p.uploadFrame(b, noisy);
     p.runReset(b);
     if (amount > 0) {
-      p.runFieldPass(b, { amount, scale: 4, speed: 0.05, time });
+      p.runFieldPass(b, { amount, scale: 4, speed: 0.05, time, seed });
     }
     p.runSortPasses(b, 200, 0, 64, { flow: amount > 0, facets });
   };
@@ -339,6 +339,19 @@ function tier0() {
   check(
     'pipeline: the two flow modes produce different pictures',
     faceted.some((v, i) => v !== flowed[i])
+  );
+
+  // Per-element seeding: a different seed is a different instrument —
+  // different pattern, phase, rate, size, handedness — but still exactly
+  // a permutation of the same material.
+  const otherSeed = run(flowSteps(1, 12.5, false, 400));
+  check(
+    'pipeline: flow seed differentiates elements',
+    otherSeed.some((v, i) => v !== flowed[i])
+  );
+  check(
+    'pipeline: a different seed still conserves every pixel',
+    globalKey(otherSeed) === globalKey(unsorted)
   );
 }
 

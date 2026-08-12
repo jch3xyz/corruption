@@ -105,6 +105,12 @@ export class VideoJob {
     this.fitRect = null;
     this.governor = new FrameGovernor();
     this.nextResetAt = 0;
+    // Per-CONTENT flow seed. Keyed to the source, not the element: YouTube
+    // reuses one <video> across navigations, and "each video I click gets
+    // its own pattern" (John) means a new stream must reroll. Not in any
+    // frame path.
+    this.flowSeed = Math.random() * 1024;
+    this.flowSeedSrc = '';
     // Black-output net (DRM that slips past the EME gate, broken pipelines).
     this.nextProbeAt = 0;
     this.probeTime = -1;
@@ -124,8 +130,19 @@ export class VideoJob {
     this.onStillFrame = () => {
       if (this.active && this.video.paused) this.renderNow();
     };
+    // New content, new deflection: reroll the flow seed when the source
+    // actually changed (loadeddata fires per resource, not per seek).
+    this.onNewContent = () => {
+      const src = this.video.currentSrc || '';
+      if (src !== this.flowSeedSrc) {
+        this.flowSeedSrc = src;
+        this.flowSeed = Math.random() * 1024;
+      }
+    };
+    this.onNewContent();
     video.addEventListener('seeked', this.onStillFrame);
     video.addEventListener('loadeddata', this.onStillFrame);
+    video.addEventListener('loadeddata', this.onNewContent);
   }
 
   activate() {
@@ -304,6 +321,7 @@ export class VideoJob {
         scale: params.flowScale ?? 4,
         speed: params.flowSpeed ?? 0.02,
         time: now / 1000,
+        seed: this.flowSeed,
       });
     }
     p.runSortPasses(
@@ -464,6 +482,7 @@ export class VideoJob {
     this.video.removeEventListener('encrypted', this.onEncrypted);
     this.video.removeEventListener('seeked', this.onStillFrame);
     this.video.removeEventListener('loadeddata', this.onStillFrame);
+    this.video.removeEventListener('loadeddata', this.onNewContent);
     this.releaseGL();
     if (this.overlay) {
       this.overlay.destroy();
