@@ -18,6 +18,21 @@ nothing here is load-bearing — these are hints and known limitations.
 - YouTube Movies / anything EME-encrypted: the `encrypted` event /
   `mediaKeys` gate abandons the job and leaves the video untouched.
 
+## Instagram
+
+- The main player (clicked reels/posts, home feed) is MSE — `blob:` src,
+  origin-clean, works directly. That's why clicked reels always distorted.
+- **Explore-grid reel previews are direct cross-origin mp4s** from the
+  scontent CDN with no `crossorigin` attribute → no-cors fetch → tainted GL
+  upload → the job used to abandon (`tainted-source`) and the preview played
+  untouched. Recovered now by the detached CORS mirror in video-job.js: the
+  same URL re-fetched with `crossorigin="anonymous"` (the DNR rule stamps
+  ACAO on it), pipeline fed from the mirror, page element never touched.
+  Loose sync (0.3 s drift correction) — invisible under the smear.
+- Reel-tile thumbnails are plain `<img>`s (image route 2); when a tile looks
+  untouched it is usually the preview *video* stacked above the (distorted)
+  thumbnail, so fixing the video fixes the tile.
+
 ## General / known limitations
 
 - Videos using native browser controls (`controls` attribute) keep working

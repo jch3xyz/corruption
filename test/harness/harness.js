@@ -434,6 +434,45 @@ async function run() {
     );
   }
 
+  // --- Tainted-source recovery: cross-origin video via detached CORS mirror ---
+  // A no-cors cross-origin src taints the GL upload (SecurityError); the job
+  // must recover by re-fetching the same URL through a crossorigin mirror
+  // (:8439 sends ACAO the way the extension's DNR rule does). Instagram
+  // explore reel previews are exactly this case; clicked reels are MSE blobs.
+  if (xoUp) {
+    const xv = document.createElement('video');
+    xv.src = 'http://localhost:8439/test/fixtures/tiny.webm'; // deliberately NO crossorigin
+    xv.muted = true;
+    xv.loop = true;
+    xv.playsInline = true;
+    const xvCell = document.createElement('div');
+    xvCell.className = 'cell';
+    xvCell.appendChild(xv);
+    grid.appendChild(xvCell);
+    await xv.play().catch(() => {});
+    params.maxVideos = 8; // make room: the grid still holds 5 visible videos
+    registry.refresh();
+    check(
+      'tainted cross-origin video recovers via CORS mirror',
+      await waitFor(() => {
+        const j = registry.jobs.get(xv);
+        return !!j && !j.abandoned && !!j.srcMirror && j.mirrored;
+      }, 10000)
+    );
+    check(
+      'mirror-fed canvas draws real content (non-black)',
+      await waitFor(() => {
+        const j = registry.jobs.get(xv);
+        if (!j?.mirrored) return false;
+        const c = j.overlay.canvas;
+        const d = j.ctx.getImageData((c.width / 2) | 0, (c.height / 2) | 0, 1, 1).data;
+        return d[3] > 0 && d[0] + d[1] + d[2] > 30;
+      }, 8000)
+    );
+    params.maxVideos = 4;
+    registry.refresh();
+  }
+
   const done = document.createElement('div');
   done.id = 'done';
   done.textContent = `HARNESS COMPLETE: ${passCount} passed, ${failCount} failed`;

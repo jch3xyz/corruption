@@ -38,6 +38,7 @@ no build step — "Load unpacked" points at `source/`.
 | audio bake-off | Two complete engines behind one worklet, live-switchable via `audioMode`: **body** (48 modal resonators) and **timebase** (45 s reservoir, 5 lag-controlled heads). Plumbing restored from `audio-v1` with its latent bugs fixed. |
 | audio fb layer | The first phase's feedback/smear layer ported intact (`audioFeedback` + `audioFbDecay`; wobble from `driftY`): 0.35 s modulated delay on the engine output. Clears optional (`audioFbClear`, off) with a smooth fade (`audioFbClearS`). |
 | verdict | **Body won** (John, on live browsing: body + continuous exciter + smear). Timebase engine, `audioMode`, and its knobs removed; the two-engine state is tag `audio-bakeoff`. DEFAULTS = John's live-iterated settings. Audio harness 25/25. |
+| tainted-video mirror | The Phase 4 IOU paid: videos whose GL upload throws SecurityError (direct cross-origin src, no-cors — Instagram explore reel previews) recover via a detached `crossorigin` mirror element riding the DNR ACAO rule; page element untouched, mirror failure abandons as before. Harness check behind the :8439 gate. |
 
 Audio lineage: the first phase (spectral/granular sorting) was removed for
 mirroring the pixel-sort grammar — tag `audio-v1`. The bake-off's two

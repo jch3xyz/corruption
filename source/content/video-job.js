@@ -9,11 +9,86 @@ import { acquireGL } from '../gl/context.js';
 import { createBundle, destroyBundle } from '../gl/pipeline.js';
 import { FrameGovernor } from './metrics.js';
 
+// Detached CORS mirror for tainted sources — the video sibling of image
+// route 2. A cross-origin src without `crossorigin` fetches in no-cors mode
+// and taints the GL upload (the DNR ACAO rule never helps a no-cors media
+// fetch — correction 4), so we re-fetch the SAME url through a detached
+// element WITH crossorigin="anonymous"; the DNR rule stamps ACAO on that
+// response browser-wide, making the mirror origin-clean. The page's element
+// is never touched, keeps playing, and stays visible until the mirror's
+// first successful frame. Loose sync is fine: the output is smear, not
+// broadcast. Instagram explore reel previews (direct scontent mp4s, vs the
+// clicked reel's origin-clean MSE blob) are the motivating case.
+class SrcMirror {
+  constructor(pageVideo, onFail, onReady) {
+    this.dead = false;
+    const el = (this.el = document.createElement('video'));
+    el.crossOrigin = 'anonymous';
+    el.muted = true;
+    el.playsInline = true;
+    el.preload = 'auto';
+    el.addEventListener('error', () => {
+      if (this.dead) return;
+      this.dead = true;
+      onFail(); // CORS re-fetch rejected: leave the original alone
+    });
+    // A paused page video presents no frames; render once we have data.
+    el.addEventListener('loadeddata', onReady);
+    el.addEventListener('seeked', onReady);
+    this.srcFor = '';
+    this.retarget(pageVideo);
+  }
+
+  retarget(v) {
+    this.srcFor = v.currentSrc;
+    this.el.loop = v.loop;
+    this.el.src = this.srcFor;
+  }
+
+  ready() {
+    return !this.dead && this.el.readyState >= 2 && this.el.videoWidth > 0;
+  }
+
+  // Follow the page element: src swaps, play/pause, and coarse time drift.
+  sync(v) {
+    if (this.dead) return;
+    const src = v.currentSrc || '';
+    if (src !== this.srcFor && /^https?:/i.test(src)) this.retarget(v);
+    if (v.paused || v.ended) {
+      if (!this.el.paused) this.el.pause();
+    } else if (this.el.paused) {
+      this.el.play().catch(() => {});
+    }
+    if (
+      this.el.seekable.length > 0 &&
+      Math.abs(this.el.currentTime - v.currentTime) > 0.3
+    ) {
+      try {
+        this.el.currentTime = v.currentTime;
+      } catch {
+        /* not seekable yet */
+      }
+    }
+  }
+
+  destroy() {
+    this.dead = true;
+    this.el.pause();
+    this.el.removeAttribute('src');
+    try {
+      this.el.load(); // release the network connection
+    } catch {
+      /* nothing to release */
+    }
+  }
+}
+
 export class VideoJob {
   constructor(video, params) {
     this.kind = 'video';
     this.video = video;
     this.params = params;
+    this.srcMirror = null; // detached CORS re-fetch for tainted sources
     this.overlay = null;
     this.ctx = null;
     this.glc = null;
@@ -81,6 +156,7 @@ export class VideoJob {
     this.video.cancelVideoFrameCallback(this.rvfcId);
     this.active = false;
     this.unmirror();
+    this.srcMirror?.el.pause(); // stop decoding offscreen; sync() resumes it
     // GPU bundle is kept: suspended jobs resume cheaply (plan: allocate
     // once, reuse). Disconnected elements release it via destroy().
   }
@@ -132,21 +208,28 @@ export class VideoJob {
     // While blacked out, drop to probe cadence only.
     if (this.blackOut && now < this.nextProbeAt) return;
 
+    // Texture source: the page element, or the CORS mirror once a tainted
+    // source forced the re-fetch route. The mirror reports videoWidth 0
+    // until it has data, which simply skips frames below.
+    if (this.srcMirror) this.srcMirror.sync(video);
+    const source = this.srcMirror ? this.srcMirror.el : video;
+
     // Src/quality swaps change resolution in place (YouTube reuses its
     // <video> across SPA navigations) — recompute, don't tear down.
-    if (video.videoWidth !== this.natW || video.videoHeight !== this.natH) {
-      this.natW = video.videoWidth;
-      this.natH = video.videoHeight;
+    if (source.videoWidth !== this.natW || source.videoHeight !== this.natH) {
+      this.natW = source.videoWidth;
+      this.natH = source.videoHeight;
       this.syncGeometry();
     }
 
     if (this.natW > 0 && this.fitRect) {
       try {
-        if (this.renderFrame(video, now) && !this.mirrored) this.mirror();
+        if (this.renderFrame(source, now) && !this.mirrored) this.mirror();
       } catch (err) {
         if (err && err.name === 'SecurityError') {
-          // Cross-origin source without CORS taints the upload. Phase 4
-          // adds the DNR-backed recovery; until then, leave it alone.
+          // Cross-origin source without CORS taints the upload — the
+          // DNR-backed recovery: re-fetch through a crossorigin mirror.
+          if (!this.srcMirror && this.startSrcMirror()) return;
           return this.abandon('tainted-source');
         }
         // Transient GL/decoder hiccup: skip the frame, keep the loop alive.
@@ -154,7 +237,25 @@ export class VideoJob {
     }
   }
 
-  renderFrame(video, now) {
+  startSrcMirror() {
+    const src = this.video.currentSrc || '';
+    // blob:/data:/MediaStream sources are origin-clean by construction; a
+    // SecurityError from one of those is not a CORS problem we can fix.
+    if (!/^https?:/i.test(src)) return false;
+    console.log(
+      '[DEFLECTION] tainted video, re-fetching through CORS mirror:',
+      src.slice(0, 100)
+    );
+    this.srcMirror = new SrcMirror(
+      this.video,
+      () => this.abandon('tainted-source'),
+      this.onStillFrame
+    );
+    this.natW = 0; // dims now come from the mirror; recompute when it loads
+    return true;
+  }
+
+  renderFrame(source, now) {
     const glc = this.glc;
     const gl = glc.gl;
     const params = this.params;
@@ -173,7 +274,7 @@ export class VideoJob {
     }
 
     const p = glc.pipeline;
-    p.uploadFrame(b, video);
+    p.uploadFrame(b, source);
 
     if (!params.feedback) {
       // Straight pixel sorting: every frame starts from a clean copy of
@@ -215,8 +316,9 @@ export class VideoJob {
     if (now >= this.nextProbeAt) {
       this.nextProbeAt = now + 2000;
       const black = this.probeBlack(gl, b);
-      const advancing = video.currentTime > this.probeTime + 0.25;
-      this.probeTime = video.currentTime;
+      // Playback progress is the PAGE element's; the mirror follows it.
+      const advancing = this.video.currentTime > this.probeTime + 0.25;
+      this.probeTime = this.video.currentTime;
       if (black && advancing) {
         this.blackStreak++;
         if (this.blackStreak >= 2 && !this.blackOut) {
@@ -328,6 +430,8 @@ export class VideoJob {
     if (this.abandoned) return;
     this.suspend();
     this.abandoned = true;
+    this.srcMirror?.destroy();
+    this.srcMirror = null;
     this.releaseGL();
     if (this.overlay) {
       this.overlay.destroy();
@@ -340,6 +444,8 @@ export class VideoJob {
     if (this.destroyed) return;
     this.suspend();
     this.destroyed = true;
+    this.srcMirror?.destroy();
+    this.srcMirror = null;
     this.video.removeEventListener('encrypted', this.onEncrypted);
     this.video.removeEventListener('seeked', this.onStillFrame);
     this.video.removeEventListener('loadeddata', this.onStillFrame);
