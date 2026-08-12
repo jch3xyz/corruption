@@ -276,7 +276,7 @@ export class VideoJob {
     const p = glc.pipeline;
     p.uploadFrame(b, source);
 
-    if (!params.feedback) {
+    if (!params.feedbackVideo) {
       // Straight pixel sorting: every frame starts from a clean copy of
       // itself — no history, no drift, no keyframe rhythm. All the motion
       // comes from the stride-ladder sort below.

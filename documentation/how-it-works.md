@@ -284,9 +284,11 @@ ever swaps between two black rectangles.
 ### 2.9 Images specifically
 
 Straight-sort mode is deterministic, so a still image gets **one** render per
-source/params change and immediately releases its GPU bundle. Feedback mode
-animates images ≥200 px from a registry-owned ticker at `imageFps`, capped at
-`imageAnimCap` biggest-visible — those jobs retain their bundles.
+source/params change and immediately releases its GPU bundle. Image feedback
+(`feedbackImage` — its own toggle since 2026-08-12, split from the video
+toggle `feedbackVideo`; the two share every shaping knob) animates images
+≥200 px from a registry-owned ticker at `imageFps`, capped at `imageAnimCap`
+biggest-visible — those jobs retain their bundles.
 
 ### 2.10 The text mode (optional, off by default)
 

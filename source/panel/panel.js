@@ -8,7 +8,8 @@ import { initMIDI } from './midi.js';
 
 const DEFS = [
   { key: 'enabled', label: 'enabled', type: 'toggle' },
-  { key: 'feedback', label: 'feedback', type: 'toggle' },
+  { key: 'feedbackVideo', label: 'video feedback', type: 'toggle' },
+  { key: 'feedbackImage', label: 'image feedback', type: 'toggle' },
   { key: 'threshold', label: 'threshold', min: 0, max: 1, step: 0.01 },
   { key: 'passes', label: 'sort passes', min: 0, max: 64, step: 1 },
   { key: 'streak', label: 'streak', min: 1, max: 256, step: 1 },
@@ -38,17 +39,11 @@ const DEFS = [
   { key: 'audioExciter', label: 'exciter', type: 'select', options: ['gated', 'continuous'] },
 ];
 
-// These only shape the effect while feedback is on; gray them out otherwise.
-// (Straight-sort stills are static, so the image ticker params are moot too.)
-const FEEDBACK_ONLY = [
-  'decay',
-  'driftX',
-  'driftY',
-  'resetMinS',
-  'resetMaxS',
-  'imageFps',
-  'imageAnimCap',
-];
+// The shaping knobs are shared by both feedback modes: live while either
+// toggle is on. The image-animation knobs belong to image feedback alone
+// (straight-sort stills are static, so the ticker params are moot).
+const FEEDBACK_SHARED = ['decay', 'driftX', 'driftY', 'resetMinS', 'resetMaxS'];
+const IMAGE_FEEDBACK_ONLY = ['imageFps', 'imageAnimCap'];
 
 // Audio rows gray out when the audio master toggle is off; the smear rows
 // additionally require their own toggles.
@@ -153,7 +148,7 @@ for (const def of DEFS) {
           : Number(input.value);
     queueWrite(def.key, v);
     valueEls[def.key].textContent = fmt(def, v);
-    if (def.key === 'feedback') syncFeedbackUI(input.checked);
+    if (def.key === 'feedbackVideo' || def.key === 'feedbackImage') syncFeedbackUI();
     if (def.key === 'textScramble') syncTextUI(input.checked);
     if (['audioEnabled', 'audioFeedback', 'audioFbClear'].includes(def.key)) syncAudioUI();
   });
@@ -180,15 +175,22 @@ function setUI(key, v) {
   if (def.type === 'toggle') inputs[key].checked = !!v;
   else inputs[key].value = v;
   valueEls[key].textContent = fmt(def, v);
-  if (key === 'feedback') syncFeedbackUI(!!v);
+  if (key === 'feedbackVideo' || key === 'feedbackImage') syncFeedbackUI();
   if (key === 'textScramble') syncTextUI(!!v);
   if (['audioEnabled', 'audioFeedback', 'audioFbClear'].includes(key)) syncAudioUI();
 }
 
-function syncFeedbackUI(on) {
-  for (const key of FEEDBACK_ONLY) {
-    inputs[key].disabled = !on;
-    inputs[key].closest('.row').classList.toggle('inert', !on);
+function syncFeedbackUI() {
+  const video = inputs.feedbackVideo.checked;
+  const image = inputs.feedbackImage.checked;
+  for (const key of FEEDBACK_SHARED) {
+    const inert = !video && !image;
+    inputs[key].disabled = inert;
+    inputs[key].closest('.row').classList.toggle('inert', inert);
+  }
+  for (const key of IMAGE_FEEDBACK_ONLY) {
+    inputs[key].disabled = !image;
+    inputs[key].closest('.row').classList.toggle('inert', !image);
   }
 }
 

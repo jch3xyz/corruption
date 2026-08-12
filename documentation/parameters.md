@@ -11,18 +11,19 @@ Kill switch: Ctrl+Shift+D toggles `enabled` without the panel.
 | Param | Default | Range | What it does |
 |---|---|---|---|
 | `enabled` | on | on/off | Master switch. Off restores every video/image untouched. |
-| `feedback` | **off** | on/off | Off = straight per-frame pixel sorting — the resting state (John's final call; the audio smear runs independently of this). On = temporal feedback — smear accumulates, drifts, decays, clears at keyframe resets; the values below are live-tuned for it. |
+| `feedbackVideo` | **on** | on/off | Temporal feedback on videos — **the resting state** (John, 2026-08-12; previously off): smear accumulates, drifts, decays, clears at slow 30–60 s keyframes. Off = straight per-frame pixel sorting. |
+| `feedbackImage` | **off** | on/off | Temporal feedback on images: big stills animate at `imageFps` and accumulate the same smear. Off = one-shot sorted stills (the resting state). The two toggles share every shaping knob below. |
 | `threshold` | **0** | 0–1 | Luma above this is eligible for sorting (and feedback). 0 = whole frame corrupts; 1 = untouched. The single most expressive knob. |
 | `passes` | **64** | 0–64 | Sort passes per frame. A full 256→1 stride ladder is 18 passes, so 64 runs ~3.5 settling cycles. |
 | `streak` | **256** | 1–256 | Longest compare-exchange stride (rounded down to a power of two). Directly sets how far pixels can travel per frame — the ribbon-length knob. 1 = classic single-step odd-even. |
-| `decay` | **0.906** | 0.8–0.999 | *Feedback only.* Accumulator retention per frame. Higher = smear lingers longer. |
-| `driftX` | **−0.0025** | ±0.01 | *Feedback only.* Horizontal smear, UV units per frame (negative = leftward). |
-| `driftY` | **0** | ±0.01 | *Feedback only.* Vertical smear; **positive = upward**. 0 = purely horizontal drift. Purely visual — the audio wobble it used to drive is now `audioFbWobble`. |
-| `resetMinS` / `resetMaxS` | **1 / 60** | 1–30 / 2–60 | *Feedback only.* Keyframe rhythm: the accumulator resets to a clean frame at a random interval in this window. |
+| `decay` | **0.906** | 0.8–0.999 | *Feedback modes only (shared).* Accumulator retention per frame. Higher = smear lingers longer. |
+| `driftX` | **−0.0025** | ±0.01 | *Feedback modes only (shared).* Horizontal smear, UV units per frame (negative = leftward). |
+| `driftY` | **0.0020** | ±0.01 | *Feedback modes only (shared).* Vertical smear; **positive = upward** — the resting state climbs gently. Purely visual — the audio wobble it used to drive is now `audioFbWobble`. |
+| `resetMinS` / `resetMaxS` | **30 / 60** | 1–30 / 2–60 | *Feedback modes only (shared).* Keyframe rhythm: the accumulator resets to a clean frame at a random interval in this window. Slow by default — damage accumulates for half a minute or more before clearing. |
 | `maxRes` | 1920 | 480–1920 | Processing resolution cap, long axis. Lower it on weak GPUs; output upscales through the overlay. |
 | `maxVideos` | **12** | 1–16 | Concurrent video jobs, biggest visible first. Paused videos count too — they get a one-shot sorted still (rVFC never fires for them). Raised from 8 for grid feeds (Instagram explore) where a dozen previews are on screen at once. |
-| `imageFps` | **6** | 1–30 | *Feedback only.* Tick rate for animated images. Straight-sort stills don't animate at all. |
-| `imageAnimCap` | 12 | 0–24 | *Feedback only.* Max concurrently animated images (≥200 px side, biggest visible first); the rest stay stills. |
+| `imageFps` | **6** | 1–30 | *Image feedback only.* Tick rate for animated images. Straight-sort stills don't animate at all. |
+| `imageAnimCap` | 12 | 0–24 | *Image feedback only.* Max concurrently animated images (≥200 px side, biggest visible first); the rest stay stills. |
 | `textScramble` | **off** | on/off | The text mode. On = letters rearrange inside each word, page-wide; anything that isn't a letter (space, punctuation, digit, emoji) is a barrier no glyph crosses, so every word keeps its length and the page keeps its shape. Off restores every run. **Decide in the room** — see the text mode below. |
 | `textMin` | **12** | 1–40 | *Text only.* Shortest run of text that scrambles. At 12 prose dissolves while short interface labels (Home, Subscribe) survive — the navigability dial. Wind it down and the furniture goes too. |
 | `audioEnabled` | on | on/off | Audio master. Off ramps every tap to dry — the tap itself is permanent by design. |

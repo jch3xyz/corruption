@@ -1,19 +1,21 @@
 // Single source of truth for effect parameters. chrome.storage.local holds
 // the live values; the panel writes, every content script subscribes.
 
-// Defaults = John's live-iterated settings, 2026-08-11. The piece rests on
-// straight visual sorting + the audio smear; visual temporal feedback is a
-// toggle whose values below are live-tuned for when it's on.
+// Defaults = John's live-iterated settings (2026-08-11, revised 2026-08-12).
+// The piece rests on temporal feedback on VIDEOS (slow 30–60 s keyframes,
+// upward drift) over straight-sorted image stills, plus the audio smear.
+// The two visual feedback toggles share every shaping knob below.
 export const DEFAULTS = {
   enabled: true,
-  feedback: false,   // off = straight per-frame pixel sorting (the resting state)
+  feedbackVideo: true,  // temporal feedback on videos — the resting state
+  feedbackImage: false, // temporal feedback animates images; off = one-shot stills
   threshold: 0,      // luma above this is eligible; 0 = the whole frame sorts
   passes: 64,        // sort passes per frame (~3.5 cycles of a 256→1 ladder)
   streak: 256,       // max compare-exchange stride: longer = longer ribbons
-  decay: 0.906,      // feedback only: accumulator retention per frame
-  driftX: -0.0025,   // feedback only: smear direction, UV units per frame
-  driftY: 0,         // feedback only: 0 = purely horizontal drift
-  resetMinS: 1,      // feedback only: accumulator "keyframe" reset window
+  decay: 0.906,      // feedback modes: accumulator retention per frame
+  driftX: -0.0025,   // feedback modes: smear direction, UV units per frame
+  driftY: 0.0020,    // feedback modes: positive = upward smear
+  resetMinS: 30,     // feedback modes: accumulator "keyframe" reset window
   resetMaxS: 60,
   maxRes: 1920,      // processing resolution cap, long axis
   maxVideos: 12,     // concurrent video jobs, biggest visible first

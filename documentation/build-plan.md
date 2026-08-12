@@ -12,13 +12,14 @@ recirculating delay. Nothing added, nothing lost, unreadable anyway.
 
 Conceptually the project has grown from "codec-corruption aesthetic" into a
 device that turns the live internet into a generative artwork with code
-aesthetics. **The piece's resting state** (John, 2026-08-11, settled live
-during the audio bake-off): **straight visual sorting + the body engine
-continuously driven + a never-clearing audio smear** whose loop gain is its
-own decay. The visual and audio feedback are decoupled: `audioFeedback` on,
-visual `feedback` off — the visual temporal-feedback mode survives as a
-toggle whose knobs (decay 0.906, leftward drift, 1–60 s keyframes) are
-live-tuned for when it's flipped on. The text mode (page-wide word
+aesthetics. **The piece's resting state** (John, 2026-08-11; revised
+2026-08-12): **temporal feedback on videos** — smear accumulating under a
+gentle up-left drift, clearing at slow 30–60 s keyframes — over
+**straight-sorted image stills**, plus **the body engine continuously
+driven + a never-clearing audio smear** whose loop gain is its own decay.
+The two visual feedback toggles (`feedbackVideo` on, `feedbackImage` off)
+share every shaping knob; the audio smear is independent of both
+(`audioFeedback`), and since the detangle no visual slider reaches it. The text mode (page-wide word
 scrambling, John's choice over the proposal's swap design) is **off** in
 that resting state: built and verified, awaiting the call the proposal
 always deferred to the room.
@@ -43,6 +44,7 @@ no build step — "Load unpacked" points at `source/`.
 | verdict | **Body won** (John, on live browsing: body + continuous exciter + smear). Timebase engine, `audioMode`, and its knobs removed; the two-engine state is tag `audio-bakeoff`. DEFAULTS = John's live-iterated settings. Audio harness 25/25. |
 | tainted-video mirror | The Phase 4 IOU paid: videos whose GL upload throws SecurityError (direct cross-origin src, no-cors — Instagram explore reel previews) recover via a detached `crossorigin` mirror element riding the DNR ACAO rule; page element untouched, mirror failure abandons as before. Harness check behind the :8439 gate. |
 | Phase 5 — text mode | **Built, defaulted off, undecided.** First landed as caption-swapping between cards (the proposal's recommendation — complete at tag `text-swap`, its suite was 26/26); John then chose **scrambling, page-wide**: letters rearrange inside their own word, non-letters are barriers, `textMin` (default 12) is the navigability dial. Character-data writes only, self-invalidating records, restore on either toggle. Suite rewritten for the scramble grammar: 35/35. |
+| split feedback | Visual feedback became **two toggles sharing one knob set**: `feedbackVideo` (**on** — the resting state flipped, John 2026-08-12) and `feedbackImage` (**off** — stills stay one-shot; the ticker rides this toggle alone). New shared defaults: driftY +0.0020 (upward), reset window 30–60 s. Visual suite +2 ticker checks (pane-immune). |
 | audio detangle | **The visual sliders no longer reach the audio** (John's request: performing the video must never bend the sound). The smear's wobble left `driftY` for its own `audioFbWobble` (0–0.4, default 0 = the resting state unchanged); the optional clear rhythm left `resetMinS`/`resetMaxS` for `audioFbClearMinS`/`audioFbClearMaxS` (1/60). Harness asserts the detangle structurally (no visual key in the worklet's param surface) and behaviorally (the wobble knob moves the echoes). Audio suite 27/27 incl. live tier. |
 
 Audio lineage: the first phase (spectral/granular sorting) was removed for
@@ -52,10 +54,10 @@ critics); body won on John's ears, and the losing timebase engine is tag
 `audio-bakeoff`. The run's corrections are baked into the implementation —
 see "The audio engine" in parameters.md.
 
-**John's live-chosen settings are now the DEFAULTS** (2026-08-11): visual
-feedback **off** (his final call — its knobs stay live-tuned: decay 0.906,
-driftX −0.0025, driftY 0, reset
-1–60 s, imageFps 6); audio fb on at fbDecay 0.999 with
+**John's live-chosen settings are now the DEFAULTS** (2026-08-11, revised
+2026-08-12): **video feedback on / image feedback off** (decay 0.906,
+driftX −0.0025, driftY +0.0020 — a gentle climb, reset 30–60 s — slow
+keyframes, imageFps 6 for when images join); audio fb on at fbDecay 0.999 with
 **clears off** (`audioFbClear` — his call: the smear's gain < 1 is its own
 decay, continuous sounds nicer; the video keyframe still clears), maxTaps 8,
 body at sustain 12 / drive 1.0 / continuous exciter.
@@ -160,9 +162,14 @@ python3 test/serve.py 8439   # second origin for the image CORS-route test
 ```
 
 - Visual/lifecycle suite: `http://localhost:8437/test/harness/index.html`
-  (~26 checks). **Must run in a visible tab** — hidden tabs starve frames and
-  produce false timeouts (documented in harness header). In John's Chrome it
-  runs clean; in Claude's embedded pane expect visibility roulette.
+  (32 checks; +2 more with the :8439 server up for the cross-origin image
+  route). **Must run in a visible tab** — hidden tabs starve frames and
+  produce false timeouts (documented in harness header). Last full run
+  32/32 (2026-08-12, embedded pane, visible). Two latent test bugs fixed
+  that day: the disable check iterated `j.video` over image jobs (TypeError
+  read as timeout since Phase 4), and the still-re-render check nudged
+  `threshold` 0→0.05, which changes nothing now that the default is 0 —
+  both were masked when global feedback animated images under the tests.
 - Audio suite: `http://localhost:8437/test/harness/audio.html` — tier 1 (pure
   DSP) + tier 2 (body engine + feedback layer through OfflineAudioContext)
   are fully deterministic, 18 checks; tier 3 ("run live tap tests" button)

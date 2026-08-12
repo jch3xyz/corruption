@@ -223,7 +223,9 @@ export class Registry {
         if (this.params.enabled && this.params.textScramble) this.text.update();
       }, 200);
     }
-    const effectKeys = ['threshold', 'passes', 'streak', 'feedback', 'maxRes'];
+    // feedbackVideo is absent by design: it shapes the rVFC path only, and
+    // re-rendering every still because the video toggle moved would be waste.
+    const effectKeys = ['threshold', 'passes', 'streak', 'feedbackImage', 'maxRes'];
     if (Object.keys(changed).some((k) => effectKeys.includes(k))) {
       clearTimeout(this.imageDirtyTimer);
       this.imageDirtyTimer = setTimeout(() => {
@@ -239,10 +241,11 @@ export class Registry {
     this.rebalance();
   }
 
-  // Feedback mode animates big on-screen images at imageFps; straight-sort
-  // stills need no ticker at all.
+  // Image feedback animates big on-screen images at imageFps; straight-sort
+  // stills need no ticker at all. Rides its own toggle — the video one is
+  // irrelevant here.
   ensureImageTicker() {
-    const want = this.params.enabled && this.params.feedback;
+    const want = this.params.enabled && this.params.feedbackImage;
     const fps = Math.min(30, Math.max(1, this.params.imageFps ?? 12));
     if (!want) {
       if (this.imageTicker) {

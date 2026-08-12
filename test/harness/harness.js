@@ -70,10 +70,12 @@ function makeVideo(label, hue) {
 
 async function run() {
   // Boot the registry FIRST so all videos arrive via MutationObserver.
-  // feedback:true so the trail test exercises the temporal path; a later
-  // check flips it off and asserts straight sorting leaves no trail.
+  // feedbackVideo:true (the default, pinned here anyway) so the trail test
+  // exercises the temporal path; a later check flips it off and asserts
+  // straight sorting leaves no trail. feedbackImage stays off — the image
+  // tests are route/still tests, and the ticker check flips it itself.
   // maxVideos pinned to 4 so the cap/promotion tests stay meaningful.
-  const params = { ...DEFAULTS, enabled: true, feedback: true, maxVideos: 4 };
+  const params = { ...DEFAULTS, enabled: true, feedbackVideo: true, maxVideos: 4 };
   const registry = new Registry(params);
   registry.start();
   window.__deflection = { params, registry };
@@ -160,7 +162,7 @@ async function run() {
   // Straight-sort mode: no history, so the trail must vanish and the row
   // returns to roughly the bar's own width. (The bar is uniform brightness,
   // so sorting it is invisible — this isolates the absence of feedback.)
-  params.feedback = false;
+  params.feedbackVideo = false;
   check(
     'straight sort mode leaves no trail',
     await waitFor(() => {
@@ -168,7 +170,19 @@ async function run() {
       return n > 20 && n < 55;
     })
   );
-  params.feedback = true;
+  params.feedbackVideo = true;
+
+  // --- Split feedback toggles: the image ticker rides feedbackImage alone,
+  // regardless of the video toggle. (Pure timer state — pane-immune.)
+  params.feedbackImage = true;
+  registry.paramsChanged({ feedbackImage: true });
+  check('image ticker starts with image feedback', registry.imageTicker !== 0);
+  params.feedbackImage = false;
+  registry.paramsChanged({ feedbackImage: false });
+  check(
+    'image ticker ignores the video toggle',
+    registry.imageTicker === 0 && params.feedbackVideo === true
+  );
 
   // --- Images (Phase 4): route resolution + sorted stills ---
   // Direct route: a data-URL image (origin-clean by definition).
@@ -241,12 +255,17 @@ async function run() {
     check('route counter: cors >= 1', registry.stats().images.cors >= 1);
   }
 
-  // Params change re-renders stills (debounced 200 ms).
+  // Params change re-renders stills (debounced 200 ms). threshold 0.9 bars
+  // all but the brightest pixels from sorting, so the re-render provably
+  // differs from the default full sort. (0.05 was used when the default was
+  // 0.55; against today's default 0 both values sort everything and the
+  // still is pixel-identical — masked for a while by image feedback
+  // animating underneath this test.)
   {
     const j = registry.jobs.get(sameImg);
     const snap = j.ctx.getImageData(0, ((j.overlay.canvas.height / 2) | 0), j.overlay.canvas.width, 1).data.join();
-    params.threshold = 0.05; // sort nearly everything → different output
-    registry.paramsChanged({ threshold: 0.05 });
+    params.threshold = 0.9;
+    registry.paramsChanged({ threshold: 0.9 });
     check(
       'param change re-renders image stills',
       await waitFor(() => {
@@ -342,7 +361,11 @@ async function run() {
       () =>
         registry.stats().active === 0 &&
         registry.stats().activeImages === 0 &&
-        [...registry.jobs.values()].every((j) => j.video.style.opacity !== '0') &&
+        // The right element per kind: VideoJob carries .video, ImageJob .img.
+        // (j.video for an image job threw and read as a silent timeout.)
+        [...registry.jobs.values()].every(
+          (j) => (j.video ?? j.img).style.opacity !== '0'
+        ) &&
         [...document.querySelectorAll('canvas[data-deflection]')].every(
           (c) => c.style.display === 'none'
         )

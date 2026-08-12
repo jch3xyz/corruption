@@ -146,7 +146,7 @@ export class ImageJob {
     this.ctx.drawImage(glc.canvas, 0, glc.canvas.height - h, w, h, x, y, dw, dh);
 
     // Stills release GPU resources immediately; animated jobs keep them.
-    if (!params.feedback) {
+    if (!params.feedbackImage) {
       destroyBundle(gl, b);
       this.bundle = null;
     }
@@ -155,7 +155,7 @@ export class ImageJob {
   // Feedback-mode animation step, driven by the registry ticker.
   tick(now) {
     if (!this.active || this.destroyed || this.abandoned) return;
-    if (!this.params.feedback || !this.rendered || !this.mirrored) return;
+    if (!this.params.feedbackImage || !this.rendered || !this.mirrored) return;
     const glc = this.glc;
     if (!glc || glc.lost) return;
 
