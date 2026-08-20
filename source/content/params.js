@@ -39,11 +39,25 @@ export const DEFAULTS = {
                       // ON in the resting state (John's call, 2026-08-12)
   textMin: 8,        // shortest run of text that scrambles; short labels survive
 
-  // --- audio (the body engine — bake-off verdict; timebase at tag audio-bakeoff) ---
+  // --- audio (a process done to the audio, since 2026-08-13: both engines
+  // sum their resonant part with the DIRECT signal, so the source passes
+  // through the apparatus instead of merely driving it. Before that the
+  // output never contained the input and every video sounded alike.) ---
   audioEnabled: true,
   audioMix: 1,       // wet/dry in the tap graph, not DSP
+  audioBody: 'modal', // which apparatus: 'modal' = 48 stretched partials,
+                      // struck metal · 'comb' = three recirculating lines,
+                      // tube/pipe/spring. The A/B John called for.
+  audioDirect: 1,    // direct signal level inside the DSP; 0 = the old
+                     // synth-like behaviour, kept reachable for comparison
+  audioBodyMix: 1,   // resonant part against the direct path — the identity
+                     // dial: up for more fixed voice, down for more video
+  audioCombDamp: 0.45, // comb only: loop lowpass, metallic ↔ woody
   audioFeedback: true,  // echo/smear layer on the engine output (either mode)
-  audioFbDecay: 0.999,  // smear retention; maps to feedback gain 0.5–0.95
+  audioFbDecay: 0.999,  // smear TAIL only; maps to loop gain 0.5–0.95
+  audioFbReturn: 0.25,  // how loud the wash sits, as a fraction of the loop
+                        // gain. 1 = pre-2026-08-13, where the wash settled
+                        // ~20× over the direct sound and buried the source.
   audioFbWobble: 0,     // delay wobble depth 0–0.4 (tape warble); 0 = static echo stack.
                         // Was coupled to driftY; detangled 2026-08-12 — audio knobs
                         // only, so performing the video never bends the sound.

@@ -13,10 +13,16 @@ export function rms(buf, start, len) {
 // --- Body engine: the fixed modal table -----------------------------------
 //
 // Three fundamentals in just intonation × 16 stretched partials → 48 modes.
-// The stretch is what makes the bank read as an *object* rather than a comb
-// (modal resonators, not waveguide combs: a comb would drag in its own
-// integer harmonics and swamp the stretch). Damping references the lowest
-// fundamental so high modes always die faster, one global physical law.
+// The stretch is what makes the bank read as a struck *object*: a comb drags
+// in its own integer harmonics and cannot hold it. That is measured, not
+// assumed — allpass dispersion in a comb loop was tried (2026-08-13) at K = 0,
+// 6 and 12 first-order sections and moved the partials identically, 0.06–0.08 %
+// at partial 10 where this table gives 1.98 %, because a first-order allpass
+// only disperses near Nyquist and does nothing across 55–1500 Hz. So the comb
+// below is NOT a failed modal bank; it is a peer with a different character
+// (tube/pipe/spring against struck metal), kept for the A/B. Damping
+// references the lowest fundamental so high modes always die faster, one
+// global physical law.
 
 export const BODY_FUNDAMENTALS = [55, 82.5, 137.5];
 export const BODY_PARTIALS = 16;
@@ -105,6 +111,80 @@ export class OnsetDetector {
     if (this.warmup > 0) this.warmup--;
     if (fired) this.refractory = Math.round(0.08 * this.sr);
     return fired;
+  }
+}
+
+// --- Comb engine: the same tuning as a filter, not a bank -----------------
+//
+// One recirculating line per fundamental. The distinction that matters is not
+// comb-vs-modal, it is that BOTH engines now return only their resonant part
+// and the caller adds the direct signal — the source passes through the
+// apparatus instead of merely driving it. `step()` therefore returns the
+// feedback contribution alone, exactly as the modal bank returns its summed
+// resonator outputs.
+//
+// Loop gain comes from the same T60 the modal bank uses, so `audioSustain`
+// means the same thing in both engines and the A/B stays level-matched. The
+// one-pole in the loop is the comb's version of the damping law (high partials
+// lose gain every pass, so they always die first); tanh on the write-back
+// bounds the line absolutely, the same discipline as the smear layer.
+
+export function combDelaySamples(sampleRate, f0) {
+  return sampleRate / f0;
+}
+
+// g such that the line decays 60 dB in t60 seconds: one pass costs D/sr.
+export function combLoopGain(sampleRate, f0, t60) {
+  const passSec = combDelaySamples(sampleRate, f0) / sampleRate;
+  const g = Math.pow(10, (-3 * passSec) / Math.max(1e-3, t60));
+  return Math.min(0.999, Math.max(0, g));
+}
+
+export class CombLine {
+  constructor(sampleRate, f0, t60, damp = 0.45) {
+    this.sr = sampleRate;
+    this.f0 = f0;
+    this.delay = combDelaySamples(sampleRate, f0);
+    // Power-of-two ring so the read/write index is a mask, never a modulo.
+    const need = Math.ceil(this.delay) + 4;
+    this.len = 1 << Math.ceil(Math.log2(need));
+    this.mask = this.len - 1;
+    this.buf = new Float32Array(this.len);
+    this.w = 0;
+    this.lp = 0;
+    this.damp = damp;
+    this.setSustain(t60);
+  }
+
+  setSustain(t60) {
+    this.g = combLoopGain(this.sr, this.f0, t60);
+  }
+
+  setDamp(d) {
+    this.damp = Math.min(0.95, Math.max(0, d));
+  }
+
+  reset() {
+    this.buf.fill(0);
+    this.lp = 0;
+    this.w = 0;
+  }
+
+  // Returns the resonant contribution only; the caller adds the direct path.
+  step(x) {
+    const read = this.w - this.delay;
+    const i0 = Math.floor(read);
+    const frac = read - i0;
+    const a = this.buf[i0 & this.mask];
+    const b = this.buf[(i0 + 1) & this.mask];
+    let v = a + (b - a) * frac;
+    this.lp = (1 - this.damp) * v + this.damp * this.lp;
+    v = this.lp;
+    const fbk = this.g * v;
+    const write = x + fbk;
+    this.buf[this.w & this.mask] = Number.isFinite(write) ? Math.tanh(write) : 0;
+    this.w++;
+    return Number.isFinite(fbk) ? fbk : 0;
   }
 }
 

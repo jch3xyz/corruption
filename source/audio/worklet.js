@@ -13,7 +13,7 @@
 // - process() must never throw: a dead processor is permanently silent
 //   media, which violates "never break the page".
 
-import { rms, modeTable, OnsetDetector } from './dsp.js';
+import { rms, modeTable, OnsetDetector, CombLine, BODY_FUNDAMENTALS } from './dsp.js';
 
 const PRESENCE_OPEN_DB = -55;
 const PRESENCE_CLOSE_DB = -65;
@@ -22,13 +22,24 @@ const MUTE_FLOOR = 1e-4; // −80 dBFS
 const BODY_STATE_CAP = 0.35; // per-mode amplitude bound (hard backstop)
 const BODY_OUT_GAIN = 0.4;
 const BODY_CONT_BOOST = 4; // continuous-path peak gain = amp × this
+const COMB_OUT_GAIN = 0.5; // three lines, each level-normalised by (1 − g)
 
 const DEFAULT_PARAMS = {
+  body: 'modal', // which apparatus the signal passes through: modal | comb
+  direct: 1, // the direct signal INSIDE the DSP. 0 = the pre-2026-08-13
+  //           behaviour, where the output never contained the input at all
+  bodyMix: 1, // resonant part against the direct path — the identity dial
+  combDamp: 0.45, // comb only: loop lowpass, metallic ↔ woody
   sustain: 12,
   drive: 1.0,
   exciter: 'continuous',
   fb: true,
   fbDecay: 0.999,
+  fbReturn: 0.25, // wash level as a FRACTION OF THE LOOP GAIN, so 1 is
+  //                 exactly the pre-2026-08-13 behaviour. Split out because
+  //                 one number used to set both the tail length and the wash
+  //                 level: at loop gain 0.95 the wash settles ~1/(1−g) ≈ 20×
+  //                 over the direct sound and buries whatever is playing.
   fbClear: false, // smear runs continuous by default: gain < 1 IS its decay
   fbClearS: 1, // when clearing: fade the wash over ~this long; 0 = hard cut
   wobble: 0, // delay wobble depth, 0..0.4; 0 = a static echo stack
@@ -108,6 +119,12 @@ class BodyEngine {
     const attack = 1 - Math.exp(-1 / (0.005 * this.sr));
     const release = 1 - Math.exp(-1 / (0.05 * this.sr));
     const drive = p.drive;
+    // The bank is a FILTER, not a synth: the direct signal is summed with the
+    // resonators, so the source passes through the apparatus instead of only
+    // driving it. `direct` is deliberately not scaled by `drive` — drive is
+    // strike force into the modes, not a level for the transmission.
+    const direct = p.direct ?? 1;
+    const bodyMix = p.bodyMix ?? 1;
     for (let s = 0; s < n; s++) {
       // Gated: a raised-cosine-ish AR envelope opened by onsets, so the
       // body is *struck*, never continuously driven. Continuous (the
@@ -120,7 +137,8 @@ class BodyEngine {
       }
       const exc = gated ? this.env * drive : drive;
       for (let c = 0; c < channels; c++) {
-        const x = inBufs[c][s] * exc;
+        const xin = inBufs[c][s];
+        const x = xin * exc;
         const xz = x - this.x2[c]; // resonz numerator (1 − z⁻²)
         this.x2[c] = this.x1[c];
         this.x1[c] = x;
@@ -140,7 +158,7 @@ class BodyEngine {
           y1[i] = y;
           sum += y;
         }
-        outBufs[c][s] = sum * BODY_OUT_GAIN;
+        outBufs[c][s] = direct * xin + bodyMix * sum * BODY_OUT_GAIN;
       }
     }
     // Block-rate state hygiene: flush denormals, purge non-finite.
@@ -157,6 +175,73 @@ class BodyEngine {
           y1[i] = 0;
           y2[i] = 0;
         }
+      }
+    }
+  }
+}
+
+// --- Engine: the same tuning as recirculating lines -------------------------
+//
+// The comb peer (John's proposal, 2026-08-13). Same fundamentals, same
+// `sustain` meaning, same direct/bodyMix mixing as the modal bank, so the A/B
+// is level-matched and only the character differs: exactly-harmonic partials
+// read as tube/pipe/spring where the stretched modal bank reads as struck
+// metal. That difference is inherent, not a bug — see the note in dsp.js.
+// About a tenth of the modal bank's per-sample cost.
+
+class CombEngine {
+  constructor(sr, channels, p) {
+    this.sr = sr;
+    this.channels = channels;
+    this.sustain = p.sustain;
+    this.damp = p.combDamp ?? 0.45;
+    this.lines = [];
+    for (let c = 0; c < channels; c++) {
+      this.lines.push(
+        BODY_FUNDAMENTALS.map((f) => new CombLine(sr, f, this.sustain, this.damp))
+      );
+    }
+  }
+
+  setSustain(s) {
+    if (s === this.sustain) return;
+    this.sustain = s;
+    for (const ch of this.lines) for (const l of ch) l.setSustain(s);
+  }
+
+  setDamp(d) {
+    if (d === this.damp) return;
+    this.damp = d;
+    for (const ch of this.lines) for (const l of ch) l.setDamp(d);
+  }
+
+  reset() {
+    // Called by the silence gate: stale ringing must never return with the
+    // next sound, and the lines hold seconds of it.
+    for (const ch of this.lines) for (const l of ch) l.reset();
+  }
+
+  process(inBufs, outBufs, channels, n, p) {
+    this.setSustain(p.sustain);
+    this.setDamp(p.combDamp ?? 0.45);
+    const direct = p.direct ?? 1;
+    const bodyMix = p.bodyMix ?? 1;
+    const drive = p.drive ?? 1;
+    for (let c = 0; c < channels; c++) {
+      const lines = this.lines[c];
+      const src = inBufs[c];
+      const dst = outBufs[c];
+      for (let s = 0; s < n; s++) {
+        const xin = src[s];
+        const x = xin * drive;
+        let sum = 0;
+        for (let i = 0; i < lines.length; i++) {
+          // (1 − g) normalisation: a line settles at ≈ x·g/(1−g), so this
+          // brings the resonant part back to the order of the input and keeps
+          // `bodyMix` meaning the same thing in both engines.
+          sum += lines[i].step(x) * (1 - lines[i].g);
+        }
+        dst[s] = direct * xin + bodyMix * sum * COMB_OUT_GAIN;
       }
     }
   }
@@ -199,9 +284,15 @@ class FeedbackLayer {
   }
 
   process(bufs, channels, n, p) {
-    // fbDecay 0.8..0.999 → feedback gain 0.5..0.95 (the visual decay
-    // knob's range, so the knob feels like the same knob).
+    // fbDecay 0.8..0.999 → loop gain 0.5..0.95 (the visual decay knob's
+    // range, so the knob feels like the same knob). The loop gain sets the
+    // TAIL and nothing else since 2026-08-13; how loud the wash sits under the
+    // direct sound is `fbReturn`, a fraction of it. They were one number, and
+    // that is why the piece sounded the same on every video: at gain 0.95 the
+    // recirculating wash settles ~1/(1−g) ≈ 20× above whatever just arrived.
+    // fbReturn 1 reproduces the old behaviour exactly.
     const gain = Math.min(0.95, 0.5 + (((p.fbDecay ?? 0.96) - 0.8) / 0.199) * 0.45);
+    const ret = gain * Math.min(1, Math.max(0, p.fbReturn ?? 0.25));
     const base = 0.35 * this.sr;
     const modDepth = Math.min(0.4, Math.abs(p.wobble ?? 0));
     const phaseInc = (2 * Math.PI * 0.1) / this.sr;
@@ -249,9 +340,10 @@ class FeedbackLayer {
         const a = line[((r0 % this.len) + this.len) % this.len];
         const b = line[(((r0 + 1) % this.len) + this.len) % this.len];
         const echo = (a + (b - a) * frac) * env;
-        const y = bufs[c][i] + gain * echo;
-        line[this.w % this.len] = Math.tanh(y);
-        bufs[c][i] = y;
+        const dry = bufs[c][i];
+        // The loop keeps its own long tail; the return decides how loud it is.
+        line[this.w % this.len] = Math.tanh(dry + gain * echo);
+        bufs[c][i] = dry + ret * echo;
       }
       this.w++;
     }
@@ -296,6 +388,19 @@ class DeflectionAudio extends AudioWorkletProcessor {
     this.body?.setSustain(this.p.sustain);
   }
 
+  // Swapping engines rebuilds state, so it clicks — acceptable for a bake-off
+  // switch, which is what this is. Everything else about the two paths is
+  // shared, including the mix knobs, so the comparison stays honest.
+  ensureEngine() {
+    const kind = this.p.body === 'comb' ? 'comb' : 'modal';
+    if (this.engineKind === kind && this.body) return;
+    this.engineKind = kind;
+    this.body =
+      kind === 'comb'
+        ? new CombEngine(sampleRate, this.channels, this.p)
+        : new BodyEngine(sampleRate, this.channels, this.p);
+  }
+
   ensure(channels, n) {
     if (this.channels === channels && this.inBufs && this.inBufs[0].length >= n)
       return;
@@ -309,7 +414,9 @@ class DeflectionAudio extends AudioWorkletProcessor {
     this.monoIn = new Float32Array(n);
     this.dcX = new Float32Array(channels);
     this.dcY = new Float32Array(channels);
-    this.body = new BodyEngine(sampleRate, channels, this.p);
+    this.body = null;
+    this.engineKind = null;
+    this.ensureEngine();
     this.fbLayer = new FeedbackLayer(sampleRate, channels);
   }
 
@@ -322,6 +429,7 @@ class DeflectionAudio extends AudioWorkletProcessor {
       const n = input[0].length;
       const channels = Math.min(input.length, output.length);
       this.ensure(channels, n);
+      this.ensureEngine(); // the engine can be switched live from the panel
 
       // Sanitize + DC-block into scratch; derive the mono feed.
       for (let c = 0; c < channels; c++) {

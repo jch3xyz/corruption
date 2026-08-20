@@ -19,6 +19,9 @@ import {
   BODY_FUNDAMENTALS,
   BODY_PARTIALS,
   BODY_STRETCH,
+  CombLine,
+  combDelaySamples,
+  combLoopGain,
 } from '../../source/audio/dsp.js';
 import { acquireAudio, tapSafety, workletParams } from '../../source/audio/graph.js';
 import { AudioJob } from '../../source/content/audio-job.js';
@@ -140,6 +143,77 @@ function tier1() {
   }
 }
 
+// --- Tier 1b: the comb peer, as pure DSP ------------------------------------
+
+function tier1Comb() {
+  const sr = 48000;
+
+  // Tuning: the impulse response must be periodic at sr/f0. Autocorrelation
+  // rather than FFT peak-picking — it asserts the period directly and cannot
+  // be fooled by window leakage.
+  {
+    const f0 = BODY_FUNDAMENTALS[0];
+    const period = combDelaySamples(sr, f0);
+    const line = new CombLine(sr, f0, 8, 0.2);
+    const N = 1 << 14;
+    const ir = new Float32Array(N);
+    for (let i = 0; i < N; i++) ir[i] = line.step(i === 0 ? 1 : 0);
+    const ac = (lag) => {
+      let s = 0;
+      for (let i = 0; i < N - lag; i++) s += ir[i] * ir[i + lag];
+      return s;
+    };
+    let bestLag = 0;
+    let best = -Infinity;
+    for (let lag = Math.round(period) - 100; lag <= Math.round(period) + 100; lag++) {
+      const v = ac(lag);
+      if (v > best) {
+        best = v;
+        bestLag = lag;
+      }
+    }
+    check(
+      `comb: impulse response period ${bestLag} ≈ sr/f0 ${period.toFixed(1)}`,
+      Math.abs(bestLag - period) <= 2
+    );
+  }
+
+  // Loop gain maps to T60 the same way the modal bank's damping does, so
+  // `audioSustain` means one thing across both engines.
+  {
+    const f0 = BODY_FUNDAMENTALS[1];
+    const t60 = 3;
+    const line = new CombLine(sr, f0, t60, 0); // damp 0 isolates the loop gain
+    const N = Math.round(t60 * sr * 1.2);
+    const ir = new Float32Array(N);
+    for (let i = 0; i < N; i++) ir[i] = line.step(i === 0 ? 1 : 0);
+    const early = rmsOf(ir, Math.round(0.05 * sr), Math.round(0.2 * sr));
+    const atT60 = rmsOf(ir, Math.round(t60 * sr) - Math.round(0.2 * sr), Math.round(0.2 * sr));
+    const dB = 20 * Math.log10(atT60 / (early || 1e-12));
+    check(`comb: decays ≈60 dB by T60 (measured ${dB.toFixed(1)} dB)`, dB < -50 && dB > -75);
+    check(`comb: loop gain < 1 (${combLoopGain(sr, f0, t60).toFixed(4)})`, combLoopGain(sr, f0, t60) < 1);
+  }
+
+  // Bounded under sustained full-scale drive, and reset() actually zeroes it —
+  // the silence gate depends on the second, since the lines hold seconds of ring.
+  {
+    const line = new CombLine(sr, BODY_FUNDAMENTALS[2], 12, 0.45);
+    let peak = 0;
+    let finite = true;
+    for (let i = 0; i < sr * 3; i++) {
+      const y = line.step(Math.sin((2 * Math.PI * 137.5 * i) / sr));
+      if (!Number.isFinite(y)) finite = false;
+      peak = Math.max(peak, Math.abs(y));
+    }
+    check(`comb: sustained resonant drive stays bounded (peak ${peak.toFixed(3)}, finite)`, finite && peak <= 2);
+    line.reset();
+    const after = line.step(0);
+    let bufZero = true;
+    for (const v of line.buf) if (v !== 0) bufZero = false;
+    check('comb: reset() zeroes the line (no stale ring can return)', after === 0 && bufZero);
+  }
+}
+
 // --- Tier 2: both engines through the real worklet --------------------------
 
 const SR = 48000;
@@ -149,7 +223,13 @@ const BODY = {
   drive: 0.5,
   exciter: 'continuous',
   fb: false, // engine tests isolate the engine; DEFAULT_PARAMS has fb on
+  direct: 0, // …and isolate the RESONATORS: since 2026-08-13 the engines sum
+  bodyMix: 1, // the direct signal in, which these checks are not about
 };
+
+// The smear checks are about tail and clear semantics, not level, so they pin
+// the return at the loop gain — the behaviour they were written against.
+const FB_RETURN_LEGACY = 1;
 
 async function renderThrough(wparams, buildInput, seconds) {
   const frames = Math.ceil(seconds * SR);
@@ -313,6 +393,7 @@ async function tier2() {
       ...BODY,
       fb: true,
       fbDecay: 0.96,
+      fbReturn: FB_RETURN_LEGACY,
       fbClear: true, // the clear tests exercise the optional clear path
       fbClearS: 0, // hard-cut clears; the smooth path has its own check
       wobble: 0,
@@ -401,6 +482,228 @@ async function tier2() {
     );
   } catch (e) {
     check(`feedback render (${e.message})`, false);
+  }
+
+  await tier2Specificity();
+}
+
+// --- Tier 2b: does the source survive? --------------------------------------
+//
+// The suite had no check that could fail when the output stopped tracking the
+// input, which is exactly how the piece came to sound the same on every video
+// (measured 2026-08-13: envelope correlation with the source was −0.01 on
+// speech-like material). These make "a process done to the audio" a number the
+// suite defends — the audio counterpart of the visual suite's conservation
+// assertions.
+
+const ENV_SR = 200;
+
+function envelopeOf(buf, skipS = 0.5) {
+  const step = SR / ENV_SR;
+  const n = Math.floor((buf.length - skipS * SR) / step);
+  const e = new Float32Array(Math.max(0, n));
+  for (let i = 0; i < e.length; i++) {
+    let s = 0;
+    const o = Math.round(skipS * SR + i * step);
+    for (let j = 0; j < step; j++) s += buf[o + j] * buf[o + j];
+    e[i] = Math.sqrt(s / step);
+  }
+  return e;
+}
+
+function correlation(a, b) {
+  const n = Math.min(a.length, b.length);
+  if (n < 8) return 0;
+  let ma = 0;
+  let mb = 0;
+  for (let i = 0; i < n; i++) {
+    ma += a[i];
+    mb += b[i];
+  }
+  ma /= n;
+  mb /= n;
+  let num = 0;
+  let da = 0;
+  let db = 0;
+  for (let i = 0; i < n; i++) {
+    const x = a[i] - ma;
+    const y = b[i] - mb;
+    num += x * y;
+    da += x * x;
+    db += y * y;
+  }
+  return num / (Math.sqrt(da * db) || 1e-12);
+}
+
+// Fraction of output energy above `hz` — the bank tops out at 2310 Hz, so
+// before the direct path this was ~0 for every source on earth.
+function bandShare(buf, hz, skipS = 0.5) {
+  const N = 8192;
+  const fft = createFFT(N);
+  const re = new Float32Array(N);
+  const im = new Float32Array(N);
+  const acc = new Float64Array(N / 2);
+  let frames = 0;
+  for (let off = Math.round(skipS * SR); off + N <= buf.length; off += N / 2) {
+    for (let i = 0; i < N; i++) {
+      re[i] = buf[off + i] * (0.5 - 0.5 * Math.cos((2 * Math.PI * i) / N));
+      im[i] = 0;
+    }
+    fft.forward(re, im);
+    for (let k = 0; k < N / 2; k++) acc[k] += Math.hypot(re[k], im[k]);
+    frames++;
+  }
+  if (!frames) return 0;
+  const k0 = Math.round(hz / (SR / N));
+  let hi = 0;
+  let all = 0;
+  for (let k = 1; k < N / 2; k++) {
+    const p = (acc[k] / frames) ** 2;
+    all += p;
+    if (k >= k0) hi += p;
+  }
+  return hi / (all || 1);
+}
+
+// Syllabic probe: 4 Hz amplitude envelope over a voice-ish band, plus
+// fricative bursts. Deterministic (fixed LCG).
+const syllabic = (amp) => (data) => {
+  for (let i = 0; i < data.length; i++) {
+    const t = i / SR;
+    const syl = Math.max(0, Math.sin(2 * Math.PI * 4 * t)) ** 2;
+    const fric = Math.sin(2 * Math.PI * 0.7 * t) > 0.6 ? 0.5 * (rand() * 2 - 1) : 0;
+    let v = 0;
+    for (const f of [220, 540, 1250]) v += Math.sin(2 * Math.PI * f * t) / 3;
+    data[i] = amp * (syl * v + syl * fric);
+  }
+};
+
+const bright = (amp) => (data) => {
+  let p = 0;
+  let q = 0;
+  for (let i = 0; i < data.length; i++) {
+    const t = i / SR;
+    const ph = (t * 6) % 1;
+    const x = (rand() * 2 - 1) * Math.exp(-ph * 20);
+    const y = x - p + 0.99 * q; // crude high-pass, twice
+    p = x;
+    q = y;
+    data[i] = amp * y;
+  }
+};
+
+const ENGINES = ['modal', 'comb'];
+
+async function tier2Specificity() {
+  // 1. Conservation: with the resonators muted the apparatus must be a wire.
+  // Small amplitude keeps the output soft-clip in its linear region.
+  for (const body of ENGINES) {
+    try {
+      const { out, input } = await renderThrough(
+        { ...BODY, body, direct: 1, bodyMix: 0, fb: false },
+        syllabic(0.05),
+        2
+      );
+      const a = out.subarray(Math.round(0.5 * SR));
+      const b = input.subarray(Math.round(0.5 * SR));
+      const c = correlation(a, b);
+      const ratio = rmsOf(out, 0.5 * SR, SR) / (rmsOf(input, 0.5 * SR, SR) || 1e-12);
+      check(
+        `${body}: direct path is a wire — bodyMix 0 → out ≈ in (corr ${c.toFixed(4)}, level ${ratio.toFixed(3)})`,
+        c > 0.999 && ratio > 0.9 && ratio < 1.1
+      );
+    } catch (e) {
+      check(`${body} conservation render (${e.message})`, false);
+    }
+  }
+
+  // 2. The gate: at the shipped defaults the output must follow the source.
+  // This is the check whose absence let the piece drift into sounding the same
+  // on every video.
+  for (const body of ENGINES) {
+    try {
+      const { out, input } = await renderThrough(
+        { body, direct: 1, bodyMix: 1, sustain: 12, drive: 1, exciter: 'continuous',
+          fb: true, fbDecay: 0.999, fbReturn: 0.25, wobble: 0, fbClear: false },
+        syllabic(0.25),
+        6
+      );
+      const c = correlation(envelopeOf(input, 1), envelopeOf(out, 1));
+      check(`${body}: output follows the source at defaults (envelope corr ${c.toFixed(2)} ≥ 0.7)`, c >= 0.7);
+    } catch (e) {
+      check(`${body} envelope-tracking render (${e.message})`, false);
+    }
+  }
+
+  // 3. The return knob's direction, and that the old behaviour is still
+  // reachable: fbReturn 1 with no direct path is what the piece used to be.
+  try {
+    const base = { body: 'modal', direct: 1, bodyMix: 1, sustain: 12, drive: 1,
+      exciter: 'continuous', fb: true, fbDecay: 0.999, wobble: 0, fbClear: false };
+    const quiet = await renderThrough({ ...base, fbReturn: 0.1 }, syllabic(0.25), 6);
+    const loud = await renderThrough({ ...base, fbReturn: 1 }, syllabic(0.25), 6);
+    const cq = correlation(envelopeOf(quiet.input, 1), envelopeOf(quiet.out, 1));
+    const cl = correlation(envelopeOf(loud.input, 1), envelopeOf(loud.out, 1));
+    check(
+      `feedback: a quieter wash tracks the source better (return 0.1 → ${cq.toFixed(2)} > return 1 → ${cl.toFixed(2)})`,
+      cq > cl
+    );
+
+    const old = await renderThrough({ ...base, direct: 0, fbReturn: 1 }, syllabic(0.25), 6);
+    const co = correlation(envelopeOf(old.input, 1), envelopeOf(old.out, 1));
+    check(
+      `feedback: the pre-2026-08-13 sound is still reachable (direct 0, return 1 → corr ${co.toFixed(2)} ≤ 0.5)`,
+      co <= 0.5
+    );
+  } catch (e) {
+    check(`feedback return-level render (${e.message})`, false);
+  }
+
+  // 4. Bandwidth: the modal bank stops at 2310 Hz, so bright material used to
+  // vanish. The direct path is what gives consonants and cymbals somewhere to go.
+  for (const body of ENGINES) {
+    try {
+      const { out } = await renderThrough(
+        { body, direct: 1, bodyMix: 1, sustain: 12, drive: 1, exciter: 'continuous',
+          fb: true, fbDecay: 0.999, fbReturn: 0.25, wobble: 0, fbClear: false },
+        bright(0.3),
+        4
+      );
+      const share = bandShare(out, 2300, 1);
+      check(`${body}: bright source survives above the bank (${(100 * share).toFixed(1)}% > 10% over 2.3 kHz)`, share > 0.1);
+    } catch (e) {
+      check(`${body} bandwidth render (${e.message})`, false);
+    }
+  }
+
+  // 5. The comb through the full chain: silence stays exactly silent, loud
+  // input stays bounded and finite, and two identical renders are identical.
+  try {
+    const P = { ...BODY, body: 'comb', direct: 1, sustain: 12, combDamp: 0.45 };
+    const { out: z } = await renderThrough(P, () => {}, 1.5);
+    let maxAbs = 0;
+    for (let i = 0; i < z.length; i++) maxAbs = Math.max(maxAbs, Math.abs(z[i]));
+    check('comb: digital silence in → exact zeros out', maxAbs === 0);
+
+    const loud = (data) => {
+      for (let i = 0; i < data.length; i++) data[i] = Math.sin((2 * Math.PI * 55 * i) / SR);
+    };
+    const r1 = await renderThrough({ ...P, fb: true, fbDecay: 0.999, fbReturn: 0.25 }, loud, 4);
+    let peak = 0;
+    let finite = true;
+    for (let i = 0; i < r1.out.length; i++) {
+      const v = r1.out[i];
+      if (!Number.isFinite(v)) finite = false;
+      peak = Math.max(peak, Math.abs(v));
+    }
+    check(`comb: full-scale resonant drive bounded and finite (peak ${peak.toFixed(3)})`, finite && peak <= 1);
+
+    const r2 = await renderThrough({ ...P, fb: true, fbDecay: 0.999, fbReturn: 0.25 }, loud, 4);
+    let identical = r1.out.length === r2.out.length;
+    for (let i = 0; identical && i < r1.out.length; i++) if (r1.out[i] !== r2.out[i]) identical = false;
+    check('comb: two identical renders are bit-identical', identical);
+  } catch (e) {
+    check(`comb worklet render (${e.message})`, false);
   }
 }
 
@@ -532,6 +835,7 @@ async function tier3() {
   status.innerHTML = '';
   try {
     tier1();
+    tier1Comb();
   } catch (e) {
     check(`tier 1 crashed (${e.message})`, false);
   }

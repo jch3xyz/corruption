@@ -58,6 +58,10 @@ export function tapSafety(el) {
 // audioMix is deliberately absent: mix is the graph-side wet/dry, not DSP.
 export function workletParams(p) {
   return {
+    body: p.audioBody ?? 'modal',
+    direct: p.audioDirect ?? 1,
+    bodyMix: p.audioBodyMix ?? 1,
+    combDamp: p.audioCombDamp ?? 0.45,
     sustain: p.audioSustain ?? 12,
     drive: p.audioDrive ?? 1.0,
     exciter: p.audioExciter ?? 'continuous',
@@ -69,6 +73,7 @@ export function workletParams(p) {
     // smear's decay.
     fb: p.audioFeedback ?? true,
     fbDecay: p.audioFbDecay ?? 0.999,
+    fbReturn: p.audioFbReturn ?? 0.25,
     fbClear: !!p.audioFbClear,
     fbClearS: p.audioFbClearS ?? 1,
     wobble: p.audioFbWobble ?? 0,

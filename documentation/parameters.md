@@ -33,9 +33,14 @@ Kill switch: Ctrl+Shift+D toggles `enabled` without the panel.
 | `textScramble` | **on** | on/off | The text mode — **on in the resting state** (the call the proposal deferred to the room; John made it 2026-08-12). Letters rearrange inside each word, page-wide; anything that isn't a letter (space, punctuation, digit, emoji) is a barrier no glyph crosses, so every word keeps its length and the page keeps its shape. Off restores every run. |
 | `textMin` | **8** | 1–40 | *Text only.* Shortest run of text that scrambles. At 8 (John's setting) prose and most labels dissolve while the shortest furniture (Home, OK) survives — the navigability dial. |
 | `audioEnabled` | on | on/off | Audio master. Off ramps every tap to dry — the tap itself is permanent by design. |
-| `audioMix` | 1 | 0–1 | Wet/dry in the tap graph (30 ms ramps). 0 = the internet as transmitted. |
-| `audioFeedback` | **on** | on/off | The smear: the body's output recirculates through a 0.35 s delay line (0.1 Hz wobble, tanh-clipped write-back), continuously — see `audioFbClear`. |
-| `audioFbDecay` | **0.999** | 0.8–0.999 | *Audio fb only.* Echo retention (maps to feedback gain 0.5–0.95) — the visual `decay` knob's range, so it feels like the same knob. |
+| `audioMix` | 1 | 0–1 | Wet/dry in the tap graph (30 ms ramps). 0 = the internet as transmitted. Distinct from `audioDirect`, which is inside the DSP. |
+| `audioBody` | **modal** | modal / comb | Which apparatus the signal passes through. **modal** = the 48 stretched partials, struck metal. **comb** = three recirculating lines on the same fundamentals, exactly harmonic — tube/pipe/spring, and about a tenth of the cost. The A/B John called for (2026-08-13); the character difference is inherent, not a defect (see below). |
+| `audioDirect` | **1** | 0–1 | Direct signal level *inside* the DSP: both engines sum their resonant part with this, so the source passes through the apparatus instead of only driving it. **0 = the pre-2026-08-13 behaviour**, where the output never contained the input and every video sounded alike. |
+| `audioBodyMix` | **1** | 0–2 | Resonant part against the direct path — the identity dial. Up for more fixed voice, down for more of the video. Making the bank a filter costs lattice salience (25 → ~7 measured, raw audio being 5.6); this is the knob that buys some back. |
+| `audioCombDamp` | **0.45** | 0–0.9 | *Comb only.* Loop lowpass: the comb's version of "higher partials die faster". Low = metallic and bright, high = woody and dark. |
+| `audioFeedback` | **on** | on/off | The smear: the engine's output recirculates through a 0.35 s delay line (0.1 Hz wobble, tanh-clipped write-back), continuously — see `audioFbClear`. |
+| `audioFbDecay` | **0.999** | 0.8–0.999 | *Audio fb only.* The smear's **tail length** — and only that since 2026-08-13. Maps to loop gain 0.5–0.95, the visual `decay` knob's range, so it feels like the same knob. |
+| `audioFbReturn` | **0.25** | 0–1 | *Audio fb only.* How loud the wash sits, as a **fraction of the loop gain**. Tail and level used to be one number, which is why nothing survived it: at loop gain 0.95 the wash settles ~1/(1−g) ≈ 20× above whatever just arrived and buries it. **1 = the old behaviour exactly.** Measured: dropping to 0.25 takes envelope correlation with the source from 0.22 to 0.89 with the 47 s tail untouched. |
 | `audioFbWobble` | **0** | 0–0.4 | *Audio fb only.* Delay wobble depth — the tape-warble on the echo stack. **0 = no wobble, a static echo stack** (the resting state). Until 2026-08-12 this rode the visual `driftY` slider; detangled so performing the video never bends the sound. |
 | `audioFbClear` | **off** | on/off | *Audio fb only.* Whether the smear clears on its own `audioFbClearMinS`/`audioFbClearMaxS` rhythm at all (its own window since 2026-08-12 — the visual `resetMinS`/`resetMaxS` no longer reach the audio). **Off is the piece**: the loop gain (< 1) is already a natural decay, so unlike the video accumulator the smear needs no clearing — it stays continuous. |
 | `audioFbClearS` | 1 | 0–4 | *Audio fb clear only.* When clearing is on, the keyframe fades the wash out over ~this many seconds before the line wipes, instead of cutting in one sample. **0 = the original hard cut.** The video keyframe stays a hard cut by design — one frame hides in a glitching image; a vanished wash doesn't. |
@@ -45,27 +50,57 @@ Kill switch: Ctrl+Shift+D toggles `enabled` without the panel.
 | `audioDrive` | **1.0** | 0–1 | Strike force into the resonators. Per-mode caps bound runaway, so drive shapes attack more than loudness. |
 | `audioExciter` | **continuous** | gated / continuous | **Continuous is the piece**: the stream drives the body always, bounded by resonz normalization and per-mode caps. Gated = onsets open a 60 ms window and the body is *struck* instead. |
 
-## The audio engine (bake-off settled: body won)
+## The audio engine — a process done to the audio (reworked 2026-08-13)
 
-**body** — a fixed resonant body driven by the stream: 48 modal resonators,
-three just-intonation fundamentals (55/82.5/137.5 Hz) × 16 stretched
-partials (`f_k = k·f₀·√(1+4e-4k²)`) — the stretch is what makes it read as
-an object, not a comb. Identity lives in the apparatus: tuning is fixed in
-source and never on a knob. Latency ≈ 0 — the sound coincides with the
-visual event. Continuous excitation uses constant-peak-gain (resonz)
-normalization so the stream excites only its sympathetic partials; gated
-excitation is impulse-normalized so strikes ring.
+Both engines now output `direct·x + bodyMix·resonant`. **The source passes
+through the apparatus rather than merely driving it**, which is the whole
+change: until 2026-08-13 the output was `resonant` alone, a resynthesis on a
+fixed 48-line basis that never contained the input. The video side is a
+permutation with harness-asserted conservation; the audio side had no
+conservation law at all, and that asymmetry is what made every video sound
+like the same synth.
+
+Measured before the change (four dissimilar 10 s probes, real worklet run
+offline): envelope correlation with the source **0.22 average — −0.01 on
+speech**, i.e. the output's loudness contour was statistically unrelated to
+the video's. Third-octave timbral contrast survived at 84%, so colour was
+never the problem; *time* was. Output energy above 2.3 kHz was 1.5%, because
+the bank tops out at 2310 Hz and its 48 modes accept 54.3 Hz of the 24 kHz
+band — 0.23%. After: envelope correlation 0.94 (harness-asserted, both
+engines), 91% of a bright source's energy above 2.3 kHz.
+
+**modal** — 48 modal resonators, three just-intonation fundamentals
+(55/82.5/137.5 Hz) × 16 stretched partials (`f_k = k·f₀·√(1+4e-4k²)`). The
+stretch is what makes it read as a struck object. Continuous excitation uses
+constant-peak-gain (resonz) normalization so the stream excites only its
+sympathetic partials; gated excitation is impulse-normalized so strikes ring.
+
+**comb** — three recirculating lines on the same fundamentals, same `sustain`
+meaning (loop gain `g = 10^(−3·D/t60)`), one-pole damping in the loop, tanh on
+the write-back. Its partials are **exactly harmonic** and that cannot be fixed:
+allpass dispersion was measured at K = 0, 6 and 12 first-order sections and
+moved them identically (0.06–0.08% at partial 10, where the modal table gives
+1.98%), because a first-order allpass only disperses near Nyquist. So the comb
+is a peer with a different character — tube/pipe/spring — not a broken modal
+bank. It rings harder (lattice salience ~12 against the filtered modal bank's
+~6.6) and costs about a tenth as much per sample.
+
+Identity lives in the apparatus: tuning is fixed in source and never on a knob.
+Latency ≈ 0 — the sound coincides with the visual event.
 
 The losing **timebase** engine (a 45 s reservoir read by lag-controlled
 heads) is preserved at tag `audio-bakeoff` with its harness checks — judged
 on live browsing, removed 2026-08-11.
 
-The feedback layer (ported intact from the first audio phase) smears the
-body's output continuously — its loop gain (< 1) is a built-in decay, so
-unlike the video accumulator it never needs a clear to stay clean. At high
-`audioFbDecay` its tail can outlive input by tens of seconds; the output
-gate at the floor is what keeps silence-in/silence-out honest, and
-`audioFbClear` restores the keyframe rhythm if the piece ever wants it back.
+The feedback layer smears the engine's output continuously — its loop gain
+(< 1) is a built-in decay, so unlike the video accumulator it never needs a
+clear to stay clean. **Its tail and its level are now two knobs**
+(`audioFbDecay` / `audioFbReturn`): one number used to set both, and at loop
+gain 0.95 the wash settles ~20× over the direct sound, which erased whatever
+the front end preserved. At high `audioFbDecay` the tail can still outlive
+input by tens of seconds; the output gate at the floor is what keeps
+silence-in/silence-out honest, and `audioFbClear` restores the keyframe
+rhythm if the piece ever wants it back.
 
 Rules the implementation lives by: safety is predicted before tapping
 (same-origin / blob / data / MediaStream / `crossorigin="anonymous"` only);
@@ -159,5 +194,6 @@ always shows your requested values.
 3. Toggle params (`enabled`) treat CC value ≥64 as on.
 
 Any class-compliant controller works. Suggested performance set: threshold,
-decay, driftY, passes. For audio: `audioMix`, `audioSustain`, `audioFbDecay`,
-`audioFbWobble`.
+decay, driftY, passes. For audio: `audioMix`, `audioSustain`,
+`audioBodyMix` and `audioFbReturn` (the two that move the balance between
+the apparatus and the video), `audioFbDecay`, `audioFbWobble`.

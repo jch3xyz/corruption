@@ -10,11 +10,19 @@ it is the handoff document: current status (all committed work is
 harness-verified), architecture map, the list of hard-won corrections (do not
 relearn those), dev workflow, and what remains.
 
-**The audio design is settled** (bake-off verdict, 2026-08-11): the body
-engine, continuously driven, smeared by a never-clearing feedback layer.
-Two rejected designs live in tags — `audio-v1` (spectral sorting, mirrored
-the pixel-sort grammar) and `audio-bakeoff` (the timebase engine, lost on
-John's ears). Do not resurrect either.
+**The audio is a process done to the audio, not a synth it drives**
+(reworked 2026-08-13 on John's report that two videos sounded alike). Both
+engines output `direct·x + bodyMix·resonant`, so the source passes *through*
+the apparatus — before this the output was `sum(modes)` alone and never
+contained the input, which measured as −0.01 envelope correlation on speech.
+The smear's tail (`audioFbDecay`) and level (`audioFbReturn`) are now separate
+knobs; merged, the wash sat ~20× over the direct sound. `audioBody` selects
+**modal** (48 stretched partials, struck metal) or **comb** (three
+recirculating lines, exactly harmonic, tube/spring) — **the A/B is open and is
+John's call**; don't argue it in code. Two rejected designs live in tags —
+`audio-v1` (spectral sorting, mirrored the pixel-sort grammar) and
+`audio-bakeoff` (the timebase engine, lost on John's ears). Do not resurrect
+either.
 
 **The text mode is built and defaults ON** (`textScramble`, John's call
 2026-08-12 — the decision the proposal deferred to the room): page-wide

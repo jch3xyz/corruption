@@ -52,6 +52,7 @@ no build step — "Load unpacked" points at `source/`.
 | flow seeds | **Each element is its own instrument** (John: "each element should be unique... not just offset, they're all also flowing exactly the same way"): per-job seeds derive five characters in the field shader — noise home, phase, morph rate, swirl size, handedness (half the magnets poled opposite). Seeds key to CONTENT, not element (rerolled on src change), because YouTube reuses one <video> across navigations. Pipeline stays pure (seed is an input); tier 0 18/18 incl. seed differentiation + conservation under any seed. |
 | flow modes | The 8-direction facet grammar came back as a peer, not a casualty: `flowMode` selects **paths** (16 dithered sectors, curving — default) or **facets** (8 fixed sectors, anchored seams — the first cut, which John liked on sight). One field texture (continuous directions), two quantizers in the sort pass. Tier 0 16/16: facet determinism + global conservation + the two modes provably differ. |
 | flow paths | The flow field's promise made good (John: "I would still like to see flow-field paths"): directions now quantize to **16 sectors with a per-pass dithered boundary** instead of 8 fixed ones. Fixed quantization anchored refusal seams and material pooled at them instead of rounding curves; with the boundary wandering (golden-ratio sweep, keyed on pass index so runs stay reproducible), average motion follows the true continuous angle — ribbons meander and curl. Field texture now stores the continuous direction; tier 0 still 13/13 incl. global conservation and bit-identity at 0. |
+| audio: a process, not a synth | **The audio path got a conservation law.** John, 2026-08-13: "no discernible change of sound between 2 different videos… it was probably lost in translation that I wanted the audio effect to be *a process done to the audio*." Measured on the real worklet: envelope correlation with the source **0.22 avg, −0.01 on speech** — timbral contrast survived at 84%, so it was never colour, it was *time*. Two causes, both fixed: (1) the engine output was `sum(modes)` alone, so the input never appeared in the output — both engines now output `direct·x + bodyMix·resonant` and the bank is a **filter**; (2) the smear's single gain set both tail length *and* level, so at loop gain 0.95 the wash sat ~20× over the direct sound — `audioFbDecay` now owns the tail alone and `audioFbReturn` the level. New **comb** engine (`audioBody`) as a peer for the A/B John called for. Result: envelope correlation 0.94 both engines, 91% of a bright source's energy above 2.3 kHz (was ~0). Audio suite 34 auto + 9 live = 43/43, incl. a conservation check the suite never had. |
 | audio detangle | **The visual sliders no longer reach the audio** (John's request: performing the video must never bend the sound). The smear's wobble left `driftY` for its own `audioFbWobble` (0–0.4, default 0 = the resting state unchanged); the optional clear rhythm left `resetMinS`/`resetMaxS` for `audioFbClearMinS`/`audioFbClearMaxS` (1/60). Harness asserts the detangle structurally (no visual key in the worklet's param surface) and behaviorally (the wobble knob moves the echoes). Audio suite 27/27 incl. live tier. |
 
 Audio lineage: the first phase (spectral/granular sorting) was removed for
@@ -71,8 +72,25 @@ join); audio fb on at fbDecay 0.999 with
 decay, continuous sounds nicer; the video keyframe still clears), maxTaps 8,
 body at sustain 12 / drive 1.0 / continuous exciter.
 
+**Audio defaults moved 2026-08-13** with the rework above: `audioBody` modal,
+`audioDirect` 1, `audioBodyMix` 1, `audioFbReturn` 0.25, `audioCombDamp` 0.45.
+These are measured starting points, **not John's ears yet** — the A/B and the
+balance are the open item below. The previous sound is exactly reachable at
+`audioDirect` 0 + `audioFbReturn` 1, which is how to compare.
+
 **Remaining:**
 
+- **Audio A/B — the aesthetic call, open.** The rework is built and
+  harness-verified; what the numbers cannot settle is which apparatus wins and
+  where the balance sits. In real Chrome: browse a talking-head video and a
+  music video back to back, flip `audioBody` modal ↔ comb (modal = struck
+  metal, comb = tube/spring), and ride `audioBodyMix` and `audioFbReturn`.
+  The specific risk to listen for is **coherence over a long session**: making
+  the bank a filter dropped lattice salience 25 → ~6.6 (raw audio is 5.6), so
+  the fixed chord that unified eight hours is largely gone. If it stops
+  cohering, the fallback is a fixed transmission colour (a permanent EQ
+  signature — resonant peak, notch, band limit) which adds identity at no cost
+  to specificity because it ignores content entirely. Log the verdict here.
 - **Phase 5 — text mode**: built, harness-verified, and **decided**:
   `textScramble` defaults ON at `textMin` 8 (John, 2026-08-12 — the call
   the proposal deferred to the room). The earlier swap design remains tag
@@ -159,6 +177,23 @@ Design invariants that hold everywhere:
    through `test/serve.py` (sends no-store), never a plain http.server.
 8. **Stored params beat code defaults**: after changing DEFAULTS, hit
    "restore defaults" in the panel or the old values persist from storage.
+9. **An effect must be a process done to the audio, not a synth the audio
+   drives.** The engine used to output `sum(modes)` — the input never appeared
+   in the output — while the visual side is a permutation with harness-asserted
+   conservation. Anything that resynthesises rather than filters will sound the
+   same on every source; the tell is envelope correlation with the input, which
+   was −0.01 on speech. Both engines now sum a direct path, and the harness
+   gates that correlation.
+10. **In a recirculating loop, decay time and wet level are not the same
+    number.** A loop at gain *g* settles at ~`1/(1−g)` × its input, so the
+    0.95 smear sat ~20× over the direct sound and erased whatever the engine
+    preserved. Tail (`audioFbDecay`) and level (`audioFbReturn`) are separate
+    knobs; don't re-merge them.
+11. **Allpass dispersion does not stretch a comb's partials in the audible
+    range** — measured at K = 0, 6, 12 sections, all identical (0.06–0.08% at
+    partial 10 vs the modal table's 1.98%), because a first-order allpass only
+    disperses near Nyquist. The comb engine is a peer with its own character,
+    not a modal bank to be repaired. Don't re-try this.
 
 ## Dev workflow
 
@@ -177,11 +212,14 @@ python3 test/serve.py 8439   # second origin for the image CORS-route test
   `threshold` 0→0.05, which changes nothing now that the default is 0 —
   both were masked when global feedback animated images under the tests.
 - Audio suite: `http://localhost:8437/test/harness/audio.html` — tier 1 (pure
-  DSP) + tier 2 (body engine + feedback layer through OfflineAudioContext)
-  are fully deterministic, 18 checks; tier 3 ("run live tap tests" button)
-  adds 9 live-tap checks incl. tap permanence and re-tap reuse. Last full
-  run: 27/27. Unlike the visual suite it is immune to pane visibility
-  (offline rendering).
+  DSP, incl. the comb's tuning/decay/reset) + tier 2 (both engines + feedback
+  layer through OfflineAudioContext) are fully deterministic, 34 checks; tier 3
+  ("run live tap tests" button) adds 9 live-tap checks incl. tap permanence and
+  re-tap reuse. Last full run: **43/43 (2026-08-13)**. Unlike the visual suite
+  it is immune to pane visibility (offline rendering). Tier 2b is the set that
+  matters most now: it pins **conservation** (`bodyMix 0` → the apparatus is a
+  wire, corr 0.9999) and **envelope correlation ≥ 0.7** at the defaults, so the
+  failure that produced "it sounds like a synth" can't recur silently.
 - Text suite: `http://localhost:8437/test/harness/text.html` — 35 checks,
   pure DOM (no rVFC, no GL, no AudioContext), so it is deterministic and
   likewise immune to pane visibility. Tier 1 checks the scramble grammar as

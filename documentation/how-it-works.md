@@ -472,12 +472,43 @@ where it's used to detect unpredicted CORS silence.
 
 ### 3.3 The body engine
 
-**The apparatus has one permanent voice, and the browsing only decides how hard
-it is driven.** This is the most literal Magnet-TV reading available for sound:
-a fixed physical deformation the transmission passes through. It's also the
-answer to the hardest problem in the piece — how do eight hours of unrelated
-internet audio cohere as one work? — because the identity lives in the
-resonator, not the source.
+**The apparatus has one permanent voice, and the transmission passes through
+it.** The identity lives in the resonator, not the source — that is the answer
+to the hardest problem in the piece, how eight hours of unrelated internet
+audio cohere as one work.
+
+> **Corrected 2026-08-13.** That sentence used to end "…and the browsing only
+> decides how hard it is driven," and the code matched: the engine output was
+> `sum(modes)` alone, so the input never appeared in the output. That made the
+> source a scalar — a drive amount — and the result a resynthesis on a fixed
+> 48-line basis. Meanwhile the *visual* side is a permutation whose global
+> conservation the harness asserts. The audio path had no conservation law at
+> all, and the audible consequence was exactly what you would predict: every
+> video sounded like the same synth.
+>
+> Measured on the real worklet over four dissimilar probes, before the fix:
+> envelope correlation with the source **0.22 average, −0.01 on speech-like
+> material** — the output's loudness contour was statistically unrelated to the
+> video's. Third-octave timbral contrast survived at 84%, so it was never a
+> colour problem; it was a *time* problem, and source recognition is
+> overwhelmingly temporal. Output energy above 2.3 kHz was 1.5%, since the bank
+> stops at 2310 Hz and its 48 high-Q modes accept 54.3 Hz of the 24 kHz band —
+> 0.23% of the spectrum.
+>
+> Both engines now output `direct·x + bodyMix·resonant`. The bank is a
+> **filter** — bandpasses in parallel with a direct path, a resonating body the
+> signal goes *through* — rather than a synth the signal triggers. Everything
+> below (the stretch, the resonz normalization, the caps, the damping law) is
+> unchanged; only the output sum is. Harness-asserted after: envelope
+> correlation 0.94 on both engines, and `bodyMix 0` must reduce the whole
+> apparatus to a wire.
+>
+> The cost, accepted knowingly: lattice salience falls from 25.2 to ~6.6, where
+> raw unprocessed audio is 5.6. The fixed chord that unified the piece is
+> mostly gone, and `audioBodyMix` is the knob that buys it back. If long
+> sessions stop cohering, the fallback is a fixed transmission colour — a
+> permanent EQ signature that costs no specificity because it does not depend
+> on the content at all.
 
 **48 modal resonators.** Three fundamentals in just intonation
 (55 / 82.5 / 137.5 Hz) × 16 partials, with a stretch:
@@ -490,7 +521,38 @@ amp  = 1/√k                          natural spectral tilt
 
 The stretch is what makes the bank read as a struck *object* rather than a
 harmonic comb. Modal resonators (not waveguides) were chosen precisely so the
-stretch survives — a comb would drag in its own integer harmonics and swamp it.
+stretch survives — a comb drags in its own integer harmonics and swamps it.
+
+That last claim was tested rather than inherited (2026-08-13), because a comb
+became attractive once the engine had to be a filter: allpass dispersion in the
+loop is the standard stiff-string trick for inharmonic partials, so it looked
+like the objection might be answerable. It is not. K = 0, 6 and 12 first-order
+allpass sections moved the partials **identically** — 0.06–0.08% deviation at
+partial 10, where this table gives 1.98% — because a first-order allpass only
+disperses near Nyquist and does nothing across 55–1500 Hz. So the comb engine
+(§3.3b) is a peer with a different character, not a modal bank with a bug.
+Don't re-try allpass stretch on it.
+
+### 3.3b The comb engine
+
+Three recirculating lines on the same fundamentals, added as a peer 2026-08-13
+so the character question could be settled by ear rather than by argument:
+
+```
+v    = interpolated read at sr/f0        fractional delay, power-of-two ring
+v    = (1−d)·v + d·v_prev                loop damping: high partials die first
+fbk  = g·v                               g = 10^(−3·D_sec/t60), same T60 as modal
+line ← tanh(x + fbk)                     write-back bounds the line absolutely
+out  ← fbk·(1−g)                         level-normalised; the caller adds x
+```
+
+`step()` returns the resonant contribution *only*, exactly as the modal bank
+returns its summed resonator outputs, so `audioDirect`/`audioBodyMix` mean the
+same thing in both engines and the A/B stays level-matched. Exactly-harmonic
+partials read as tube/pipe/spring; it rings harder than the filtered modal bank
+(lattice salience ~12 against ~6.6) and costs roughly a tenth as much per
+sample. Because the lines hold seconds of ring, `reset()` clearing them is
+load-bearing for silence-in/silence-out, and the harness asserts it.
 
 Each mode is a two-pole resonator, `y[n] = a₁y[n−1] − a₂y[n−2] + g·x[n]`, with
 `r = 10^(−3/(T60·fs))`, `a₁ = 2r·cos(ω)`, `a₂ = r²`.
@@ -520,11 +582,23 @@ A recirculating delay line on the body's output — a *layer*, not a mode:
 
 ```
 echo  = interpolated read at 0.35 s · (1 + depth·sin(2π·0.1t))
-out   = in + gain · echo
-line ← tanh(out)                    soft-clipped write-back bounds it absolutely
-gain  = 0.5 … 0.95   from fbDecay 0.8 … 0.999
-depth = audioFbWobble                its own knob (0–0.4) since 2026-08-12
+line ← tanh(in + loopGain · echo)   the TAIL; soft-clipped write-back bounds it
+out   = in + return · echo          the LEVEL, independent of the tail
+loopGain = 0.5 … 0.95   from fbDecay 0.8 … 0.999
+return   = loopGain · audioFbReturn  0.25 default; 1 = the pre-2026-08-13 layer
+depth    = audioFbWobble             its own knob (0–0.4) since 2026-08-12
 ```
+
+**The tail and the level were one number until 2026-08-13, and that is the
+second reason nothing survived this layer.** A recirculating loop at gain *g*
+settles at roughly `1/(1−g)` times its input, so at 0.95 the wash sat about
+**20× above the direct sound** and buried it — which is why fixing the engine
+alone (§3.3) was not enough: with the old smear in front of it, speech envelope
+correlation fell straight back to −0.01. Splitting them keeps the 47 s tail John
+settled on and only decides how loudly it sits: at return 0.25, measured
+correlation goes 0.22 → 0.89 with the tail untouched. `audioFbReturn` 1
+reproduces the old layer exactly, and the harness pins both that and the
+knob's direction.
 
 **It never clears, by design.** The video accumulator needs its keyframe reset
 against mud buildup; the audio loop doesn't, because its gain is capped strictly
