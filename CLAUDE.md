@@ -1,9 +1,17 @@
-# DEFLECTION — browser extension (art installation)
+# CORRUPTION — browser extension (art installation)
 
 Chrome MV3 extension that intercepts every video frame, image, and sound in
 the browser and rearranges it (GPU pixel sorting; audio through a fixed
 resonant body + smear layer). Paik's *Magnet TV* for the web: the bytes
-arrive perfect, the rendering bends.
+arrive perfect, the rendering bends. *If the signal is corrupting us, we
+take back power by corrupting the signal.*
+
+**Named CORRUPTION 2026-08-20** (was DEFLECTION). John's call: the rename
+covers user-facing surfaces only — manifest, panel, harness titles, docs.
+**Internal identifiers keep `deflection` on purpose** (`__deflection`,
+`data-deflection`, the `deflection-audio` worklet, `[DEFLECTION]` logs), as
+do the repo folder and the archival proposal in `admin/`. Don't "finish" the
+rename in code unprompted.
 
 **Read [documentation/build-plan.md](documentation/build-plan.md) first** —
 it is the handoff document: current status (all committed work is
@@ -38,9 +46,19 @@ Quick facts:
   http.server serves stale modules). Visual suite at
   `/test/harness/index.html` (needs a visible tab), audio suite at
   `/test/harness/audio.html` (deterministic offline tiers + live-tap button),
-  text suite at `/test/harness/text.html` (pure DOM, deterministic).
+  text suite at `/test/harness/text.html` (pure DOM, deterministic), panel
+  suite at `/test/harness/panel.html` (pure DOM; drives the shipped panel in
+  an iframe against a stubbed chrome.storage).
 - Params live in chrome.storage.local; stored values beat code defaults —
-  use the panel's "restore defaults" after changing DEFAULTS.
+  use the panel's "restore defaults" after changing DEFAULTS. If John has
+  pressed **"set defaults"**, his saved snapshot (`userDefaults`) outranks
+  both: hit "clear saved" first, then "restore defaults".
+- The panel is an instrument, not a form (rebuilt 2026-08-20): four sections
+  behind dividers, shared sort/feedback knobs filed under **Video** (John's
+  call), typed values that clamp and snap, double-click a row to restore one
+  parameter, and a tooltip on everything. Rows and hover copy live in
+  `source/panel/defs.js`; **add a row there when you add a param** — the
+  panel harness fails if a stored param has no row, or a row has no tip.
 - How both pipelines actually work: [documentation/how-it-works.md](documentation/how-it-works.md).
   Per-knob documentation: [documentation/parameters.md](documentation/parameters.md).
   Site quirks: [documentation/site-notes.md](documentation/site-notes.md).

@@ -1,0 +1,31 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>CORRUPTION panel harness</title>
+<style>
+  body { background: #1a1a1c; color: #ddd; font-family: monospace; margin: 20px; }
+  #status div { padding: 2px 0; }
+  .pass { color: #7fd97f; }
+  .fail { color: #ff7070; font-weight: bold; }
+  .tier { color: #8a8a92; margin-top: 10px; }
+  #stage { margin-top: 18px; border-top: 1px solid #2e2e36; padding-top: 12px;
+           color: #8a8a92; font-size: 12px; }
+  #frame { width: 400px; height: 720px; border: 1px solid #2e2e36; background: #131316; }
+</style>
+</head>
+<body>
+<h3>CORRUPTION panel harness — sections, typed values, defaults, tooltips</h3>
+<p>Pure DOM: no rVFC, no GL, no AudioContext, so it is deterministic and immune
+to pane visibility. Tier 1 checks the control table and the value helpers as
+pure functions; tier 2 drives the shipped panel below (its markup is fetched
+from <code>source/panel/panel.html</code>, never copied) against a stub
+<code>chrome.storage.local</code>, so every assertion is about the real UI.
+The panel is left live for poking at.</p>
+<div id="status"><div>running…</div></div>
+<div id="stage">
+  <iframe id="frame" src="./panel-frame.html"></iframe>
+</div>
+<script type="module" src="./panel-harness.js"></script>
+</body>
+</html>

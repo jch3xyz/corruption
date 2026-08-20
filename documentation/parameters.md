@@ -7,6 +7,8 @@ frame or two.
 
 Open the panel: click the toolbar icon, or Ctrl+Shift+P.
 Kill switch: Ctrl+Shift+D toggles `enabled` without the panel.
+How the panel itself works — sections, typed values, saved defaults,
+tooltips — is [below](#the-panel).
 
 | Param | Default | Range | What it does |
 |---|---|---|---|
@@ -18,7 +20,7 @@ Kill switch: Ctrl+Shift+D toggles `enabled` without the panel.
 | `streak` | **256** | 1–256 | Longest compare-exchange stride (rounded down to a power of two). Directly sets how far pixels can travel per frame — the ribbon-length knob. 1 = classic single-step odd-even. |
 | `temperature` | **0** | 0–0.5 | Fraction of pair-verdicts inverted per pass. The sort simmers at its equilibrium instead of settling into it: ribbons boil at their edges and the picture never comes to rest. Applies in straight sort and feedback alike; barriers still hold (the boil stays inside bright spans). 0.5 = a pure random walk, no net sorting. |
 | `motionGate` | **0** | 0–1 | *Feedback modes only.* A pair may only trade when BOTH members' motion trail clears this, so damage stays strictly inside what the transmission itself is changing: action smears, stillness holds and heals. The trail decays ~1 s; each keyframe floods it hot, so a reset briefly sorts everywhere before confinement returns. 0 = sort regardless of motion. |
-| `flowAmount` | **0.5** | 0–1 | **The resting state flows** (John's sweet spot, 2026-08-12). 0 = the classic vertical grammar, bit-identical. Up = sorting follows a slowly morphing **curl-noise flow field**: ribbons meander and curl along streamlines instead of climbing columns. Directions quantize to 16 sectors with a per-pass dithered boundary, so material rounds curves instead of pooling at fixed seams. Still a permutation — nothing added, nothing lost, harness-pinned. **Every element draws its own seed, rerolled when its content changes** (a new video in YouTube's reused player is new content): pattern, phase, morph rate, swirl size, and handedness all differ per medium — no two screens show the same deflection, and no knob controls this (it is identity, not a parameter). |
+| `flowAmount` | **0.5** | 0–1 | **The resting state flows** (John's sweet spot, 2026-08-12). 0 = the classic vertical grammar, bit-identical. Up = sorting follows a slowly morphing **curl-noise flow field**: ribbons meander and curl along streamlines instead of climbing columns. Directions quantize to 16 sectors with a per-pass dithered boundary, so material rounds curves instead of pooling at fixed seams. Still a permutation — nothing added, nothing lost, harness-pinned. **Every element draws its own seed, rerolled when its content changes** (a new video in YouTube's reused player is new content): pattern, phase, morph rate, swirl size, and handedness all differ per medium — no two screens show the same corruption, and no knob controls this (it is identity, not a parameter). |
 | `flowMode` | **facets** | paths / facets | *Flow only.* Two quantizers, both kept (John liked both; facets is his resting pick). **facets**: 8 fixed sectors, no dither — straight runs inside each patch, pooling at anchored seams where the field bends. **paths**: 16 sectors, boundary dithered per pass — seams wander, material rounds curves, ribbons meander. |
 | `flowScale` | **2.5** | 1–12 | *Flow only.* Noise cells across the frame: higher = tighter, busier swirls; lower = broad sweeping currents. |
 | `flowSpeed` | **0.045** | 0–0.2 | *Flow only.* How fast the field morphs (streamlines re-carve in place rather than marching). 0 = frozen geometry — flow without evolution. |
@@ -183,6 +185,57 @@ it steps down: first halves `passes` (floor 2), then processing resolution
 ×0.75, then ×0.5. After 10 s clean it steps back up. You'll see softer
 resolution before you ever see judder. It never touches storage — the panel
 always shows your requested values.
+
+## The panel
+
+Rebuilt 2026-08-20 for performing rather than for reading source. Four
+sections under a global block, and the whole thing explains itself on hover.
+
+**Layout.** The global block at the top is `enabled`, the `tooltips` switch,
+and the two defaults buttons — everything that governs all four mediums at
+once. Below it, a divider and a left-aligned title open each section:
+**Video**, **Images**, **Text**, **Audio**.
+
+The sort and feedback knobs genuinely belong to video *and* images — one
+shader, one composite, two callers — and John's call (2026-08-20) is that
+they live under **Video**, with the tooltips saying so, rather than being
+duplicated or given sections of their own. Only `imageFps` and
+`imageAnimCap`, which the image ticker alone reads, sit under **Images**
+with the `feedbackImage` toggle. So: if a knob shapes both, look under
+Video.
+
+**Typing values.** Every numeric row's readout is an editable field. Type a
+number and the knob follows as you type; press Enter (or click away) and the
+text settles at the parameter's own precision. Values outside the range
+**clamp to the limit** rather than being rejected, and off-grid values snap
+to the parameter's step, so the field, the knob and storage can never
+disagree. ↑/↓ step by one increment, shift+↑/↓ by ten; Escape abandons the
+edit. A field that has your caret in it is never reformatted mid-keystroke,
+but a value arriving from elsewhere — MIDI, a restore, the other panel
+window — does update it.
+
+**Defaults, two layers.** `restore defaults` puts every parameter back;
+`set defaults` saves the panel exactly as it stands right now as the set it
+goes back to. That is the point of it: find a configuration by ear and eye
+during install, press `set defaults`, and it is the resting state without a
+source edit or a reload. The snapshot lives in `chrome.storage.local` under
+`userDefaults` (outside `DEFAULTS`, so no content script ever sees it) and
+survives restarts. A third button, `clear saved`, appears only once a set
+exists and drops it — after which `restore defaults` goes back to the
+`DEFAULTS` compiled into `params.js`.
+
+**One parameter at a time.** Double-click any row to restore just that
+parameter — to the saved set if there is one, otherwise to the code default.
+The row flashes to confirm. Double-clicking inside a value field selects the
+text instead, as it should.
+
+**Tooltips.** Everything in the panel — every row, every value field, every
+section header, every button, the MIDI block — carries hover copy explaining
+what it is and what it does. The `tooltips` switch in the global block turns
+the layer off entirely; it defaults on and the setting persists (storage key
+`tooltips`, also outside `DEFAULTS`).
+
+The panel has its own harness: `test/harness/panel.html`.
 
 ## MIDI
 

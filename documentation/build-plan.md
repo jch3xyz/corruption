@@ -1,8 +1,8 @@
-# DEFLECTION — Build Plan, Status & Handoff
+# CORRUPTION — Build Plan, Status & Handoff
 
 ## Context
 
-DEFLECTION (Proposal B in [admin/DEFLECTION - proposal.md](../admin/DEFLECTION%20-%20proposal.md))
+CORRUPTION (Proposal B in [admin/DEFLECTION - proposal.md](../admin/DEFLECTION%20-%20proposal.md))
 is an art-installation Chrome extension: Nam June Paik's *Magnet TV* restated
 for the browser. The transmission arrives perfect; the apparatus of display
 bends. It intercepts every video frame, image, and sound between decode and
@@ -54,6 +54,8 @@ no build step — "Load unpacked" points at `source/`.
 | flow paths | The flow field's promise made good (John: "I would still like to see flow-field paths"): directions now quantize to **16 sectors with a per-pass dithered boundary** instead of 8 fixed ones. Fixed quantization anchored refusal seams and material pooled at them instead of rounding curves; with the boundary wandering (golden-ratio sweep, keyed on pass index so runs stay reproducible), average motion follows the true continuous angle — ribbons meander and curl. Field texture now stores the continuous direction; tier 0 still 13/13 incl. global conservation and bit-identity at 0. |
 | audio: a process, not a synth | **The audio path got a conservation law.** John, 2026-08-13: "no discernible change of sound between 2 different videos… it was probably lost in translation that I wanted the audio effect to be *a process done to the audio*." Measured on the real worklet: envelope correlation with the source **0.22 avg, −0.01 on speech** — timbral contrast survived at 84%, so it was never colour, it was *time*. Two causes, both fixed: (1) the engine output was `sum(modes)` alone, so the input never appeared in the output — both engines now output `direct·x + bodyMix·resonant` and the bank is a **filter**; (2) the smear's single gain set both tail length *and* level, so at loop gain 0.95 the wash sat ~20× over the direct sound — `audioFbDecay` now owns the tail alone and `audioFbReturn` the level. New **comb** engine (`audioBody`) as a peer for the A/B John called for. Result: envelope correlation 0.94 both engines, 91% of a bright source's energy above 2.3 kHz (was ~0). Audio suite 34 auto + 9 live = 43/43, incl. a conservation check the suite never had. |
 | audio detangle | **The visual sliders no longer reach the audio** (John's request: performing the video must never bend the sound). The smear's wobble left `driftY` for its own `audioFbWobble` (0–0.4, default 0 = the resting state unchanged); the optional clear rhythm left `resetMinS`/`resetMaxS` for `audioFbClearMinS`/`audioFbClearMaxS` (1/60). Harness asserts the detangle structurally (no visual key in the worklet's param surface) and behaviorally (the wobble knob moves the echoes). Audio suite 27/27 incl. live tier. |
+| **named** | **The piece became CORRUPTION** (John, 2026-08-20): *if the signal is corrupting us, we take back power by corrupting the signal.* The rename covers the user-facing surfaces only — manifest name and description, panel title, harness titles, these documents. **Internal identifiers deliberately keep `deflection`** (John's call): `__deflection`, `data-deflection`, the `deflection-audio` worklet, the `[DEFLECTION]` log prefix. Every console trick in this file still works verbatim. The repo folder and `admin/DEFLECTION - proposal.md` keep their names too — the proposal is the archival record of what was proposed. |
+| panel rebuild | **The panel became an instrument** (John, 2026-08-20). A global block (`enabled`, `tooltips`, the defaults buttons), then four sections behind dividers — Video / Images / Text / Audio, with the sort+feedback knobs that video and images share filed under **Video** (John's call over giving them sections of their own). Numeric readouts became **editable fields**: typed values track the knob live, clamp to the range and snap to the step. **Double-click a row** restores that one parameter. **`set defaults`** captures the live panel as the default set (storage `userDefaults`), so a configuration found by ear during install becomes the resting state with no source edit; **`clear saved`** drops it back to `params.js`. A **tooltip layer** explains every control, toggled by `tooltips` (default on). New suite: `test/harness/panel.html`, 62/62. |
 
 Audio lineage: the first phase (spectral/granular sorting) was removed for
 mirroring the pixel-sort grammar — tag `audio-v1`. The bake-off's two
@@ -132,6 +134,8 @@ source/
 ├── gl/  context.js · pipeline.js · shaders/{common,passthrough,composite,sort}.js
 ├── audio/ graph.js · worklet.js · dsp.js · fft.js   # worklet = body engine + smear layer
 └── panel/ panel.html · panel.js · panel.css · midi.js  # extension page, popup window
+    └── defs.js                    # the control table (sections, ranges, hover copy)
+                                   # + the pure value helpers, shared with its harness
 ```
 
 Design invariants that hold everywhere:
@@ -177,6 +181,11 @@ Design invariants that hold everywhere:
    through `test/serve.py` (sends no-store), never a plain http.server.
 8. **Stored params beat code defaults**: after changing DEFAULTS, hit
    "restore defaults" in the panel or the old values persist from storage.
+   Since 2026-08-20 there is a layer in front of that: if John has pressed
+   "set defaults", the saved snapshot (`userDefaults`) is what "restore
+   defaults" and every double-click return to, and it also outranks a
+   changed `DEFAULTS`. Press **"clear saved" first**, then "restore
+   defaults", to reach freshly edited code defaults.
 9. **An effect must be a process done to the audio, not a synth the audio
    drives.** The engine used to output `sum(modes)` — the input never appeared
    in the output — while the visual side is a permutation with harness-asserted
@@ -206,7 +215,8 @@ python3 test/serve.py 8439   # second origin for the image CORS-route test
   (32 checks; +2 more with the :8439 server up for the cross-origin image
   route). **Must run in a visible tab** — hidden tabs starve frames and
   produce false timeouts (documented in harness header). Last full run
-  32/32 (2026-08-12, embedded pane, visible). Two latent test bugs fixed
+  **50/50 (2026-08-20, embedded pane, visible)**; 32/32 at 2026-08-12
+  before the tier-0 additions. Two latent test bugs fixed
   that day: the disable check iterated `j.video` over image jobs (TypeError
   read as timeout since Phase 4), and the still-re-render check nudged
   `threshold` 0→0.05, which changes nothing now that the default is 0 —
@@ -228,10 +238,19 @@ python3 test/serve.py 8439   # second origin for the image CORS-route test
   document (prose, navigation, form values, live CSS, contenteditable);
   tier 3 asserts the registry calls it on the sweep, both toggles, and the
   debounced `textMin` drag. Last run: 35/35.
+- Panel suite: `http://localhost:8437/test/harness/panel.html` — 62 checks,
+  pure DOM and likewise pane-immune. Tier 1 is the control table and the
+  value helpers as pure functions (every stored param has exactly one row,
+  every row has hover copy, every numeric default sits on its own slider
+  grid, clamping/snapping/format, how saved defaults resolve). Tier 2 drives
+  the **shipped** panel inside an iframe: `panel-frame.html` *fetches*
+  `source/panel/panel.html` rather than copying it, so the markup under test
+  can never drift, and stubs `chrome.storage.local` so the suite reads
+  exactly what the panel wrote. Last run: **62/62 (2026-08-20)**.
 - Extension: chrome://extensions → Load unpacked → `source/`. Reload after
   edits; Chrome writes `source/_metadata/` (gitignored).
 - Proof-of-interception tricks: invert/hide `canvas[data-deflection]`;
-  `__deflection.registry.stats()` from the DEFLECTION console context
+  `__deflection.registry.stats()` from the CORRUPTION console context
   (route counters, audio tap counts, swapped-caption count).
 
 ## John's manual checklist (needs real Chrome; not yet all exercised)

@@ -25,23 +25,73 @@ h2 {
   color: #888;
 }
 
+/* A divider line, and the section's name left-aligned beneath it. */
+.section {
+  margin: 22px 0 10px;
+  padding-top: 11px;
+  border-top: 1px solid #2a2a32;
+}
+
+.section h2 {
+  margin: 0;
+  text-align: left;
+  text-transform: uppercase;
+  color: #9a9a70;
+}
+
 .row {
   display: grid;
-  grid-template-columns: 96px 1fr 58px 28px;
+  /* 104px is the widest label in the table — no label wraps. */
+  grid-template-columns: 104px 1fr 62px 28px;
   gap: 10px;
   align-items: center;
-  margin: 8px 0;
+  margin: 6px -4px;
+  padding: 2px 4px;
+  border-radius: 3px;
 }
 
 .row label { color: #9a9aa2; }
 
+.row.pref label { cursor: pointer; }
+
 .row.inert { opacity: 0.35; }
+
+/* Double-click acknowledgement: the row that just went back to default. */
+@keyframes rowflash {
+  from { background: rgba(232, 232, 100, 0.22); }
+  to { background: transparent; }
+}
+
+.row.flash { animation: rowflash 520ms ease-out; }
 
 .row .value {
   text-align: right;
   color: #fff;
   font-variant-numeric: tabular-nums;
 }
+
+/* The numeric value cell is a real input: type into it, the knob follows. */
+.row input.value.num {
+  width: 100%;
+  background: #1a1a1f;
+  border: 1px solid #2a2a32;
+  border-radius: 3px;
+  color: #fff;
+  font-family: inherit;
+  font-size: 11px;
+  padding: 3px 4px;
+  user-select: text;
+}
+
+.row input.value.num:hover:not(:disabled) { border-color: #3d3d48; }
+
+.row input.value.num:focus {
+  outline: none;
+  border-color: #e8e864;
+  background: #22221c;
+}
+
+.row input.value.num:disabled { background: #17171b; }
 
 input[type='range'] {
   -webkit-appearance: none;
@@ -98,9 +148,16 @@ select {
 
 .learn.mapped { color: #b8b860; }
 
-.footer { margin: 16px 0; }
+/* The defaults buttons close the global block, above the first divider. */
+.footer {
+  margin: 12px 0 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
 
-button#defaults {
+.btn {
   background: #1e1e24;
   color: #b8b8c0;
   border: 1px solid #2e2e36;
@@ -111,7 +168,14 @@ button#defaults {
   font-size: 11px;
 }
 
-button#defaults:hover { border-color: #555; }
+.btn:hover { border-color: #555; }
+
+.btn.subtle { color: #7a7a82; }
+
+.btn.done {
+  border-color: #e8e864;
+  color: #e8e864;
+}
 
 .midi {
   margin-top: 18px;
@@ -122,3 +186,27 @@ button#defaults:hover { border-color: #555; }
 #midi-status { color: #7a9a7a; }
 
 .hint { color: #55555c; margin: 6px 0 0; }
+
+/* Hover copy for every control in the panel. */
+#tooltip {
+  position: fixed;
+  z-index: 10;
+  max-width: 300px;
+  background: #22222a;
+  color: #d8d8dc;
+  border: 1px solid #3a3a44;
+  border-radius: 5px;
+  padding: 7px 9px;
+  font-size: 11px;
+  line-height: 1.45;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.55);
+  pointer-events: none;
+}
+
+#tooltip[hidden] { display: none; }
+
+#tooltip .hint {
+  color: #8a8a94;
+  font-size: 10px;
+  margin: 5px 0 0;
+}

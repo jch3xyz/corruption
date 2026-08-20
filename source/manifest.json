@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "DEFLECTION",
+  "name": "CORRUPTION",
   "version": "0.1.0",
-  "description": "Pixel-sorts every video and image on the live web through a WebGL2 shader with temporal feedback. An installation piece by New Media Nashville.",
+  "description": "If the signal is corrupting us, we take back power by corrupting the signal. An installation piece by New Media Nashville.",
   "permissions": ["storage", "declarativeNetRequest"],
   "host_permissions": ["<all_urls>"],
   "background": {

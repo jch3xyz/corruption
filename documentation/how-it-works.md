@@ -1,4 +1,4 @@
-# How DEFLECTION works
+# How CORRUPTION works
 
 A technical description of the piece as built. For *what the knobs do* see
 [parameters.md](parameters.md); for *status and what remains* see

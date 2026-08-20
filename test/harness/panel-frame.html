@@ -1,0 +1,54 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>panel under test</title>
+<link rel="stylesheet" href="../../source/panel/panel.css">
+</head>
+<body>
+<!--
+  The shipped panel, running against a stub chrome.storage.local so the
+  harness can see exactly what it writes. The markup is FETCHED from
+  source/panel/panel.html rather than copied, so this file can never drift
+  from the real thing; scripts inserted via innerHTML never execute, so
+  panel.js is imported explicitly afterwards, once the stub is in place.
+-->
+<script>
+  (() => {
+    const data = {};
+    const listeners = [];
+    window.__store = data;
+    window.chrome = {
+      storage: {
+        local: {
+          async get(defaults) {
+            if (typeof defaults === 'string') {
+              return defaults in data ? { [defaults]: data[defaults] } : {};
+            }
+            const out = { ...defaults };
+            for (const k of Object.keys(defaults)) if (k in data) out[k] = data[k];
+            return out;
+          },
+          async set(values) {
+            const changes = {};
+            for (const [k, v] of Object.entries(values)) {
+              changes[k] = { oldValue: data[k], newValue: v };
+              data[k] = v;
+            }
+            for (const fn of listeners) fn(changes, 'local');
+          },
+        },
+        onChanged: { addListener: (fn) => listeners.push(fn) },
+      },
+    };
+  })();
+</script>
+<script type="module">
+  const html = await (await fetch('../../source/panel/panel.html')).text();
+  const doc = new DOMParser().parseFromString(html, 'text/html');
+  document.body.insertAdjacentHTML('beforeend', doc.body.innerHTML);
+  await import('../../source/panel/panel.js');
+  window.__panelReady = true;
+</script>
+</body>
+</html>

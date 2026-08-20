@@ -2,20 +2,24 @@
 <html>
 <head>
   <meta charset="utf-8">
-  <title>DEFLECTION</title>
+  <title>CORRUPTION</title>
   <link rel="stylesheet" href="panel.css">
 </head>
 <body>
-  <h1>DEFLECTION</h1>
-  <div id="controls"></div>
+  <h1 data-tip="CORRUPTION — if the signal is corrupting us, we take back power by corrupting the signal. Every video frame, image, sound and word in the browser is rearranged between decode and display." data-hint="Ctrl+Shift+D toggles the whole piece off and back on from any page.">CORRUPTION</h1>
+  <div id="globals"></div>
   <div class="footer">
-    <button id="defaults">restore defaults</button>
+    <button id="defaults" class="btn">restore defaults</button>
+    <button id="setdefaults" class="btn" data-tip="Save every parameter at its current setting as the defaults. From then on &quot;restore defaults&quot; and a double-click on any row come back here — no code edit, no reload." data-hint="Saved in storage, so it survives restarts and outlives this session.">set defaults</button>
+    <button id="cleardefaults" class="btn subtle" data-tip="Forget the saved defaults and fall back to the ones compiled into the extension. Nothing on screen changes until you restore." hidden>clear saved</button>
   </div>
+  <div id="controls"></div>
   <div class="midi">
-    <h2>MIDI</h2>
-    <div id="midi-status">no device</div>
-    <p class="hint">Click a param's ⊙ then move a knob to map it.</p>
+    <h2 data-tip="Bind a hardware controller to any parameter. Class-compliant controllers work with no setup; the permission grant persists in this browser profile.">MIDI</h2>
+    <div id="midi-status" data-tip="Connected MIDI inputs. &quot;no device&quot; means nothing is plugged in — the panel still works entirely by mouse.">no device</div>
+    <p class="hint" data-tip="Each row's ⊙ button is its MIDI learn control: click it to arm, then move a knob or fader on the controller to bind that CC. One CC per parameter; re-learn to change it.">Click a param's ⊙ then move a knob to map it.</p>
   </div>
+  <div id="tooltip" role="tooltip" hidden></div>
   <script type="module" src="panel.js"></script>
 </body>
 </html>
