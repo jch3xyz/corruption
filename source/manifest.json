@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "CORRUPTION",
   "version": "0.1.0",
-  "description": "If the signal is corrupting us, we take back power by corrupting the signal. An installation piece by New Media Nashville.",
+  "description": "If the signal is corrupting us, we take back power by corrupting the signal. An installation piece by John Holmes.",
   "permissions": ["storage", "declarativeNetRequest"],
   "host_permissions": ["<all_urls>"],
   "background": {
