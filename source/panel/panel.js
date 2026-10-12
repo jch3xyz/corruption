@@ -221,19 +221,10 @@ function buildRow(def) {
     input.max = def.max;
     input.step = def.step;
   }
-  // The control cell. A row with `ends` gets tiny captions at both ends of
-  // its slider, so an inverted knob (threshold: left = more) reads without
-  // hovering.
-  let knob = input;
-  if (def.ends) {
-    knob = document.createElement('div');
-    knob.className = 'ends';
-    const lo = document.createElement('span');
-    const hi = document.createElement('span');
-    lo.className = hi.className = 'cap';
-    [lo.textContent, hi.textContent] = def.ends;
-    knob.append(lo, input, hi);
-  }
+  // The control cell is the input itself. (Threshold used to carry
+  // "more · less" captions at its slider ends; John removed them 2026-10-12:
+  // confusing for anyone who knows what a threshold is.)
+  const knob = input;
   knob.classList.add('knob');
   input.addEventListener('input', () => {
     const v =

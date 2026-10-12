@@ -688,11 +688,10 @@ its own shape, so the player sizes and places it.
 - **1280 is not a typical laptop; test wider.** The mixer and rail checks
   loop 1280, 1440, 1512, 1728 and 1920. Not anticipated: at 1280 the
   columns are ~225 px, and with 58 px value fields the threshold slider was
-  no wider than its thumb once its *more · less* end captions were in. Each
-  lane row is a size container now; under 250 px the end captions step
-  aside and selects drop to 11 px (the row's tip still says which way is
-  more). From 1440 up the captions are back. A small design call for John
-  to review.
+  no wider than its thumb once its *more · less* end captions were in. The
+  agent hid the captions below 250 px; John then removed them everywhere
+  (below). Each lane row stays a size container, where selects drop to
+  11 px under 250 px.
 - **A window responsive to its own shape.** Built. The layout follows the
   shape in every home: the strip's frame is the mixer, or the rail at
   40 px; the window and the side panel are the mixer at 900 px wide and
@@ -732,9 +731,10 @@ its own shape, so the player sizes and places it.
 - Covering, not pushing: the page loses its bottom 40 px at rest and
   240 px open, in exchange for never restyling a page and never breaking
   an app that scrolls its own container.
-- In the narrowest mixer columns (1280) the threshold's end captions give
-  way to a slider wider than its thumb; which way is *more* is then only in
-  the tip. John to review.
+- **Threshold's *more · less* captions are gone** (John, 2026-10-12: "it's
+  confusing for people who know what a threshold is"). Round 3's "caps make
+  direction legible" is withdrawn; the direction lives in the tip, and the
+  *amount* question (round 3, held for John) is the real answer.
 
 ### Open visual notes
 

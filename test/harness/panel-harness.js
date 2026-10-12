@@ -199,7 +199,7 @@ function tier1() {
       byKey.audioDirect.tip.startsWith('The untouched source mixed back in. Up = intelligible again, which defeats the piece; kept for comparison.') &&
       byKey.audioMix.tip.startsWith('Wet/dry for the whole sound. 0 = the sound exactly as transmitted, 1 = all apparatus.')
   );
-  check('threshold shows its direction at the slider ends (more · less)', byKey.threshold.ends?.join() === 'more,less');
+  check('no row carries slider-end captions (threshold’s "more · less" went 2026-10-12, John)', DEFS.every((d) => !d.ends));
   check(
     'presets are three slots and never capture the A/B',
     PRESET_SLOTS.join() === 'A,B,C' && PRESET_EXCLUDED.includes('enabled')
@@ -616,17 +616,8 @@ async function tier2() {
       $('#section-audio').nextElementSibling?.dataset.group === 'body'
   );
   check(
-    'threshold shows "more" and "less" at its slider ends without hovering',
-    (() => {
-      const caps = [...row('threshold').querySelectorAll('.cap')];
-      const r = slider('threshold').getBoundingClientRect();
-      return (
-        caps.map(text).join() === 'more,less' &&
-        caps[0].getBoundingClientRect().right <= r.left + 1 &&
-        caps[1].getBoundingClientRect().left >= r.right - 1 &&
-        caps.every((c) => c.getBoundingClientRect().width > 0)
-      );
-    })()
+    'threshold is a plain slider: no captions at its ends, and its knob cell is the range input itself',
+    row('threshold').querySelectorAll('.cap').length === 0 && row('threshold').querySelector('.knob') === slider('threshold')
   );
 
   const engineHead = (sec) => doc.querySelector(`#controls .group[data-section="${sec}"][data-group="engine"] .group-head`);

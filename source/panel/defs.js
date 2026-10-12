@@ -114,7 +114,6 @@ export const DEFS = [
     step: 0.01,
     section: 'video',
     group: 'sort',
-    ends: ['more', 'less'],
     tip: 'Lower = more of the picture is sorted. 0 tears everything but true black; 1 leaves it untouched. The most expressive knob. Brighter pixels may move; darker ones hold as barriers. Shapes images too.',
   },
   {

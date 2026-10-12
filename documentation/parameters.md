@@ -271,9 +271,10 @@ reach them exactly as before; they are only out of sight. The open state is
 remembered per section in the storage key `engineOpen` (`{video, audio}`),
 panel furniture outside `DEFAULTS` like `tooltips`.
 
-Threshold, the inverted knob, carries tiny captions at its slider ends —
-*more* on the left, *less* on the right — so its direction reads without
-hovering.
+Threshold is a plain slider. It carried *more* / *less* captions at its
+ends from round 3 until 2026-10-12, when John removed them: confusing for
+anyone who knows what a threshold is. Its direction lives in its tip, and
+the open question of showing it inverted as an *amount* stands.
 
 **Audio status line.** One muted line under the Audio header says what the
 tab you are looking at is putting through the body: *3 sources through the
@@ -472,10 +473,8 @@ talks to the strip (`toggle`, `ready`).
     `grid-auto-columns: minmax(220px, 340px)`, measured for the sort column
     at 224.5 px at 1280, 264.5 at 1440, 282.5 at 1512, 336.5 at 1728 and
     340 at 1920, where the cap leaves ~230 px empty at the right. Each lane
-    row is a size container: in a column under 250 px (the 1280 window) the
-    threshold's *more · less* end captions step aside and selects drop to
-    11 px, so the slider stays wider than its thumb (the row's tip still
-    says which way is more); from 1440 up the captions are back. A section
+    row is a size container: in a column under 250 px (the 1280 window)
+    selects drop to 11 px. A section
     header starts a column, its first group's caption sits beneath it, and
     every later group starts a fresh column. A folded engine costs no
     column: its `engine ▸` disclosure sits on the section's title line;
