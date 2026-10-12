@@ -66,12 +66,19 @@ Quick facts:
   (Video, Audio) behind dividers, sort and feedback knobs filed under
   **Video** (John's call), typed values that clamp and snap, double-click a
   row to restore one parameter, and a hover bubble on everything (nothing
-  at rest). **Video and Audio each have three groups, and each effect
-  group holds only its handles** (John's handles round, 2026-10-12): sort
+  at rest). **Video has four groups (sort · feedback · where · engine),
+  Audio three (body · smear · engine), and each effect group holds only
+  its handles** (John's handles round, 2026-10-12): sort
   = amount · sort by (`sortKey`, round 8: the ordering key; the barrier
   stays on luma) · direction (`angle`, degrees clockwise from up, a
   **knob**) · flow · jitter · ribbons — exactly the mixer's eight cells; feedback = the switch · trail · drift
-  pad · follow motion · blend · blend amount (`feedbackBlend`/`feedbackMix`);
+  pad · blend · blend amount (`feedbackBlend`/`feedbackMix`); where (round
+  8 part 3, group id `gate`) = the gates, each a condition both pixels must
+  meet, stacking, all inert at 0: follow motion (`motionGate`, still gated
+  by feedback — it reads the trail) · edges (`edgeGate`, from the CLEAN
+  frame's edge map) · span (walls along the sort direction) · soft barrier
+  (`barrierSoft`); five effect columns, in view from 1440 px, the lane
+  scrolling sideways at 1280;
   body = mix · body amount · follow · ring time · drive; smear = the switch · tail ·
   level · wobble. Everything that shapes rather than
   steers is in the **engines**, folded by default (Video: clear buffer —
@@ -109,6 +116,10 @@ Quick facts:
 - How both pipelines actually work: [documentation/how-it-works.md](documentation/how-it-works.md).
   Per-knob documentation: [documentation/parameters.md](documentation/parameters.md).
   Site quirks: [documentation/site-notes.md](documentation/site-notes.md).
+- **Version.** `source/manifest.json`'s minor number is the design-review
+  round in progress (0.8.x during round 8), the patch number counts fixes
+  inside a round, 1.0.0 is the first release form put in front of
+  strangers. Bump with a round's first commit.
 - **Release form is the browser extension** (John, 2026-10-12; options
   logged in build-plan.md — don't re-derive them). **Current stage is design
   iteration of the panel, and the yardstick is usability per Nielsen's ten

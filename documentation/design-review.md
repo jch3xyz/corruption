@@ -1245,3 +1245,113 @@ width the sort column is the header, the caption and six rows in eight
 cells with the 24 px dial inside its 28 px row. Strip 52/52, text 35/35.
 Not verified without real Chrome and real footage: everything under *What
 to look for*.
+
+# Round 8 part 3: where — edges, span, soft barrier (2026-10-12)
+
+John's calls: **follow motion is the gate he likes**; he wants an
+additional **automatic** mask derived from the video that stacks with it
+(edges — "sounds fun"), a **span** cap ("I'll judge by eye") and a **soft
+barrier** ("I'll judge by eye"). All three rest at 0, so the resting
+picture is bit-identical. Five commits (`5bf4ae0` the group and the params,
+`c2d530f` edges, `1f066f5` span, `0632ac4` soft barrier, then these notes).
+
+## What landed
+
+1. **A new Video group, *where*** (`gate`), between feedback and the
+   engine: *where the sort may happen; each gate is a condition both
+   pixels must meet before they trade; they stack.* **follow motion**
+   moved into it as the first row — it still reads the feedback trail, so
+   it still hides with feedback off — and the feedback column dropped to
+   seven cells. The other three shape images too and hide only with both
+   mediums off.
+2. **edges** (`edgeGate`, −1…1). An edge map from the **clean** frame each
+   frame (Sobel on luma; a hard black/white edge reads 1, a soft gradient
+   ~0.1, flat colour 0) — never from the sorted buffer, which would measure
+   the piece's own damage. Right of centre, only outlines shred and fills
+   hold; left of centre, only flat regions tear and outlines hold.
+3. **span** (0–512 px, step 8). Walls every so many pixels along the sort
+   direction: a run never reaches past its cell. Ribbons is how far a
+   pixel jumps per frame; span is how far a run may ever reach.
+4. **soft barrier** (0–0.5). The dark barrier becomes a band under the
+   threshold where a pixel trades now and then, its odds rising toward
+   the threshold — the ends of ribbons fray instead of cutting clean.
+
+## What to look for
+
+- **edges ±** on real footage. Right (try 0.3–0.6) on a talking head or a
+  city street: outlines and texture should shred while skin, sky and
+  walls hold — the picture's drawing comes apart, its fills stay. Left
+  (try −0.3 to −0.7): the reverse — fills tear and the outlines stay drawn
+  over the damage, so the picture stays legible. Then follow motion up
+  with edges on: only moving edges should go.
+- **span short vs long**. 16–48: fine banding, a grid of small sorted
+  cells along the sort direction (turn the direction knob to see the
+  walls turn with it; with flow on the cells follow the current). 256 and
+  up: whole-frame tears, close to no walls at all on most videos. Does a
+  middle value read as a distinct instrument from ribbons?
+- **soft barrier by eye**. Amount lowered first (amount ~0.5, so the
+  barrier is a real dark band), then soft barrier up from 0: ribbon ends
+  should fray and shimmer instead of cutting clean. Then at the resting
+  amount (0.95): past ~0.05 the band reaches black itself, so the barrier
+  as a whole dissolves rather than frays (see trade-offs) — is that a
+  feature or should the band stop at black?
+- **The mixer at John's width** (1512): five columns, sort · feedback ·
+  where · body · smear, all in view; at 1440 they are at their narrowest
+  (sliders ~40 px). At 1280 the lane now scrolls sideways.
+
+## Trade-offs, stated
+
+- **1280 scrolls sideways.** Five effect columns do not fit a 1280 lane;
+  John had already called 1280 an untypical laptop width. From 1440 up
+  all five are in view with no sideways scroll; at 1280 every column is
+  laid out, sort and feedback start in view and the lane scrolls (the
+  audio chip's jump brings Audio into view). The minimum column went 220
+  → 204 px to buy 1440, and the slider pays: ~40 px at 1440, selects show
+  a clipped face with their value beside them. With a MIDI device the ⊙
+  column squeezes the slider to ~10 px at 1440 (it was ~30 px at 1280
+  before) — MIDI rows need ~1600 px in the mixer. Heuristics: consistency
+  and recognition (every gate visible together, in one named place) over
+  flexibility at the narrowest width.
+- **The soft band is not floored at black.** Built as specified: at the
+  resting threshold (0.05) a band wider than 0.05 reaches below 0, and
+  true black then trades with odds (soft − threshold)/soft — about 0.83
+  per pair per pass at 0.3 — so the barrier dissolves rather than frays.
+  Flooring the band at 0 would keep black absolute (the promise amount's
+  tip makes) but leave the knob nearly dead above 0.05 at the resting
+  amount. John's eye decides; the floor is a one-line change.
+- **Span's walls start at the frame edge in every direction, in pixels
+  along the direction.** The plain `floor(t / N)` on the brick's
+  projection put a wall one pixel in from the edge for any direction
+  that runs negative (90°, 180°, a current pointing up or left), and
+  counted diagonal cells in projection units, not pixels; the shader
+  measures from the frame's first corner along the direction and divides
+  by N·|v|.
+- **Determinism needed a seed.** The pass seed the jitter and the soft
+  draw use is shared across calls, so neither was replayable; tier 0 had
+  only pinned determinism at jitter 0. `runSortPasses` now takes
+  `opts.seed` to start the sequence from a value (the live jobs never pass
+  it, so nothing on the page changed).
+- **The midpoint samples one texel.** As with the dark barrier, a long
+  stride can carry a pixel over a thin outline under edges < 0 or a thin
+  dark line under the soft barrier; the outline's own pixels never move.
+
+## Verification
+
+Headless Chrome, `node test/headless.mjs index panel strip text`: visual
+**99/99** (84 before): edges 0, span 0 and soft 0 each bit-identical with
+the option absent; the edge map reads 255/255 on a hard edge and at most
+12/255 on flat areas; edges +0.5 moves no pixel far from the edge (3840
+move ungated) while the edge band trades, −0.5 sorts the flat ramp and
+holds the edge band; span 16 keeps every 16-pixel cell's own pixels in
+columns and in rows at 90°, a bright run climbs to its cell's wall (rows
+32–39, not 0–7), span 512 on a 64-pixel frame equals 0 climbing up, down
+and flowing; the soft barrier at threshold 0.5 / soft 0.3 trades 1136
+just-under pixels (0 under the hard cut) and moves no pixel under the band;
+every gate a permutation and deterministic (soft and jitter for a seed
+sequence). Panel **399/399** (392 before): the where group's rows, labels
+and caption order; follow motion hides with feedback off while the other
+three stay; video off keeps where for stills; both mediums off hide it;
+five columns in view without sideways scroll at 1440/1512/1728/1920, all
+five laid out at 1280 with the lane allowed to scroll; the where column
+its caption and four rows. Strip 52/52, text 35/35. Not verified without
+real Chrome and real footage: everything under *What to look for*.

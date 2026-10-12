@@ -38,11 +38,15 @@ rather than steers.
 | `decay` | trail | **0.81** | 0.8–0.999 | *Video feedback only.* Accumulator retention per frame. Higher = smear lingers longer. |
 | `driftX` | drift (pad), x | **−0.0025** | ±0.01 | *Video feedback only.* Horizontal smear, UV units per frame (negative = leftward). |
 | `driftY` | drift (pad), y | **0.0020** | ±0.01 | *Video feedback only.* Vertical smear; **positive = upward** — the resting state climbs gently. Purely visual — the audio wobble it used to drive is now `audioFbWobble`. |
-| `motionGate` | follow motion | **0** | 0–1 | *Video feedback only.* A pair may only trade when BOTH members' motion trail clears this, so damage stays strictly inside what the transmission itself is changing: action smears, stillness holds and heals. The trail decays ~1 s; each keyframe floods it hot, so a reset briefly sorts everywhere before confinement returns. 0 = sort regardless of motion. |
 | `feedbackBlend` | blend | **brighter** | brighter · mix · screen · add | *Video feedback only.* How the trail meets the new frame (design review M5). **brighter** = `max(history·decay, incoming)`, the codec-faithful rule and the resting state: the trail shows only where it outshines the frame, so it hides over bright moving footage. **mix** = a straight crossfade with history (blend amount *is* the crossfade; at 1 the picture freezes, fades and snaps back where the trail drops under the barrier). **screen** = the trail lightens the frame, visible over light material without clipping. **add** = the trail piles on and burns out: on still footage at trail 0.81 any channel above ~0.19 saturates to white. True black still holds as a barrier in every rule. |
 | `feedbackMix` | blend amount | **1** | 0–1 | *Video feedback only.* How much of the trail survives against the new frame: for brighter, screen and add, the composite lerps from the incoming frame (0, every frame fresh) to the full rule (1); for mix it is the crossfade itself. At brighter and 1 the composite is the pre-blend shader bit for bit. |
+| **Video · where** (round 8 part 3) | | | | |
+| `motionGate` | follow motion | **0** | 0–1 | *Video feedback only* (its row moved from feedback to **where** in round 8 part 3; it still reads the trail, so it still hides with feedback off). A pair may only trade when BOTH members' motion trail clears this, so damage stays strictly inside what the transmission itself is changing: action smears, stillness holds and heals. The trail decays ~1 s; each keyframe floods it hot, so a reset briefly sorts everywhere before confinement returns. 0 = sort regardless of motion. |
+| `edgeGate` | edges | **0** | −1…1 | Where the sort may happen, by the picture's own edges (John: an automatic mask from the video that stacks with follow motion — "sounds fun"). An **edge map** is rendered each frame from the **clean** frame, never the sorted buffer (Sobel on luma, ÷ 8 × 4, clamped: a hard black/white edge reads 1, a 1/32-per-pixel gradient ~0.12, flat colour 0). **Right of centre (g > 0)**: a pair trades only where both members — and the span midpoint — read at least g: outlines shred, fills hold. **Left of centre (g < 0)**: only where they read at most 1 + g: flat regions tear, outlines hold. **0 = everywhere**, bit-identical, and no edge pass runs. Stacks with follow motion and the barrier. A permutation at every value (harness-pinned). Shapes images too. |
+| `span` | span | **0** | 0–512, step 8 | Extra walls every `span` pixels along the sort direction (John: "I'll judge by eye"): a pair trades only inside one cell of the projection, so no run ever reaches past its cell. **0 = no walls**, bit-identical. Short = fine banding of small sorted cells; long = whole-frame tears. *Ribbons* (`streak`) is how far a pixel jumps per frame; *span* is how far a run may ever reach. Measured in pixels along the direction (diagonals included); cells start at a frame edge whatever the direction, so a span longer than the picture is no wall at all. Shapes images too. |
+| `barrierSoft` | soft barrier | **0** | 0–0.5 | Frays the ends of ribbons (John: "I'll judge by eye"): the luma barrier becomes a band `barrierSoft` deep under the threshold, where a pixel passes with odds rising from 0 at the band's floor to 1 at the threshold — one draw per pair per pass, shared by both members and the midpoint, so the sort stays a permutation and the fray shimmers frame to frame. **0 = the hard cut**, bit-identical. *The band is not floored at black*: at the resting amount (threshold 0.05) a band wider than 0.05 reaches below 0, so true black itself trades now and then — with odds (soft − threshold)/soft, about 0.83 at 0.3 — and the barrier dissolves rather than only fraying; at higher thresholds only the near-dark trades. Shapes images too. |
 | **Video · engine (folded)** | | | | |
-| `keyframe` | clear buffer (a button) | **0** | a counter | *Video feedback only.* **A trigger, not a value** (round 8, John: a clear-buffer button, a utility rather than a headline handle). The row's **clear** button writes the counter up by one; every video job that sees a larger value than it last answered takes the keyframe branch on its next tick — the trail wiped to a clean frame, exactly as the random `resetMinS`/`resetMaxS` clock does, and the clock keeps running. A job starts level with the counter it is built with, so a value left in storage never fires on load. Presets never capture or load it, *default* and a double-click leave it alone, and a learned MIDI CC fires it once per rise through 64 (bind a button for a rhythm). First in the engine because the feedback column is full; the feedback switch's tip points to it. |
+| `keyframe` | clear buffer (a button) | **0** | a counter | *Video feedback only.* **A trigger, not a value** (round 8, John: a clear-buffer button, a utility rather than a headline handle). The row's **clear** button writes the counter up by one; every video job that sees a larger value than it last answered takes the keyframe branch on its next tick — the trail wiped to a clean frame, exactly as the random `resetMinS`/`resetMaxS` clock does, and the clock keeps running. A job starts level with the counter it is built with, so a value left in storage never fires on load. Presets never capture or load it, *default* and a double-click leave it alone, and a learned MIDI CC fires it once per rise through 64 (bind a button for a rhythm). First in the engine because the feedback column was full when it came; the feedback switch's tip points to it. |
 | `passes` | sort passes | **64** | 0–64 | Sort passes per frame. A full 256→1 stride ladder is 18 passes, so 64 runs ~3.5 settling cycles. |
 | `maxRes` | max res | 1920 | 480–1920 | Processing resolution cap, long axis. Lower it on weak GPUs; output upscales through the overlay. |
 | `maxVideos` | max videos | **12** | 1–16 | Concurrent video jobs, biggest visible first. Paused videos count too — they get a one-shot sorted still (rVFC never fires for them). Raised from 8 for grid feeds (Instagram explore) where a dozen previews are on screen at once. |
@@ -256,6 +260,23 @@ recovers automatically when real content returns.
   the threshold tests (both members, the span midpoint) still read
   `luma()`. Key 0 is the very same expression as before, so the default is
   bit-identical.
+- `barrierSoft` → `uSoft`: with it above 0 the threshold tests (both
+  members, the span midpoint) become `softPass(l, draw)` — pass at or
+  above `uThreshold`, never under `uThreshold − uSoft`, and in between
+  when the pair's one draw (`softDraw`, the temperature's hash family on
+  the upper member and the pass seed, other constants) falls under
+  `(l − (uThreshold − uSoft)) / uSoft`. At 0 the old `<` comparisons run
+  in their own branch.
+- `edgeGate` → `uEdgeGate`, and **the edge pass**: while it is off 0 both
+  jobs call `runEdgePass` after the reset/composite, rendering `edge.js`
+  (Sobel on the clean upload `frameTex`, ÷ 8 × 4, clamped, into the
+  bundle's R8 `edge` texture at processing resolution). The sort samples it
+  on unit 2 as `uEdge`: g > 0 refuses unless both members (and the
+  midpoint) read ≥ g, g < 0 unless they read ≤ 1 + g.
+- `span` → `uSpan` (floored to whole pixels): a pair trades only when
+  `floor((t − t0) / (span·|v|))` agrees for both members, `t` the brick's
+  projection `dot(p, v)` and `t0` the frame's smallest projection along
+  `v`.
 - `angle` → `uAngle`, in radians (the jobs convert: `angleRadians` in
   params.js). With flow on it is added to the field's angle in
   `fieldDir`, before `quantizeDir`; with flow off and `uAngle` ≠ 0 the one
@@ -278,8 +299,9 @@ always shows your requested values.
 Rebuilt 2026-08-20 for performing rather than for reading source; the global
 block redesigned 2026-10-12 for the stranger (design review M1, M2, M3, M7).
 Three sections under a global block — Video and Audio each in three groups
-(effect, effect, engine; regrouped 2026-10-12, M4/M8) — and the whole thing
-explains itself on hover.
+(effect, effect, engine; regrouped 2026-10-12, M4/M8), Video since round 8
+part 3 in four (where, the gates, between feedback and the engine) — and
+the whole thing explains itself on hover.
 
 **The global block** is everything above the first divider, in order:
 
@@ -330,9 +352,12 @@ handles — three or four controls named for what they do — and whatever
 shapes rather than steers is filed in the engine:
 
 - **Video** — **sort** (amount, sort by, direction, flow, jitter, ribbons), **feedback** (its
-  own switch, then trail, the drift pad, follow motion — which reads the
-  feedback trail — then blend and blend amount, how the trail meets the
-  new frame), **engine** (clear buffer, a button that wipes the trail
+  own switch, then trail, the drift pad, blend and blend amount, how the
+  trail meets the new frame), **where** (round 8 part 3: the gates — follow
+  motion, which reads the feedback trail and so still hides with feedback
+  off, then edges, span and soft barrier, which shape images too and hide
+  only with both mediums off; each a condition both pixels must meet, and
+  they stack), **engine** (clear buffer, a button that wipes the trail
   now; sort passes, max res, max videos; the flow's shape: flow mode, flow scale, flow speed, shown while flow is
   above 0; the clear rhythm: clear min s, clear max s).
 - **Audio** — **body** (mix, the whole-sound wet/dry, then body amount,
@@ -346,11 +371,12 @@ shapes rather than steers is filed in the engine:
 - **Text** has no section: it is the chip and nothing else.
 
 In the mixer the effect columns fit their eight lane cells (sort 8 —
-exactly full since direction,
-feedback 8 — exactly full since the blend, body 8 — exactly full since
-follow, smear 5); the engines are 9 rows each (the Video engine since
-clear buffer), so an unfolded engine spills into a second column and the
-lane scrolls sideways only then.
+exactly full since direction, feedback 7 since follow motion moved to
+where, where 5, body 8 — exactly full since follow, smear 5); the engines
+are 9 rows each (the Video engine since clear buffer), so an unfolded
+engine spills into a second column. Five effect columns are in view with
+no sideways scroll from 1440 px up; at 1280 the lane scrolls sideways
+(below).
 
 Both **engine** groups start folded behind a disclosure (`engine ▸`; click
 for `engine ▾`). The folded rows still exist — presets, MIDI and storage
@@ -612,17 +638,26 @@ talks to the strip (`toggle`, `ready`).
     inside the cluster). **The strip asks for MIDI only on demand**: the
     prefs line carries a small **MIDI…** button, and nothing requests MIDI
     until it is clicked (see MIDI below). Then the sections as columns in a lane — **sort ·
-    feedback · body · smear, all four in view with no sideways scroll at
-    every width checked, 1280 to 1920 px** (John: video and audio controls
-    at hand without horizontal scrolling). The lane is eight rows of 28 px:
+    feedback · where · body · smear, all five in view with no sideways
+    scroll from 1440 px up** (John: video and audio controls at hand
+    without horizontal scrolling). **At 1280 the lane scrolls sideways**
+    (round 8 part 3: where took a column of its own, and five columns do
+    not fit a 1280 lane; John had already called 1280 an untypical laptop
+    width): every column is still laid out, sort and feedback start in
+    view, nothing is cut vertically, and the audio chip's jump scrolls
+    Audio into view. The lane is eight rows of 28 px:
     12 px type, a 6 px slider track with a 16 px thumb, 58 px value fields
     (so *-0.0025* fits). **The columns spread with the width** (John,
     2026-10-12: the mixer left most of a wide screen empty):
-    `grid-auto-columns: minmax(220px, 340px)`, measured for the sort column
-    at 224.5 px at 1280, 264.5 at 1440, 282.5 at 1512, 336.5 at 1728 and
-    340 at 1920, where the cap leaves ~230 px empty at the right. Each lane
-    row is a size container: in a column under 250 px (the 1280 window)
-    selects drop to 11 px. A section
+    `grid-auto-columns: minmax(204px, 340px)` (220 until round 8 part 3:
+    204 is what fits five columns in 1440 — cluster 260 + 5 × 204 + the
+    gaps + the fold button's 40), measured for the sort column at 204 px
+    at 1280, 209 at 1440, 223 at 1512, 266 at 1728 and 305 at 1920. The
+    slider pays for the narrow end — about 40 px at 1440, the label and
+    value cells keeping their 98 and 58 — and selects show a clipped face
+    with the value spelled out beside them. Each lane row is a size
+    container: in a column under 250 px (1440 and under) selects drop to
+    11 px. A section
     header starts a column, its first group's caption sits beneath it, and
     every later group starts a fresh column. A folded engine costs no
     column: its `engine ▸` disclosure sits on the section's title line;
@@ -672,8 +707,10 @@ talks to the strip (`toggle`, `ready`).
 **Verified** (headless Chrome, `node test/headless.mjs panel strip text`,
 2026-10-12: panel 299/299, strip 52/52, text 35/35): the prefs row, its
 three options and its storage; the mixer at 240 px tall and 1280, 1440,
-1512, 1728 and 1920 wide (four effect columns in view, each its own column,
-no sideways scroll, rows fitting, the sort column more than 40 px wider at
+1512, 1728 and 1920 wide (since round 8 part 3: five effect columns in
+view with no sideways scroll from 1440 up, and at 1280 all five laid out
+with the lane allowed to scroll; each its own column, rows fitting, the
+where column its caption and four rows, the sort column more than 40 px wider at
 1920 than at 1280 and never narrower as the width grows, the cluster in
 view, and **no descendant of the cluster crossing the lane's left edge** —
 the guard the *panel lives in* / *flow scale* overlap escaped, because the
@@ -713,9 +750,10 @@ side panel; that the MIDI grant from the window carries to the side panel
 carries `allow="midi"`, but the permission prompt in a cross-origin frame
 and a page's own Permissions-Policy may refuse it — which is why the strip
 now asks only when MIDI… is clicked); MIDI rows in the mixer
-at 1280 (known: with a device the ⊙ column squeezes the lane's sliders to
-~30 px and truncates the selects — too little width for MIDI rows at 1280;
-not addressed); that Chrome's command takes Ctrl+Shift+P before a page that
+at 1280 and 1440 (known: with a device the ⊙ column squeezes the lane's
+sliders — to about 10 px at 1440 since the where column narrowed the
+lane's columns to ~209 px — and truncates the selects; too little width
+for MIDI rows below ~1600; not addressed); that Chrome's command takes Ctrl+Shift+P before a page that
 binds it; a site with a strict Content Security Policy, which could refuse
 the extension's iframe (untested; the 8 s failure path should then open the
 window — github.com is the checklist case); how the rail and the mixer sit

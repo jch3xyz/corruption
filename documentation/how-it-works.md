@@ -115,6 +115,9 @@ black. The harness guards this specifically.
 frameTex   RGBA8    native video size      ← texSubImage2D target
 accum[0]   RGBA16F  processing resolution  ┐ ping-pong pair,
 accum[1]   RGBA16F  processing resolution  ┘ each with an FBO
+prev       RGBA8    processing resolution  the clean previous frame (motion trail)
+field      RG8      ¼ processing res       the flow field's directions
+edge       R8       processing resolution  the clean frame's edge map (edges gate)
 ```
 
 Allocated once via `texStorage2D` and reused every frame — **the rVFC path
@@ -136,7 +139,10 @@ uploadFrame(bundle, source)            texSubImage2D — throws SecurityError if
    └── feedback:       runComposite()  incoming vs drifted, decayed accumulator
                        runReset()      …except at a keyframe, which clears the damage
    │
-runSortPasses(bundle, passes, threshold, streak)    K compare-exchange passes, ping-ponging
+runEdgePass(bundle)                    only while edgeGate ≠ 0: Sobel on frameTex → edge
+runFieldPass(bundle, …)                only while flowAmount > 0: the flow field
+   │
+runSortPasses(bundle, passes, threshold, streak, opts)    K compare-exchange passes, ping-ponging
    │
 present(bundle)                        → default framebuffer, bottom-left region, flipped
    │
@@ -149,6 +155,12 @@ happens in the same task as the `present` — nothing composites in between.
 **Order matters and was a hard-won correction:** composite *into* the
 accumulator, then sort *on* the accumulator, so sort progress genuinely
 accumulates across frames rather than restarting each frame.
+
+The edge pass reads `frameTex` — the raw upload, which both paths leave
+untouched (`runReset` copies it, `runComposite` reads it) — never the
+accumulator: the edge map must describe the picture as transmitted, not
+the ribbons already sorted into it. Stills (2.9) run the same sequence once
+with `runReset`.
 
 ### 2.4 The composite shader (temporal feedback)
 
@@ -334,6 +346,55 @@ at 0 and both preserving the symmetric-swap/permutation property:
   containment strict: a hot pixel cannot drag cold material into the churn,
   so the damage boundary IS the motion boundary. Harness-pinned: with the
   gate up, a moving band sorts while pixels outside it stay byte-identical.
+
+Three more gates came with the panel's **where** group (round 8 part 3,
+John 2026-10-12: follow motion is the gate he likes; edges, span and a soft
+barrier stack with it). The rule is the one every gate above keeps: a
+condition **both members must meet, computed identically by both**, so a
+refusal is symmetric and every pass stays a permutation. They stack — a
+pair trades only where every gate that is up lets it — and each is exactly
+inert at 0, so the resting picture is bit-identical (all harness-pinned).
+
+- **`edgeGate`** (*edges*, −1…1) — an automatic mask from the picture's own
+  outlines. A per-frame **edge map** (`edge.js`, an R8 texture at processing
+  resolution) is rendered from the **clean** frame, `frameTex`, never from
+  the sorted buffer — the same reason the motion trail diffs against the
+  clean previous frame: measuring our own damage would light every ribbon
+  up as an edge and the gate would feed on itself. Sobel on luma, normalised
+  by the kernel weight (÷ 8) and amplified ×4, clamped: a hard black/white
+  edge reads 1 (any step of half the luma range saturates), a gradient of
+  1/32 per pixel about 0.12, flat colour 0. With g > 0 a pair trades only
+  where both members (and the span midpoint) read at least g — outlines
+  shred and fills hold; with g < 0 only where they read at most 1 + g — flat
+  regions tear and outlines hold. The pass runs only while the gate is off
+  0, and the sort samples the map only then.
+- **`span`** — walls along the sort direction, every `span` pixels. Cells
+  are cut along the brick's own projection `t = dot(p, v)`; the partner's
+  is `t ± s·|v|²`, and a pair trades only inside one cell, so no run ever
+  reaches past it (ribbons is how far a pixel moves per frame; span is how
+  far a run may ever reach). The cell is `span·|v|` projection units long,
+  so it is pixels along `v` for diagonals and knight moves too, and `t` is
+  measured from the frame's first corner along `v`, so cells start at a
+  frame edge in every direction — without that a negative-going `v` would
+  put a wall one pixel in from the edge, and a span longer than the frame
+  would not be "no wall". Cells are contiguous along the projection, so the
+  midpoint needs no check of its own.
+- **`barrierSoft`** (*soft barrier*) — the luma barrier as a band. At or
+  above the threshold a member passes; more than `barrierSoft` under it,
+  never; in between it passes when the pair's draw falls under
+  `(l − (threshold − soft)) / soft`, so the odds rise toward the threshold
+  and ribbon ends fray instead of cutting clean. **One draw per pair per
+  pass**, from the temperature's hash family (upper member + pass seed)
+  with different constants, so it is independent of the temperature's
+  draw; the same draw judges self, other and the midpoint. At 0 the old
+  comparisons run in their own branch. The band is not floored at black:
+  at the resting threshold (0.05) a band wider than 0.05 reaches below 0,
+  and black itself then trades with odds `(soft − threshold) / soft`.
+
+The per-pass seed both draws use is a counter shared across calls, so a
+hot sort is not replayable by default; `runSortPasses` takes `opts.seed`
+to start the sequence from a given value, which is how tier 0 pins
+determinism for jitter and the soft barrier.
 
 
 ```

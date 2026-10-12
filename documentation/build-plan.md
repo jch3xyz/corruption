@@ -229,7 +229,8 @@ balance are the open item below. The previous sound is exactly reachable at
   rests as a **transport line** — a 28 px rail carrying the A/B, the four
   chips and the presets — and unfolds to a 208 px **mixer** with the four
   effect columns (sort · feedback · body · smear) in view at 1280 px with no
-  sideways scroll (both John's asks: the key gesture always one click
+  sideways scroll (since round 8 part 3 five, with where, in view from
+  1440; the lane scrolls sideways at 1280) (both John's asks: the key gesture always one click
   away; video and audio controls at hand without horizontal scrolling; the
   strip free to grow taller). John's picks among the rest options: the
   transport line over fold-to-tab and over always-open-translucent. See
@@ -414,6 +415,29 @@ balance are the open item below. The previous sound is exactly reachable at
   with flow at 0 once the direction is off 0 (it is the direction's
   quantizer). Suites (headless): visual 84/84 (68 before), panel 392/392
   (365 before), strip 52/52, text 35/35.
+
+  **Round 8, part 3 — where: edges, span, soft barrier (John: follow
+  motion is the gate he likes; an automatic mask that stacks with it —
+  edges, "sounds fun" — plus a span cap and a soft barrier he will judge
+  by eye).** Logged in design-review.md: (1) `5bf4ae0` a new Video group
+  **where** (`gate`, after feedback, before the engine) holding **follow
+  motion** (moved from feedback; still gated by it) and three new params,
+  all 0 at rest (bit-identical): `edgeGate`, `span`, `barrierSoft`, in
+  `SORT_KEYS` (they shape images too) and `effectKeys`; the mixer gains a
+  fifth effect column, so the rule is now **five columns in view with no
+  sideways scroll from 1440 up, the lane scrolling sideways at 1280**
+  (min column 220 → 204 px); (2) `c2d530f` **edges** — `edge.js`, Sobel on
+  the CLEAN upload into an R8 `bundle.edge` (`runEdgePass`, only while the
+  gate is off 0), sampled on unit 2 as `uEdge`: g > 0 both members (and the
+  midpoint) ≥ g, g < 0 both ≤ 1 + g; (3) `1f066f5` **span** — walls along the
+  brick's projection, cells N·|v| long measured from the frame's first
+  corner along v; (4) `0632ac4` **soft barrier** — the luma barrier as a band
+  with one draw per pair per pass (the temperature's hash family, other
+  constants), shared by both members and the midpoint; not floored at
+  black (at the resting threshold a wide band lets black trade —
+  flagged for John's eye); `runSortPasses` gained `opts.seed` so tier 0
+  can replay jitter and the soft draw. Suites (headless): visual 99/99 (84
+  before), panel 399/399 (392 before), strip 52/52, text 35/35.
 
   **Open items John holds (2026-10-11; (2) reinstated 2026-10-12; revised
   after round 5):** (1) the in-page first-run mark, the remaining half of
@@ -658,6 +682,15 @@ waits `HARNESS_WAIT_MS` (default 1500) and shoots.
   bottom. Flow back to 0.5: the swirls' whole pattern turns. In the mixer,
   is the 24 px knob readable, is drag-up = clockwise right, and is 2 px per
   degree the right rate? A MIDI knob on it should sweep once round.
+- **Where: edges, span, soft barrier** on real footage. Edges right
+  (0.3–0.6): outlines and texture shred, skin, sky and walls hold; left
+  (−0.3 to −0.7): fills tear, outlines stay drawn; then follow motion up
+  too — only moving edges go. Span 16–48: fine banding in cells along the
+  sort direction (turn the direction knob; the walls turn with it); 256+:
+  whole-frame tears. Soft barrier with amount ~0.5: ribbon ends fray and
+  shimmer; at the resting amount past ~0.05 it dissolves the black
+  barrier itself — keep, or floor the band at black? The mixer at 1512:
+  five columns in view; at 1280 the lane scrolls sideways.
 - **Clear buffer** on a playing video with feedback on: unfold the Video
   engine, click **clear** — the trail wipes to a clean frame at once on
   every video on the page, and builds again; bind a MIDI button to it and
