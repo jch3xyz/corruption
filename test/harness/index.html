@@ -16,8 +16,12 @@
 </head>
 <body>
 <h3>CORRUPTION Phase 1 harness</h3>
-<div id="status"><div>booting…</div></div>
+<!-- The grid sits ABOVE the status lines: every check adds a line, and a
+     status block above the grid pushed the second row of videos (and the
+     images) out of the viewport as tier 0 grew, so visibility-driven checks
+     failed for reasons of layout. Below the grid, the line count is inert. -->
 <div class="grid" id="grid"></div>
+<div id="status"><div>booting…</div></div>
 <div id="spacer"></div>
 <div class="cell" id="farcell"></div>
 <script type="module" src="./harness.js"></script>

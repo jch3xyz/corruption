@@ -13,8 +13,11 @@
 // runner waits HARNESS_WAIT_MS (default 1500) and shoots.
 //
 // A headless page counts as visible, so the pure-DOM suites (panel, strip,
-// text, audio tiers 1–2) run deterministically here. The visual suite
-// (index.html) still needs a real, visible tab — rVFC starves otherwise.
+// text, audio tiers 1–2) run deterministically here. The visual suite runs
+// here too (`node test/headless.mjs index`, ~25 s): SwiftShader gives
+// headless Chrome WebGL2, and rVFC ticks in a headless page. Its old headless failures were WebGL2
+// missing under --disable-gpu and, with GL, a layout fault in index.html
+// (the status lines pushed the videos out of the viewport), not starvation.
 //
 // Chrome: $CHROME, else Google Chrome in /Applications.
 
@@ -48,6 +51,10 @@ const chrome = spawn(
   [
     '--headless=new',
     '--disable-gpu',
+    // WebGL2 in headless: without a software GL the visual suite's tier 0
+    // reports "WebGL2 available: false" and every GL check is skipped.
+    '--use-angle=swiftshader',
+    '--enable-unsafe-swiftshader',
     '--no-first-run',
     '--no-default-browser-check',
     '--autoplay-policy=no-user-gesture-required',
