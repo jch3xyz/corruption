@@ -289,14 +289,22 @@ for the active tab of the last-focused normal window on open and every 2 s
 stays empty. Nothing about it can touch the page: every call is guarded and
 a failure only stops the reporter.
 
-**Greyed rows say why.** A row that cannot act right now dims, and its knob
-cell shows the switch that would wake it, in muted italics: *needs
-video*, *needs video or images*, *needs feedback*, *needs flow*, *needs
-text*, *needs audio*, *needs smear*, *needs clear*, *comb only*. When
-several apply, the outermost switch is named. The medium gates come from
-the chips: with `video` off every feedback row (its switch included) reads
-*needs video*; with `video` and `images` both off every sort row reads
-*needs video or images*.
+**Gated rows hide, they do not grey** (John, 2026-10-11: a control that
+waits on another switch should not be visible until that switch is on).
+Feedback off hides every feedback knob beneath the *feedback* switch, which
+stays as the group's header; flow at 0 hides the three flow-shape knobs;
+smear off hides tail, return, wobble and smear clear under the *smear*
+switch; clear off hides the clear timings; a modal body hides comb damp.
+When a whole medium is off the section keeps its header and shows one
+italic line instead of its groups — *off — switch video or images on
+above*, *off — switch audio on above* — so the stranger is told where the
+knobs went. Each hidden row records its reason in `data-gate` (`feedback`,
+`flow`, `smear`, `clear`, `comb`, `video`, `video or images`, `audio`;
+the outermost switch wins) and is disabled, so neither mouse nor keyboard
+reaches it. Trade-off, made on purpose: recognition (you cannot see that
+feedback *has* knobs until it is on) for minimalism and a surface that
+unfolds like a patch — the switch is the header of what it reveals, the
+same gesture as the engine folds.
 
 **Typing values.** Every numeric row's readout is an editable field. Type a
 number and the knob follows as you type; press Enter (or click away) and the

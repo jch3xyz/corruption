@@ -288,36 +288,30 @@ h2 {
   border-radius: 3px;
 }
 
-/* Every cell is placed explicitly, so the gate caption can share the knob's
-   cell without pushing anything along. */
+/* Every cell is placed explicitly. */
 .row > * { grid-row: 1; min-width: 0; }
 .row > label { grid-column: 1; }
 .row > .knob { grid-column: 2; }
 .row > .value { grid-column: 3; }
 .row > :nth-child(4) { grid-column: 4; }
-.row > .gate { grid-column: 2; }
 
 .row label { color: #9a9aa2; }
 
 .row.pref label { cursor: pointer; }
 
-/* Inert: dimmed, and the knob gives its cell to a caption naming the switch
-   that would wake it (finding 9). The caption itself is not dimmed. */
-.row.inert > :not(.gate) { opacity: 0.35; }
-.row.inert > .knob { visibility: hidden; }
+/* A gated row is hidden, not greyed (2026-10-11): the switch that gates it
+   stays as the header of the knobs it hides. [hidden] is the mechanism. */
+.row[hidden], .group[hidden] { display: none; }
 
-.row > .gate {
-  display: none;
-  color: #8a8a70;
+/* The note under a section whose medium is off: which chip brings it back. */
+.section .off-note {
+  margin: 4px 0 0;
+  color: #6c6c76;
   font-size: 10px;
   font-style: italic;
-  text-align: right;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
-.row.inert > .gate { display: block; }
+.section .off-note[hidden] { display: none; }
 
 /* A slider with captions at its ends (threshold: more · less). */
 .ends {

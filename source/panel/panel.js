@@ -96,18 +96,28 @@ const MEDIUM_TRIGGERS = ['video', 'images', 'feedbackVideo', 'flowAmount'];
 // The flow shape knobs only mean anything while flow amount is above zero.
 const FLOW_ONLY = ['flowMode', 'flowScale', 'flowSpeed'];
 
-// What an inert row says instead of its knob (design review finding 9): the
-// switch that would bring it back, named by its panel label. Derived from
-// the gating above — nothing new is gated here.
+// A gated row is HIDDEN, not greyed (John, 2026-10-11: "if controls are
+// greyed out contingent on a different toggle being on, then those controls
+// shouldn't be visible at all until the toggle is on"). The switch that
+// gates a group stays in view as its header, so switching it on unfolds the
+// knobs beneath it — progressive disclosure, the gesture the engine folds
+// already use. When a whole section's medium is off, the section keeps its
+// header and says, in one line, which chip brings it back. The strings
+// below are those section notes; the per-row "needs …" captions of finding
+// 9 went with the greying.
 const GATE = {
-  video: 'needs video',
-  medium: 'needs video or images',
-  feedback: 'needs feedback',
-  flow: 'needs flow',
-  audio: 'needs audio',
-  smear: 'needs smear',
-  clear: 'needs clear',
-  comb: 'comb only',
+  video: 'video',
+  medium: 'video or images',
+  feedback: 'feedback',
+  flow: 'flow',
+  audio: 'audio',
+  smear: 'smear',
+  clear: 'clear',
+  comb: 'comb',
+};
+const SECTION_OFF = {
+  medium: 'off — switch video or images on above',
+  audio: 'off — switch audio on above',
 };
 
 const hasChrome = typeof chrome !== 'undefined' && !!chrome.storage?.local;
@@ -164,7 +174,8 @@ const inputs = {};
 const valueEls = {};
 const learnEls = {};
 const rowEls = {};
-const gateEls = {};
+const sectionEls = {}; // section id → { head, note }
+const groupEls = {}; // `${section}.${group}` → { wrap, head }
 const renderers = {};
 const onRender = (key, fn) => (renderers[key] ??= []).push(fn);
 
@@ -248,11 +259,6 @@ function buildRow(def) {
   learn.textContent = '⊙';
   learn.addEventListener('click', () => armLearn(def.key));
 
-  // Shown in place of the knob while the row is inert: the switch that
-  // would wake it (finding 9).
-  const gate = document.createElement('span');
-  gate.className = 'gate';
-
   // Double-click the row to restore this one parameter — the alternative to
   // all-or-nothing (John, 2026-08-20). The number field is excluded so that
   // double-clicking inside it still selects the text, and the slider is
@@ -263,13 +269,12 @@ function buildRow(def) {
     resetParam(def.key);
   });
 
-  row.append(label, knob, value, learn, gate);
+  row.append(label, knob, value, learn);
   row.addEventListener('animationend', () => row.classList.remove('flash'));
   inputs[def.key] = input;
   valueEls[def.key] = value;
   learnEls[def.key] = learn;
   rowEls[def.key] = row;
-  gateEls[def.key] = gate;
   return row;
 }
 
@@ -284,6 +289,14 @@ function buildSection(section) {
   const title = document.createElement('h2');
   title.textContent = section.title;
   head.appendChild(title);
+  // One line, shown only while this section's medium is switched off: which
+  // chip brings it back. Its rows are hidden meanwhile.
+  const note = document.createElement('p');
+  note.className = 'off-note';
+  note.hidden = true;
+  note.dataset.tip = `This section’s knobs are out of sight while its medium is off. Switch it on with the chip above and they return.`;
+  head.appendChild(note);
+  sectionEls[section.id] = { head, note };
   if (section.id === 'audio') {
     // What is passing through the body in the tab being looked at (finding
     // 7): silence should never be a mystery. Filled by the stats plumbing
@@ -332,6 +345,7 @@ function buildGroup(group, defs) {
   rows.className = 'group-rows';
   for (const def of defs) rows.appendChild(buildRow(def));
   wrap.append(head, rows);
+  groupEls[`${group.section}.${group.id}`] = { wrap, head };
 
   if (group.collapsible) {
     engineGroups[group.section] = { head, rows, title: group.title };
@@ -757,14 +771,34 @@ function syncFor(key) {
   else if (AUDIO_TRIGGERS.includes(key)) syncAudioUI();
 }
 
-// `gate` is null for a live row, or the GATE text naming what would wake it.
-function setInert(key, gate) {
-  const inert = !!gate;
-  inputs[key].disabled = inert;
+// `gate` is null for a live row, or the GATE name of the switch that is
+// off. A gated row is hidden (and disabled, so nothing can reach it by
+// keyboard either); `data-gate` records why, for the harness and for anyone
+// reading the DOM.
+function setGated(key, gate) {
+  const gated = !!gate;
+  inputs[key].disabled = gated;
   const value = valueEls[key];
-  if (value.tagName === 'INPUT') value.disabled = inert;
-  rowEls[key].classList.toggle('inert', inert);
-  gateEls[key].textContent = gate || '';
+  if (value.tagName === 'INPUT') value.disabled = gated;
+  const row = rowEls[key];
+  row.hidden = gated;
+  if (gated) row.dataset.gate = gate;
+  else delete row.dataset.gate;
+}
+
+// A group whose every row is gated hides its caption too; a section whose
+// medium is off hides its groups and shows the one-line note instead.
+function setGroupShown(sectionId, groupId, shown) {
+  const g = groupEls[`${sectionId}.${groupId}`];
+  if (g) g.wrap.hidden = !shown;
+}
+
+function setSectionOff(sectionId, note) {
+  const s = sectionEls[sectionId];
+  if (!s) return;
+  s.note.textContent = note || '';
+  s.note.hidden = !note;
+  s.head.classList.toggle('off', !!note);
 }
 
 // The Video section's gating, outermost switch first: the mediums (the
@@ -775,11 +809,15 @@ function syncVideoUI() {
   const fbOn = inputs.feedbackVideo.checked;
   const flowOn = Number(inputs.flowAmount.value) > 0;
   for (const key of SORT_KEYS) {
-    setInert(key, !anyMedium ? GATE.medium : FLOW_ONLY.includes(key) && !flowOn ? GATE.flow : null);
+    setGated(key, !anyMedium ? GATE.medium : FLOW_ONLY.includes(key) && !flowOn ? GATE.flow : null);
   }
   for (const key of FEEDBACK_KEYS) {
-    setInert(key, !video ? GATE.video : key !== 'feedbackVideo' && !fbOn ? GATE.feedback : null);
+    setGated(key, !video ? GATE.video : key !== 'feedbackVideo' && !fbOn ? GATE.feedback : null);
   }
+  setGroupShown('video', 'sort', anyMedium);
+  setGroupShown('video', 'feedback', video);
+  setGroupShown('video', 'engine', anyMedium);
+  setSectionOff('video', anyMedium ? null : SECTION_OFF.medium);
 }
 
 function syncAudioUI() {
@@ -788,8 +826,8 @@ function syncAudioUI() {
   const clearOn = inputs.audioFbClear.checked;
   const comb = inputs.audioBody.value === 'comb';
   for (const key of AUDIO_ONLY) {
-    // The outermost switch that is off is the one named.
-    setInert(
+    // The outermost switch that is off is the one recorded.
+    setGated(
       key,
       !on
         ? GATE.audio
@@ -802,6 +840,8 @@ function syncAudioUI() {
               : null,
     );
   }
+  for (const id of ['body', 'smear', 'engine']) setGroupShown('audio', id, on);
+  setSectionOff('audio', on ? null : SECTION_OFF.audio);
 }
 
 // --- Throttled writes (~30 Hz) so knob sweeps don't flood storage ---

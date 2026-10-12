@@ -632,6 +632,9 @@ async function tier2() {
     audio: LAYOUT.audio.groups.find(([g]) => g === 'engine')[1],
   };
   const shown = (el) => !!el && el.getClientRects().length > 0;
+  // A gated engine row (comb damp under a modal body, the clear timings
+  // with clear off) stays hidden however the engine folds.
+  const live = (keys) => keys.filter((k) => !row(k).hidden);
   check(
     'both engine groups start folded, labelled "engine ▸"',
     ['video', 'audio'].every(
@@ -648,7 +651,7 @@ async function tier2() {
   check(
     'clicking the disclosure unfolds the video engine and says so (▾)',
     text(engineHead('video')) === 'engine ▾' &&
-      ENGINE_KEYS.video.every((k) => shown(row(k))) &&
+      live(ENGINE_KEYS.video).every((k) => shown(row(k))) &&
       ENGINE_KEYS.audio.every((k) => !shown(row(k)))
   );
   check(
@@ -663,14 +666,14 @@ async function tier2() {
     'each engine folds and unfolds on its own, and storage follows',
     store.engineOpen?.video === false &&
       store.engineOpen?.audio === true &&
-      ENGINE_KEYS.audio.every((k) => shown(row(k))) &&
+      live(ENGINE_KEYS.audio).every((k) => shown(row(k))) && live(ENGINE_KEYS.audio).length >= 3 &&
       ENGINE_KEYS.video.every((k) => !shown(row(k)))
   );
   win.chrome.storage.local.set({ engineOpen: { video: true, audio: true } });
   await sleep(60);
   check(
     'an engineOpen change from elsewhere (the other panel window) is followed',
-    text(engineHead('video')) === 'engine ▾' && ENGINE_KEYS.video.every((k) => shown(row(k)))
+    text(engineHead('video')) === 'engine ▾' && live(ENGINE_KEYS.video).every((k) => shown(row(k)))
   );
 
   // -- the audio status line --
@@ -1396,26 +1399,27 @@ async function tier2() {
     if (chip(k).classList.contains('on') !== on) chip(k).querySelector('.chip-toggle').click();
     await sleep(60);
   };
+  const groupShown = (sec, gid) => shown(doc.querySelector(`#controls .group[data-section="${sec}"][data-group="${gid}"]`));
+  const offNote = (sec) => doc.querySelector(`#section-${sec} .off-note`);
   await setChip('audioEnabled', false);
   check(
-    'the audio chip still greys out its section, value fields included',
-    row('audioSustain').classList.contains('inert') &&
-      slider('audioSustain').disabled &&
-      field('audioSustain').disabled
+    'audio off: the section hides every group and row, disables the fields, and says which chip brings it back',
+    !shown(row('audioSustain')) && !shown(row('audioMix')) && !shown(row('audioDirect')) &&
+      slider('audioSustain').disabled && field('audioSustain').disabled &&
+      ['body', 'smear', 'engine'].every((g) => !groupShown('audio', g)) &&
+      shown(offNote('audio')) && text(offNote('audio')) === 'off — switch audio on above' &&
+      shown($('#section-audio h2'))
   );
   await setChip('audioEnabled', true);
   check(
-    'and hands them back',
-    !row('audioSustain').classList.contains('inert') && !field('audioSustain').disabled
+    'audio on: the groups and rows return and the note goes',
+    shown(row('audioSustain')) && !field('audioSustain').disabled &&
+      ['body', 'smear'].every((g) => groupShown('audio', g)) && !shown(offNote('audio'))
   );
 
-  // -- inert rows say why (finding 9) --
-  const gateOf = (k) => row(k).querySelector('.gate');
-  const gateSays = (k, words) => {
-    const g = gateOf(k);
-    return row(k).classList.contains('inert') && shown(g) && text(g) === words &&
-      win.getComputedStyle(row(k).querySelector('.knob')).visibility === 'hidden';
-  };
+  // -- gated rows are hidden, not greyed (2026-10-11); the gating switch stays as the header --
+  const gateSays = (k, words) =>
+    !shown(row(k)) && row(k).hidden && row(k).dataset.gate === words && row(k).querySelector('input, select').disabled;
   const setToggle = async (k, on) => {
     const el = row(k).querySelector('input');
     el.checked = on;
@@ -1429,33 +1433,33 @@ async function tier2() {
     await sleep(60);
   };
   check(
-    'at rest, comb damp says "comb only" and the clear timings say "needs clear"',
-    gateSays('audioCombDamp', 'comb only') && gateSays('audioFbClearS', 'needs clear') && gateSays('audioFbClearMaxS', 'needs clear')
+    'at rest, comb damp (modal body) and the clear timings (clear off) are out of sight, each recording its gate',
+    gateSays('audioCombDamp', 'comb') && gateSays('audioFbClearS', 'clear') && gateSays('audioFbClearMaxS', 'clear')
   );
-  check(
-    'a live row carries no caption',
-    !row('decay').classList.contains('inert') && !shown(gateOf('decay')) && text(gateOf('decay')) === ''
-  );
+  check('a live row is shown, enabled and carries no gate', shown(row('decay')) && !row('decay').hidden && !('gate' in row('decay').dataset) && !slider('decay').disabled);
   await setToggle('feedbackVideo', false);
   check(
-    'feedback off: every feedback knob says "needs feedback", motion gate included',
-    ['motionGate', 'decay', 'driftX', 'driftY', 'resetMinS', 'resetMaxS'].every((k) => gateSays(k, 'needs feedback'))
+    'feedback off: every feedback knob hides, motion gate included, and the feedback switch stays as the header',
+    ['motionGate', 'decay', 'driftX', 'driftY', 'resetMinS', 'resetMaxS'].every((k) => gateSays(k, 'feedback')) &&
+      shown(row('feedbackVideo')) && groupShown('video', 'feedback')
   );
   await setToggle('feedbackVideo', true);
+  check('feedback on: the knobs unfold beneath the switch', ['motionGate', 'decay', 'resetMaxS'].every((k) => shown(row(k))));
   type('flowAmount', '0');
   field('flowAmount').blur();
   await sleep(60);
-  check('flow at 0: the flow shape knobs say "needs flow"', ['flowMode', 'flowScale', 'flowSpeed'].every((k) => gateSays(k, 'needs flow')));
+  check('flow at 0: the flow shape knobs hide; flow itself stays', ['flowMode', 'flowScale', 'flowSpeed'].every((k) => gateSays(k, 'flow')) && shown(row('flowAmount')));
   fire(row('flowAmount'), 'dblclick');
   await sleep(60);
+  check('flow back up: the shape knobs return', ['flowMode', 'flowScale', 'flowSpeed'].every((k) => shown(row(k))));
   await setToggle('audioFeedback', false);
-  check('smear off: tail, return, wobble and smear clear say "needs smear"', ['audioFbDecay', 'audioFbReturn', 'audioFbWobble', 'audioFbClear'].every((k) => gateSays(k, 'needs smear')));
+  check('smear off: tail, return, wobble and smear clear hide; the smear switch stays', ['audioFbDecay', 'audioFbReturn', 'audioFbWobble', 'audioFbClear'].every((k) => gateSays(k, 'smear')) && shown(row('audioFeedback')));
   await setToggle('audioFeedback', true);
   await setSelect('audioBody', 'comb');
   await setToggle('audioFbClear', true);
-  check('comb and smear clear on: those rows wake and lose their captions', !row('audioCombDamp').classList.contains('inert') && !shown(gateOf('audioFbClearS')));
+  check('comb and smear clear on: those rows appear', shown(row('audioCombDamp')) && shown(row('audioFbClearS')) && shown(row('audioFbClearMaxS')));
   await setChip('audioEnabled', false);
-  check('audio off: the outermost switch is the one named ("needs audio")', gateSays('audioCombDamp', 'needs audio') && gateSays('audioFbClearS', 'needs audio') && gateSays('audioSustain', 'needs audio'));
+  check('audio off: the outermost switch is the one recorded ("audio")', gateSays('audioCombDamp', 'audio') && gateSays('audioFbClearS', 'audio') && gateSays('audioSustain', 'audio'));
   await setChip('audioEnabled', true);
   await setToggle('audioFbClear', false);
   await setSelect('audioBody', 'modal');
@@ -1466,24 +1470,28 @@ async function tier2() {
   chip('video').querySelector('.chip-toggle').click();
   await sleep(60);
   check(
-    'video off: every feedback row, its switch included, says "needs video"; sort still serves images',
-    FEEDBACK.every((k) => gateSays(k, 'needs video')) && SORT.every((k) => !row(k).classList.contains('inert'))
+    'video off: the whole feedback group hides, its switch included; sort still serves images and the Video header stays',
+    FEEDBACK.every((k) => gateSays(k, 'video')) && !groupShown('video', 'feedback') &&
+      SORT.every((k) => shown(row(k))) && groupShown('video', 'sort') && !shown(offNote('video'))
   );
   chip('images').querySelector('.chip-toggle').click();
   await sleep(60);
   check(
-    'video and images both off: every sort row says "needs video or images"',
-    SORT.every((k) => gateSays(k, 'needs video or images'))
+    'video and images both off: every Video group hides and the section says which chips bring it back',
+    SORT.every((k) => gateSays(k, 'video or images')) &&
+      ['sort', 'feedback', 'engine'].every((g) => !groupShown('video', g)) &&
+      shown(offNote('video')) && text(offNote('video')) === 'off — switch video or images on above' &&
+      shown($('#section-video h2'))
   );
   chip('video').querySelector('.chip-toggle').click();
   await sleep(60);
   check(
-    'video back on (images still off): sort and feedback wake',
-    [...SORT, ...FEEDBACK].every((k) => !row(k).classList.contains('inert'))
+    'video back on (images still off): sort and feedback return, the note goes',
+    [...SORT, ...FEEDBACK].every((k) => shown(row(k))) && !shown(offNote('video'))
   );
   chip('images').querySelector('.chip-toggle').click();
   await sleep(60);
-  check('the medium gates hand every row back', store.video === true && store.images === true && !row('threshold').classList.contains('inert'));
+  check('the medium gates hand every row back', store.video === true && store.images === true && shown(row('threshold')) && !row('threshold').hidden);
 
   // -- the panel never invents parameters --
   const strays = Object.keys(store).filter(
