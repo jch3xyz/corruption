@@ -138,12 +138,12 @@ async function run() {
   check('the panel inside boots and says so', await until(() => strip.ready));
   {
     const pd = strip.frame.contentDocument;
-    await until(() => pd.querySelectorAll('#controls .section').length >= 3, 3000);
+    await until(() => pd.querySelectorAll('#controls .section').length >= 2, 3000);
     const heads = [...pd.querySelectorAll('#controls .section')].map((h) => h.getBoundingClientRect());
     check(
       'inside, the panel is the strip layout: sections side by side',
       pd.documentElement.dataset.layout === 'strip' &&
-        heads.length >= 3 &&
+        heads.length >= 2 && // Video and Audio (Text went with its slider, 2026-10-11)
         heads.every((r, i) => i === 0 || (r.left > heads[i - 1].right && Math.abs(r.top - heads[0].top) < 2))
     );
     check(

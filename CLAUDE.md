@@ -34,8 +34,9 @@ either.
 
 **The text mode is built and defaults ON** (`textScramble`, John's call
 2026-08-12 — the decision the proposal deferred to the room): page-wide
-word scrambling, letters never crossing a non-letter barrier, `textMin`
-(8) as the navigability dial. John chose scrambling over the proposal's
+word scrambling, letters never crossing a non-letter barrier, runs shorter
+than `TEXT_MIN` (8, a constant since John retired the `textMin` slider on
+2026-10-11) left alone for navigability. John chose scrambling over the proposal's
 swap design — the complete swap implementation is tag `text-swap`; don't
 resurrect it unprompted, and don't argue the toggle on or off in code.
 

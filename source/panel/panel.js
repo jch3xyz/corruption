@@ -93,9 +93,6 @@ const SORT_KEYS = ['threshold', 'flowAmount', 'flowMode', 'flowScale', 'flowSpee
 const FEEDBACK_KEYS = ['feedbackVideo', ...FEEDBACK_SHARED];
 const MEDIUM_TRIGGERS = ['video', 'images', 'feedbackVideo', 'flowAmount'];
 
-// The text mode's reach only means anything while the mode is on.
-const TEXT_ONLY = ['textMin'];
-
 // The flow shape knobs only mean anything while flow amount is above zero.
 const FLOW_ONLY = ['flowMode', 'flowScale', 'flowSpeed'];
 
@@ -107,7 +104,6 @@ const GATE = {
   medium: 'needs video or images',
   feedback: 'needs feedback',
   flow: 'needs flow',
-  text: 'needs text',
   audio: 'needs audio',
   smear: 'needs smear',
   clear: 'needs clear',
@@ -545,14 +541,16 @@ function buildAB(def) {
 
 // --- The four medium chips (M7): video · images · text · audio ---
 // The pill toggles its key; the caption above it jumps to the section that
-// shapes that medium. text and audio drive the existing section masters —
-// their rows stay canonical, the chips are the fast path.
+// shapes that medium. Since 2026-10-11 the chips are the ONLY face of all
+// four keys: text has no knobs (an on/off effect, its slider retired), so
+// its caption is a plain label and there is no Text section; audio's
+// master row went the same way, the chip being the master.
 // `target` overrides the landing: images land on the SORT caption (the only
 // knobs that shape them), with `say` in the help strip (round 3, item 6).
 const CHIPS = [
   { key: 'video', label: 'video', section: 'video' },
   { key: 'images', label: 'images', section: 'video', target: 'group-video-sort', say: 'images are shaped by SORT' },
-  { key: 'textScramble', label: 'text', section: 'text' },
+  { key: 'textScramble', label: 'text' },
   { key: 'audioEnabled', label: 'audio', section: 'audio' },
 ];
 
@@ -565,21 +563,30 @@ function buildChips() {
     cell.className = 'chip';
     cell.dataset.key = chip.key;
 
-    const name = document.createElement('button');
+    // A medium with knobs gets a caption that jumps to them; one without
+    // (text) gets a plain label — nothing to jump to.
+    let name;
+    if (chip.section) {
+      name = document.createElement('button');
+      name.textContent = `${chip.label} ↓`;
+      const sectionTitle = SECTIONS.find((s) => s.id === chip.section)?.title ?? chip.section;
+      name.dataset.tip = chip.target
+        ? `Jump to the sort knobs in the ${sectionTitle} section: they are what shape ${chip.label}.`
+        : `Jump to the ${sectionTitle} section, where ${chip.label} is shaped.`;
+      name.addEventListener('click', () => {
+        const head = document.getElementById(chip.target ?? `section-${chip.section}`);
+        if (!head) return;
+        head.scrollIntoView({ block: 'start', behavior: 'smooth' });
+        head.focus({ preventScroll: true });
+        whenLanded(() => flashEl(head));
+        if (chip.say) say(chip.say);
+      });
+    } else {
+      name = document.createElement('span');
+      name.textContent = chip.label;
+      name.dataset.tip = `${chip.label[0].toUpperCase()}${chip.label.slice(1)} has no knobs: the switch below is the whole control.`;
+    }
     name.className = 'chip-name';
-    name.textContent = `${chip.label} ↓`;
-    const sectionTitle = SECTIONS.find((s) => s.id === chip.section)?.title ?? chip.section;
-    name.dataset.tip = chip.target
-      ? `Jump to the sort knobs in the ${sectionTitle} section: they are what shape ${chip.label}.`
-      : `Jump to the ${sectionTitle} section, where ${chip.label} is shaped.`;
-    name.addEventListener('click', () => {
-      const head = document.getElementById(chip.target ?? `section-${chip.section}`);
-      if (!head) return;
-      head.scrollIntoView({ block: 'start', behavior: 'smooth' });
-      head.focus({ preventScroll: true });
-      whenLanded(() => flashEl(head));
-      if (chip.say) say(chip.say);
-    });
 
     const pill = document.createElement('button');
     pill.className = 'chip-toggle';
@@ -593,18 +600,23 @@ function buildChips() {
       if (!inputs.enabled.checked) say('switch ON to see it');
     });
 
-    // video and images have no section row: the chip is their only face.
-    if (!def.section) {
-      inputs[chip.key] = { checked: true };
-      rowEls[chip.key] = cell;
-    }
+    // The chip is its key's only face (no row anywhere), so it holds the
+    // state and carries the MIDI learn for that key — shown, like every ⊙,
+    // only while a controller is connected.
+    inputs[chip.key] = { checked: true };
+    rowEls[chip.key] = cell;
+    const learn = document.createElement('button');
+    learn.className = 'learn';
+    learn.textContent = '⊙';
+    learn.addEventListener('click', () => armLearn(chip.key));
+    learnEls[chip.key] = learn;
     onRender(chip.key, (on) => {
       cell.classList.toggle('on', on);
       pill.setAttribute('aria-pressed', String(on));
       pill.textContent = on ? 'on' : 'off';
     });
 
-    cell.append(name, pill);
+    cell.append(name, pill, learn);
     strip.appendChild(cell);
   }
   return strip;
@@ -640,8 +652,8 @@ function flashEl(el) {
     if (def.section && !bucket) console.warn('[panel] unknown section', def.section, def.key);
     (bucket ?? loose).push(def);
   }
-  // Sectionless rows are the global block's: the A/B plus the chips. Any
-  // other sectionless key would have no face, so it is flagged loudly.
+  // Sectionless keys are the global block's: the A/B plus the four chips.
+  // Any other sectionless key would have no face, so it is flagged loudly.
   const chipKeys = new Set(CHIPS.map((c) => c.key));
   for (const def of loose) {
     if (def.key !== 'enabled' && !chipKeys.has(def.key)) {
@@ -652,8 +664,8 @@ function flashEl(el) {
   for (const section of SECTIONS) {
     controls.appendChild(buildSection(section));
     const defs = bySection.get(section.id);
-    // Ungrouped rows (a section's master, the text rows) come first, then
-    // each group in GROUPS order with its rows in DEFS order.
+    // Ungrouped rows (none at present) come first, then each group in
+    // GROUPS order with its rows in DEFS order.
     for (const def of defs.filter((d) => !d.group)) controls.appendChild(buildRow(def));
     for (const group of GROUPS.filter((g) => g.section === section.id)) {
       const members = defs.filter((d) => d.group === group.id);
@@ -666,7 +678,7 @@ function flashEl(el) {
       controls.appendChild(buildRow(def)); // never lose a row to a typo
     }
   }
-  globals.appendChild(buildChips()); // after the rows: text/audio chips read their defs
+  globals.appendChild(buildChips());
   document.getElementById('prefs').append(buildTooltipRow(), buildPanelHomeRow());
 }
 
@@ -742,7 +754,6 @@ function setUI(key, v) {
 
 function syncFor(key) {
   if (MEDIUM_TRIGGERS.includes(key)) syncVideoUI();
-  else if (key === 'textScramble') syncTextUI(inputs.textScramble.checked);
   else if (AUDIO_TRIGGERS.includes(key)) syncAudioUI();
 }
 
@@ -769,10 +780,6 @@ function syncVideoUI() {
   for (const key of FEEDBACK_KEYS) {
     setInert(key, !video ? GATE.video : key !== 'feedbackVideo' && !fbOn ? GATE.feedback : null);
   }
-}
-
-function syncTextUI(on) {
-  for (const key of TEXT_ONLY) setInert(key, on ? null : GATE.text);
 }
 
 function syncAudioUI() {

@@ -50,8 +50,9 @@ import {
 // preset store. Excluded from "every stored key has a row". `panelHome` is
 // where the panel opens (M9); `stripOpen` is written by the in-page strip.
 const PANEL_ONLY = ['tooltips', 'midiMap', 'presets', 'presetBase', 'engineOpen', 'panelHome', 'stripOpen'];
-// Sectionless rows: the global block's own controls.
-const GLOBAL_KEYS = ['enabled', 'video', 'images'];
+// Sectionless keys: the global block's own controls — the A/B and the four
+// chips, which since 2026-10-11 are the only face of all four mediums.
+const GLOBAL_KEYS = ['enabled', 'video', 'images', 'textScramble', 'audioEnabled'];
 // The chips, in order, and the key each one drives.
 const CHIP_KEYS = ['video', 'images', 'textScramble', 'audioEnabled'];
 
@@ -66,9 +67,8 @@ const LAYOUT = {
       ['engine', ['passes', 'streak', 'maxRes', 'maxVideos']],
     ],
   },
-  text: { loose: ['textScramble', 'textMin'], groups: [] },
   audio: {
-    loose: ['audioEnabled'],
+    loose: [],
     groups: [
       ['body', ['audioMix', 'audioBodyMix', 'audioBody', 'audioSustain', 'audioDrive']],
       ['smear', ['audioFeedback', 'audioFbDecay', 'audioFbReturn', 'audioFbWobble']],
@@ -85,7 +85,6 @@ const LABELS = {
   feedbackVideo: 'feedback', motionGate: 'motion gate', decay: 'decay', driftX: 'drift x',
   driftY: 'drift y', resetMinS: 'clear min s', resetMaxS: 'clear max s',
   passes: 'sort passes', streak: 'streak', maxRes: 'max res', maxVideos: 'max videos',
-  audioEnabled: 'audio',
   audioBodyMix: 'body amount', audioBody: 'body type', audioSustain: 'ring time',
   audioDrive: 'drive', audioDirect: 'dry',
   audioFeedback: 'smear', audioFbDecay: 'tail', audioFbReturn: 'return', audioFbWobble: 'wobble',
@@ -146,7 +145,7 @@ function tier1() {
 
   const declared = new Set(SECTIONS.map((s) => s.id));
   check(
-    'every row belongs to a declared section, except the global block (A/B, video, images)',
+    'every row belongs to a declared section, except the global block (A/B and the four chips)',
     DEFS.every((d) => (GLOBAL_KEYS.includes(d.key) ? !d.section : declared.has(d.section)))
   );
   check(
@@ -609,12 +608,9 @@ async function tier2() {
     Object.entries(LABELS).every(([k, l]) => text(row(k).querySelector('label')) === l)
   );
   check(
-    'the audio master stays first in its section, above the groups',
-    (() => {
-      const head = $('#section-audio');
-      const next = head.nextElementSibling;
-      return next?.dataset.key === 'audioEnabled' && next.nextElementSibling?.classList.contains('group');
-    })()
+    'no section carries a master row: the chips are the masters, the body group follows the Audio header directly',
+    !row('audioEnabled') && !row('textScramble') && !$('#section-text') &&
+      $('#section-audio').nextElementSibling?.dataset.group === 'body'
   );
   check(
     'threshold shows "more" and "less" at its slider ends without hovering',
@@ -689,9 +685,10 @@ async function tier2() {
   // -- MIDI learn hidden until a device is present --
   const learns = [...doc.querySelectorAll('.learn')];
   check(
-    'with no MIDI device every ⊙ is hidden, the A/B’s too, and the status says "no device"',
+    'with no MIDI device every ⊙ is hidden — the rows’, the A/B’s and the four chips’ — and the status says "no device"',
     !doc.body.classList.contains('midi-device') &&
-      learns.length === DEFS.filter((d) => d.section).length + 1 &&
+      learns.length === DEFS.filter((d) => d.section).length + 1 + CHIP_KEYS.length &&
+      CHIP_KEYS.every((k) => !!chip(k).querySelector('.learn')) &&
       learns.every((el) => !shown(el)) &&
       /no device|unavailable|denied/i.test($('#midi-status').textContent)
   );
@@ -704,8 +701,8 @@ async function tier2() {
   check('a connected device shows the learn instruction', shown($('.midi .midi-hint')));
   check(
     'a connected device (the midi-device class) brings every visible row’s ⊙ back',
-    learns.filter((el) => shown(el.closest('.row, .ab-row'))).every((el) => shown(el)) &&
-      shown($('.ab-row .learn'))
+    learns.filter((el) => shown(el.closest('.row, .ab-row, .chip'))).every((el) => shown(el)) &&
+      shown($('.ab-row .learn')) && CHIP_KEYS.every((k) => shown(chip(k).querySelector('.learn')))
   );
   check(
     'and the tooltips switch still lines up with the rows in that layout',
@@ -797,20 +794,20 @@ async function tier2() {
       off && store[key] === true && chip(key).classList.contains('on')
     );
   }
-  chip('textScramble').querySelector('.chip-toggle').click();
-  await sleep(90);
   check(
-    'the text chip and the canonical text row are one control',
-    !row('textScramble').querySelector('input').checked && row('textMin').classList.contains('inert')
+    'the text chip has no section to jump to: its caption is a plain label, not a link',
+    chip('textScramble').querySelector('.chip-name').tagName !== 'BUTTON' &&
+      win.getComputedStyle(chip('textScramble').querySelector('.chip-name')).cursor !== 'pointer' &&
+      chip('audioEnabled').querySelector('.chip-name').tagName === 'BUTTON'
   );
-  const textRow = row('textScramble').querySelector('input');
-  textRow.checked = true;
-  textRow.dispatchEvent(new win.Event('input', { bubbles: true }));
-  await sleep(90);
+  win.chrome.storage.local.set({ textScramble: false, audioEnabled: false });
+  await sleep(60);
   check(
-    'and the row drives the chip back',
-    store.textScramble === true && chip('textScramble').classList.contains('on')
+    'a text or audio change from elsewhere (the shortcut, the other panel) reaches the chips',
+    !chip('textScramble').classList.contains('on') && !chip('audioEnabled').classList.contains('on')
   );
+  win.chrome.storage.local.set({ textScramble: true, audioEnabled: true });
+  await sleep(60);
   check(
     'the A/B governs the chips: they dim while the piece is off',
     await (async () => {
@@ -847,8 +844,8 @@ async function tier2() {
       )
   );
 
-  const landing = { textScramble: 'section-text', audioEnabled: 'section-audio', images: 'group-video-sort' };
-  for (const key of ['textScramble', 'audioEnabled', 'images']) {
+  const landing = { audioEnabled: 'section-audio', images: 'group-video-sort' };
+  for (const key of ['audioEnabled', 'images']) {
     $('#scroll').scrollTo(0, 0);
     await sleep(60);
     chip(key).querySelector('.chip-name').click();
@@ -1395,19 +1392,18 @@ async function tier2() {
   check(`every control in the panel carries hover copy (${bare.join(', ') || 'all covered'})`, bare.length === 0);
 
   // -- gating survived the rebuild --
-  const audioToggle = row('audioEnabled').querySelector('input');
-  audioToggle.checked = false;
-  audioToggle.dispatchEvent(new win.Event('input', { bubbles: true }));
-  await sleep(60);
+  const setChip = async (k, on) => {
+    if (chip(k).classList.contains('on') !== on) chip(k).querySelector('.chip-toggle').click();
+    await sleep(60);
+  };
+  await setChip('audioEnabled', false);
   check(
-    'the audio master still greys out its section, value fields included',
+    'the audio chip still greys out its section, value fields included',
     row('audioSustain').classList.contains('inert') &&
       slider('audioSustain').disabled &&
       field('audioSustain').disabled
   );
-  audioToggle.checked = true;
-  audioToggle.dispatchEvent(new win.Event('input', { bubbles: true }));
-  await sleep(60);
+  await setChip('audioEnabled', true);
   check(
     'and hands them back',
     !row('audioSustain').classList.contains('inert') && !field('audioSustain').disabled
@@ -1458,16 +1454,11 @@ async function tier2() {
   await setSelect('audioBody', 'comb');
   await setToggle('audioFbClear', true);
   check('comb and smear clear on: those rows wake and lose their captions', !row('audioCombDamp').classList.contains('inert') && !shown(gateOf('audioFbClearS')));
-  await setToggle('audioEnabled', false);
+  await setChip('audioEnabled', false);
   check('audio off: the outermost switch is the one named ("needs audio")', gateSays('audioCombDamp', 'needs audio') && gateSays('audioFbClearS', 'needs audio') && gateSays('audioSustain', 'needs audio'));
-  await setToggle('audioEnabled', true);
+  await setChip('audioEnabled', true);
   await setToggle('audioFbClear', false);
   await setSelect('audioBody', 'modal');
-  chip('textScramble').querySelector('.chip-toggle').click();
-  await sleep(60);
-  check('text off: text min says "needs text"', gateSays('textMin', 'needs text'));
-  chip('textScramble').querySelector('.chip-toggle').click();
-  await sleep(60);
 
   // Round 3, item 7: the Video rows name the medium switch that would wake them.
   const SORT = ['threshold', 'flowAmount', 'flowMode', 'flowScale', 'flowSpeed', 'temperature'];

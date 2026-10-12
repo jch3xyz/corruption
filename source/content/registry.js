@@ -215,11 +215,11 @@ export class Registry {
 
     // The text toggle answers immediately rather than on the next sweep.
     // (rebalance() has already restored everything if `enabled` went off.)
-    if ('textScramble' in changed || 'textMin' in changed) {
-      // A different textMin means a different set of text is eligible, so the
-      // page is restored first and re-scrambled against the new reach —
-      // debounced like the image path, because the panel drags at ~30 Hz and
-      // this walks the whole document.
+    if ('textScramble' in changed) {
+      // Restore first, then re-scramble if the mode is on — debounced like the
+      // image path, because a panel can flip the chip quickly and a pass
+      // walks the whole document. (The reach is a constant since 2026-10-11;
+      // there is no textMin to follow any more.)
       clearTimeout(this.textDirtyTimer);
       this.textDirtyTimer = setTimeout(() => {
         this.text.restoreAll();

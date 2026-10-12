@@ -5,8 +5,9 @@
 // 2026-08-12). The piece rests on temporal feedback on VIDEOS — a fast
 // decay (0.81) smearing through a half-blended FACET flow field (small
 // slow swirls, every element seeded its own) — over straight-sorted image
-// stills, with page-wide text scrambling ON at textMin 8, plus the audio
-// smear. Images never animate (image feedback removed 2026-10-12, John).
+// stills, with page-wide text scrambling ON (its minimum run length is a
+// constant in text-scramble.js, not a knob — John, 2026-10-11), plus the
+// audio smear. Images never animate (image feedback removed 2026-10-12, John).
 export const DEFAULTS = {
   enabled: true,
   video: true,       // per-medium switches under the master (the panel's
@@ -36,8 +37,9 @@ export const DEFAULTS = {
   maxRes: 1920,      // processing resolution cap, long axis
   maxVideos: 12,     // concurrent video jobs, biggest visible first
   textScramble: true, // letters rearranged inside each word, page-wide —
-                      // ON in the resting state (John's call, 2026-08-12)
-  textMin: 8,        // shortest run of text that scrambles; short labels survive
+                      // ON in the resting state (John's call, 2026-08-12).
+                      // An on/off effect: the former textMin slider is gone
+                      // (2026-10-11) and the reach is TEXT_MIN in the module.
 
   // --- audio (a process done to the audio, since 2026-08-13: both engines
   // sum their resonant part with the DIRECT signal, so the source passes

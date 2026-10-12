@@ -371,10 +371,12 @@ anyway.
 This supersedes the proposal's recommendation (swap captions between
 cards; that version is complete at tag `text-swap`) by John's call. The
 proposal's objection to scrambling — an unreadable interface is an
-unnavigable one — is answered by **`textMin`** rather than by containment:
-only runs of at least that many characters are eligible, interface labels
-are short, and prose is long. Form *values* aren't text nodes at all, so
-search keeps working at any setting.
+unnavigable one — is answered by a **minimum run length** rather than by
+containment: only runs of at least `TEXT_MIN` (8) characters are eligible,
+interface labels are short, and prose is long. It was the `textMin` slider
+until 2026-10-11, when John retired it as a knob (the mode is on/off) and
+his setting became the constant. Form *values* aren't text nodes at all, so
+search keeps working regardless.
 
 Hard exclusions, which are data-integrity rather than aesthetics:
 `script`/`style`/`noscript` (a page's CSS is live text — scrambling it

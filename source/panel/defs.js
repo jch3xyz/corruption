@@ -7,10 +7,12 @@
 // and images genuinely SHARE live under Video — so their tooltips say so
 // rather than the layout lying about it. The Images section went with image
 // feedback (removed 2026-10-12, John): stills have no knobs of their own.
-// `enabled`, `video` and `images` belong to no section: they are the global
-// block above the first divider — the A/B (`enabled`) and two of the four
-// medium chips. The other two chips drive `textScramble` and `audioEnabled`,
-// whose canonical rows stay in their own sections.
+// `enabled`, `video`, `images`, `textScramble` and `audioEnabled` belong to
+// no section: they are the global block above the first divider — the A/B
+// (`enabled`) and the four medium chips, which are the only face of their
+// keys (since 2026-10-11; before that text and audio also had a row in their
+// section). Text is an on/off effect with no knobs — its slider went with its
+// section (John, 2026-10-11) — so the sections are Video and Audio.
 
 import { DEFAULTS } from '../content/params.js';
 
@@ -19,11 +21,6 @@ export const SECTIONS = [
     id: 'video',
     title: 'Video',
     tip: 'Videos, and the sorting they share with images. Sort is what you see, Feedback is the trail it leaves, Engine is setup and stays folded away. Still images take every sort knob; feedback and the engine’s max videos are video only.',
-  },
-  {
-    id: 'text',
-    title: 'Text',
-    tip: 'Page text: letters rearranged inside their own words, page-wide.',
   },
   {
     id: 'audio',
@@ -282,31 +279,17 @@ export const DEFS = [
     tip: 'How many videos bend at once, biggest on screen first; the rest play untouched. Paused videos count, and each gets one sorted still.',
   },
 
-  // --- Text ---
   {
     key: 'textScramble',
-    label: 'text scramble',
+    label: 'text',
     type: 'toggle',
-    section: 'text',
-    tip: 'Letters rearrange inside their own word, page-wide. Anything that is not a letter — space, punctuation, digit, emoji — is a barrier no glyph crosses, so every word keeps its length and the page keeps its shape.',
+    tip: 'Text on/off. Letters rearrange inside their own word, page-wide; anything that is not a letter — space, punctuation, digit, emoji — is a barrier no glyph crosses, so every word keeps its length and the page keeps its shape. Runs shorter than eight characters are left alone, so the shortest furniture (Home, OK) survives.',
   },
-  {
-    key: 'textMin',
-    label: 'text min chars',
-    min: 1,
-    max: 40,
-    step: 1,
-    section: 'text',
-    tip: 'Text only. Shortest run of text that scrambles. At 8 prose and most labels dissolve while the shortest furniture (Home, OK) survives — the navigability dial.',
-  },
-
-  // --- Audio (master first, above the groups) ---
   {
     key: 'audioEnabled',
     label: 'audio',
     type: 'toggle',
-    section: 'audio',
-    tip: 'Sound on/off. Off = every source plays exactly as it arrived. The tap on each source stays in place by design; off routes it around the process.',
+    tip: 'Sound on/off. Off = every source plays exactly as it arrived. The Audio section below shapes it. The tap on each source stays in place by design; off routes it around the process.',
   },
 
   // --- Audio · body (the level first: mix, then the apparatus) ---

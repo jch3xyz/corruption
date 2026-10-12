@@ -155,6 +155,13 @@ h1 {
   border-color: #8a8a40;
 }
 
+/* A plain caption (a medium with no knobs to jump to) is not a link. */
+.chip-name:not(button) { cursor: default; }
+.chip-name:not(button):hover { color: #9a9a70; text-decoration: none; }
+
+/* The chip's MIDI learn, under its pill; hidden with the rest until a device. */
+.chip .learn { width: 100%; height: 18px; }
+
 /* Presets: default · A · B · C · save… (· undo), under a small caption. */
 .group-head.presets-head { margin: 18px 0 5px; }
 

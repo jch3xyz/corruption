@@ -110,9 +110,13 @@ balance are the open item below. The previous sound is exactly reachable at
   signature — resonant peak, notch, band limit) which adds identity at no cost
   to specificity because it ignores content entirely. Log the verdict here.
 - **Phase 5 — text mode**: built, harness-verified, and **decided**:
-  `textScramble` defaults ON at `textMin` 8 (John, 2026-08-12 — the call
-  the proposal deferred to the room). The earlier swap design remains tag
-  `text-swap`; the toggle remains for performance and for the kill switch.
+  `textScramble` defaults ON (John, 2026-08-12 — the call the proposal
+  deferred to the room). **The `textMin` slider is gone (John, 2026-10-11,
+  testing the branch: "more of an on/off effect")**: the minimum run length
+  is the constant `TEXT_MIN` = 8 in `text-scramble.js`, the Text section
+  went with it, and the text chip is the whole control. The earlier swap
+  design remains tag `text-swap`; the toggle remains for performance and
+  for the kill switch.
 - **Floated, undecided (John, 2026-08-12): a separate CSS-scramble toggle**
   — deforming the page's own stylesheets as a distinct layer. Not built;
   needs a feasibility read first (cross-origin stylesheets are the
@@ -408,7 +412,7 @@ visible tab.
 - Visual: fullscreen/theater tracking, 5× SPA navigation canvas-leak check,
   DRM trailer untouched, 30-min GPU-memory flatness (rides Phase 6 soak).
 - Text mode — **the aesthetic call is the only thing left**: flip
-  `textScramble` on and browse, and ride `textMin` up and down. The grammar
+  `textScramble` on and browse (its reach is fixed at 8 since 2026-10-11). The grammar
   is covered by the synthetic suite, and the write mechanism was checked
   against live YouTube (zero childList mutations from a `nodeValue` write,
   no Polymer revert within 2 s — see site-notes). What remains for real

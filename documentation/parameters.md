@@ -42,11 +42,8 @@ in panel order, group by group.
 | `streak` | streak | **256** | 1–256 | Longest compare-exchange stride (rounded down to a power of two). Directly sets how far pixels can travel per frame — the ribbon-length knob. 1 = classic single-step odd-even. |
 | `maxRes` | max res | 1920 | 480–1920 | Processing resolution cap, long axis. Lower it on weak GPUs; output upscales through the overlay. |
 | `maxVideos` | max videos | **12** | 1–16 | Concurrent video jobs, biggest visible first. Paused videos count too — they get a one-shot sorted still (rVFC never fires for them). Raised from 8 for grid feeds (Instagram explore) where a dozen previews are on screen at once. |
-| **Text** | | | | |
-| `textScramble` | text scramble | **on** | on/off | The text mode — **on in the resting state** (the call the proposal deferred to the room; John made it 2026-08-12). Letters rearrange inside each word, page-wide; anything that isn't a letter (space, punctuation, digit, emoji) is a barrier no glyph crosses, so every word keeps its length and the page keeps its shape. Off restores every run. |
-| `textMin` | text min chars | **8** | 1–40 | *Text only.* Shortest run of text that scrambles. At 8 (John's setting) prose and most labels dissolve while the shortest furniture (Home, OK) survives — the navigability dial. |
-| **Audio (master, above the groups)** | | | | |
-| `audioEnabled` | audio | on | on/off | Audio master. Off ramps every tap to dry — the tap itself is permanent by design. |
+| `textScramble` | text chip | **on** | on/off | The text mode — **on in the resting state** (the call the proposal deferred to the room; John made it 2026-08-12). Letters rearrange inside each word, page-wide; anything that isn't a letter (space, punctuation, digit, emoji) is a barrier no glyph crosses, so every word keeps its length and the page keeps its shape. Off restores every run. **An on/off effect with no knobs** (John, 2026-10-11): the former `textMin` slider is gone and the minimum run length is the constant `TEXT_MIN` = 8 in `text-scramble.js` — prose and most labels dissolve, the shortest furniture (Home, OK) survives. A `textMin` left in an older profile is ignored. |
+| `audioEnabled` | audio chip | on | on/off | Audio master — the **audio** chip (its section row went 2026-10-11; chip and key are one control). Off ramps every tap to dry — the tap itself is permanent by design. |
 | **Audio · body** | | | | |
 | `audioMix` | mix | 1 | 0–1 | Wet/dry for the whole sound, in the tap graph after everything else (30 ms ramps). 0 = the internet as transmitted, 1 = all apparatus. Leads the body group since round 3: it is the first level a player reaches for. Distinct from `audioDirect`, which is inside the DSP. |
 | `audioBodyMix` | body amount | **1** | 0–2 | Resonant part against the direct path — the identity dial. Up for more fixed voice, down for more of the video. Making the bank a filter costs lattice salience (25 → ~7 measured, raw audio being 5.6); this is the knob that buys some back. |
@@ -140,14 +137,16 @@ anyway.
 scrambling over swapping-between-cards — the swap version is complete at
 tag `text-swap` — then the whole page over captions-only.)
 
-Reach is one dial, `textMin`: only runs of at least that many characters
-scramble. The proposal's worry about scrambling — an unreadable interface
-is an unnavigable one — is answered by that dial rather than by a
-containment rule: interface labels are short, prose is long, and 12 sits
-comfortably between them. Search inputs survive at any setting because
-form *values* aren't text nodes — the one lifeline that is free.
+Reach is one number, `TEXT_MIN` (8): only runs of at least that many
+characters scramble. The proposal's worry about scrambling — an unreadable
+interface is an unnavigable one — is answered by that minimum rather than
+by a containment rule: interface labels are short, prose is long, and 8
+sits between them. It was a panel slider (`textMin`) until 2026-10-11; John
+retired it — the mode is an on/off effect — and his setting became the
+constant. Search inputs survive because form *values* aren't text nodes —
+the one lifeline that is free.
 
-What never scrambles, regardless of `textMin` (these are data-loss, not
+What never scrambles, regardless of the minimum (these are data-loss, not
 aesthetics): `script`/`style` (live CSS — scrambling it wrecks layout
 rather than bending rendering), `input`/`textarea`/contenteditable (the
 visitor's own words, which a site might save), `aria-hidden` text, and
@@ -232,10 +231,13 @@ explains itself on hover.
   the caption above it (underlined on hover) jumps to the section that
   shapes it, and the header it lands on flashes. **images** lands on the
   **sort** caption under Video — the only knobs that shape a still — and
-  the help strip says *images are shaped by SORT*. The text and audio rows
-  in their own sections stay canonical — chip and row are one control.
-  Chips dim while the A/B is off, because it governs all four; a chip still
-  switches then, and the strip says *switch ON to see it*.
+  the help strip says *images are shaped by SORT*. **The chips are the only
+  face of all four keys** (2026-10-11): text has no knobs, so its caption is
+  a plain label and there is no Text section, and audio's master row went
+  the same way. Each chip carries its own ⊙ MIDI learn, shown with a
+  controller connected. Chips dim while the A/B is off, because it governs
+  all four; a chip still switches then, and the strip says *switch ON to
+  see it*.
 - **Presets** (below), under a small muted *PRESETS* caption.
 
 The sort knobs genuinely belong to video *and* images — one shader, two
@@ -245,7 +247,7 @@ section of their own. Images are one-shot sorted stills with no knobs of
 their own (image feedback and its animation ticker were removed
 2026-10-12, John); the feedback knobs shape video only.
 So: if a knob shapes images at all, it is under Video. Each section header
-is a jump target (`#section-video`, `#section-text`, `#section-audio`).
+is a jump target (`#section-video`, `#section-audio`).
 
 **Groups: effect, effect, engine** (2026-10-12, design review M4/M8). Video
 and Audio each split into three groups under small captions, so the effect
@@ -255,13 +257,13 @@ you can see or hear comes first and the setup folds away:
   jitter), **feedback** (its own switch, then motion gate, which reads the
   feedback trail, decay, drift x/y, clear min/max s), **engine** (sort
   passes, streak, max res, max videos).
-- **Audio** — the `audio` switch first, above the groups; then **body**
-  (mix, the whole-sound wet/dry, then body amount, the identity dial, body
-  type, ring time, drive), **smear** (its own switch, tail, return,
-  wobble), **engine** (dry, max sources, exciter, comb damp, smear clear,
-  clear fade s, clear min/max s). Mix leads body and dry sits in the engine
-  since round 3: mix is the level a player reaches for; dry is setup.
-- **Text** is two rows and has no groups.
+- **Audio** — **body** (mix, the whole-sound wet/dry, then body amount,
+  the identity dial, body type, ring time, drive), **smear** (its own
+  switch, tail, return, wobble), **engine** (dry, max sources, exciter,
+  comb damp, smear clear, clear fade s, clear min/max s). Mix leads body
+  and dry sits in the engine since round 3: mix is the level a player
+  reaches for; dry is setup. The `audio` master is the chip above.
+- **Text** has no section: it is the chip and nothing else.
 
 Both **engine** groups start folded behind a disclosure (`engine ▸`; click
 for `engine ▾`). The folded rows still exist — presets, MIDI and storage
