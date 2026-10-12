@@ -845,6 +845,10 @@ async function tier2() {
       shown($('.ab-row .learn')) && CHIP_KEYS.every((k) => shown(chip(k).querySelector('.learn')))
   );
   check(
+    'outside the strip there is no MIDI… button: the window and side panel ask at boot',
+    !!$('#midi-connect') && $('#midi-connect').hidden && !shown($('#midi-connect'))
+  );
+  check(
     'and the tooltips switch still lines up with the rows in that layout',
     win.getComputedStyle($('#prefs .row.pref')).gridTemplateColumns ===
       win.getComputedStyle(row('threshold')).gridTemplateColumns
@@ -1585,7 +1589,8 @@ async function tier2() {
       for (let i = 0; i < 20 && !wd.body.classList.contains('midi-device'); i++) await sleep(50);
       const vis = (el) => !!el && el.getClientRects().length > 0;
       check(
-        'with a (stubbed) controller connected, the panel shows the ⊙ column and names the device',
+        'with a (stubbed) controller connected, the panel (not hosted) asks at boot, once, shows the ⊙ column and names the device',
+        w.__midiAsks === 1 && wd.getElementById('midi-connect').hidden &&
         wd.body.classList.contains('midi-device') &&
           vis(wd.querySelector('.row[data-key="threshold"] .learn')) &&
           vis(wd.querySelector('.ab-row .learn')) &&
@@ -2126,14 +2131,54 @@ async function tier3() {
   // and must wrap inside it, like the prefs --
   {
     const f = await bootFrame('./panel-frame.html?layout=strip&midi=1', WIDTHS[0], STRIP_HEIGHT);
-    const d = f.contentWindow.document;
+    const w = f.contentWindow;
+    const d = w.document;
     await sleep(120);
+    const btn = d.getElementById('midi-connect');
+    const crossingBefore = clusterCrossing(d);
+    check(
+      `in the strip nothing asks for MIDI at boot: no request, no device class, and a MIDI… button in the prefs line instead, inside the cluster (${crossingBefore.join(', ') || 'nothing crosses'})`,
+      w.__midiAsks === 0 && !d.body.classList.contains('midi-device') &&
+        !!btn && !btn.hidden && btn.getClientRects().length > 0 && btn.closest('#prefs') === d.getElementById('prefs') &&
+        btn.classList.contains('btn') && btn.classList.contains('subtle') && btn.textContent === 'MIDI…' &&
+        /only when you click/.test(btn.dataset.tip) && crossingBefore.length === 0 &&
+        btn.getBoundingClientRect().bottom <= STRIP_HEIGHT + 0.5
+    );
+    btn.click();
+    for (let i = 0; i < 20 && !d.body.classList.contains('midi-device'); i++) await sleep(50);
+    await sleep(60);
+    btn.click(); // hidden by now; a second click must not ask again
+    await sleep(60);
+    check(
+      'clicking MIDI… asks once: the device class arrives, the status names the controller, and the button steps aside',
+      w.__midiAsks === 1 && d.body.classList.contains('midi-device') && btn.hidden &&
+        d.getElementById('midi-status').textContent === 'harness controller'
+    );
     const midi = d.querySelector('.midi');
     const mr = midi.getBoundingClientRect();
     const crossing = clusterCrossing(d);
     check(
       `with a MIDI device the cluster shows its line, inside the strip, and nothing in it crosses into the lane (${crossing.join(', ') || 'nothing'})`,
       d.body.classList.contains('midi-device') && mr.height > 0 && mr.bottom <= STRIP_HEIGHT + 0.5 && crossing.length === 0
+    );
+    f.remove();
+  }
+  // -- a page that refuses MIDI to frames: the click says so, nothing else changes --
+  {
+    const f = await bootFrame('./panel-frame.html?layout=strip&midi=deny', WIDTHS[0], STRIP_HEIGHT);
+    const w = f.contentWindow;
+    const d = w.document;
+    await sleep(60);
+    const btn = d.getElementById('midi-connect');
+    const before = w.__midiAsks;
+    btn.click();
+    await sleep(120);
+    const said = btn.textContent === 'refused' && btn.classList.contains('done');
+    await sleep(950);
+    check(
+      'refused: MIDI… flashes "refused", stays to be tried again, and the panel stays without a device',
+      before === 0 && w.__midiAsks === 1 && said && !btn.hidden && btn.textContent === 'MIDI…' &&
+        !d.body.classList.contains('midi-device')
     );
     f.remove();
   }

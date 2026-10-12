@@ -98,7 +98,9 @@ Quick facts:
   240 px mixer — is opt-in under *panel lives in*. The default lives in
   `defs.js`, the service worker and `initStrip`; the harness checks they
   agree. MIDI is a feature, not the primary mode: its block hides until a
-  device.
+  device; the window and side panel ask at boot, **the strip only when
+  its MIDI… button is clicked** (the host page's permissions policy
+  answers a frame's request).
 - How both pipelines actually work: [documentation/how-it-works.md](documentation/how-it-works.md).
   Per-knob documentation: [documentation/parameters.md](documentation/parameters.md).
   Site quirks: [documentation/site-notes.md](documentation/site-notes.md).

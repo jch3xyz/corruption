@@ -368,7 +368,7 @@ balance are the open item below. The previous sound is exactly reachable at
   after round 5):** (1) the in-page first-run mark, the remaining half of
   the seam; (2) ~~which home is the default~~ — decided 2026-10-12: the
   window; the strip stayed opt-in because of the two problems it showed on
-  real pages (the per-site MIDI request on load, and a frame error
+  real pages (the per-site MIDI request on load, now on demand, and a frame error
   still to be read from the console); (3) ~~threshold shown inverted as an *amount*~~ — done, round 5;
   (4) an intensity macro; (5) headline knobs that ship at the rail (ring
   time, drive, tail); (6) **the next layers, in the order John accepted
@@ -565,7 +565,11 @@ waits `HARNESS_WAIT_MS` (default 1500) and shoots.
   AUDIO names sources on a playing video (the stats plumbing content
   script → service worker → panel is untested outside the harness); the
   toolbar badge reads ON and clears on Ctrl+Shift+D; how badly the rail
-  and the mixer sit over the player's own controls.
+  and the mixer sit over the player's own controls. **On YouTube with the
+  strip, no MIDI prompt or console violation until MIDI… is clicked**
+  (DevTools console open from the load); then click it with a controller
+  plugged in: does the page allow it (the MIDI line names the device), or
+  does it flash *refused*?
 - **The window (the default) and the side panel.** With nothing stored (or
   `panel lives in` set back to `window`), Ctrl+Shift+P: it opens as the
   column at 400 × 720. Drag it wide (≥ 900 px

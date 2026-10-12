@@ -649,6 +649,24 @@ function buildPanelHomeRow() {
   return row;
 }
 
+// MIDI on demand (round 8): the strip's frame lives inside whatever page is
+// open, and that page's permissions policy answers a MIDI request — so
+// asking at boot drew a console violation or a prompt from every site. In
+// the strip the request waits for this button; the window and the side
+// panel are extension pages of their own and still ask at boot, so the
+// button exists only when HOSTED. Wired up beside the MIDI plumbing below.
+function buildMidiButton() {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.id = 'midi-connect';
+  b.className = 'btn subtle';
+  b.textContent = 'MIDI…';
+  b.dataset.tip =
+    'Connect a MIDI controller to this strip. Asked for only when you click, because the page hosting the strip decides whether a frame may use MIDI.';
+  b.hidden = !HOSTED;
+  return b;
+}
+
 // --- The A/B (M1): one large button bound to `enabled` ---
 // Round 3 (all three reviewers): a press shorter than LATCH_MS latches, so a
 // slow, deliberate click never ends where it started. Only a press held past
@@ -924,7 +942,7 @@ function flashEl(el) {
     }
   }
   globals.appendChild(buildChips());
-  document.getElementById('prefs').append(buildTooltipRow(), buildPanelHomeRow());
+  document.getElementById('prefs').append(buildTooltipRow(), buildPanelHomeRow(), buildMidiButton());
 }
 
 // Column or mixer, painted now and again whenever the page changes shape (a
@@ -1679,11 +1697,15 @@ function setMidiDevices(count) {
   if (count === 0 && learnKey) armLearn(learnKey); // disarm a learn nobody can answer
 }
 
-initMIDI({
+let midiDevices = 0;
+const midiHandlers = {
   onStatus(text) {
     document.getElementById('midi-status').textContent = text;
   },
-  onDevices: setMidiDevices,
+  onDevices(count) {
+    midiDevices = count;
+    setMidiDevices(count);
+  },
   onCC(cc, value) {
     if (learnKey) {
       // Unmap any previous CC for this param, then bind.
@@ -1714,7 +1736,44 @@ initMIDI({
     queueWrite(key, v);
     setUI(key, v);
   },
-});
+};
+
+// One request per panel: the window and side panel ask at boot; the strip's
+// frame asks when MIDI… is clicked (buildMidiButton). Granted, the button
+// steps aside and the MIDI line takes over once a device is there (a moment
+// of "no device" first if none is); refused, it says so and stays, so the
+// player can try again on a page that allows it.
+let midiAsk = null;
+const startMIDI = () => (midiAsk ??= initMIDI(midiHandlers));
+
+if (!HOSTED) {
+  startMIDI();
+} else {
+  const btn = document.getElementById('midi-connect');
+  let flashTimer = 0;
+  const flashBtn = (text, then) => {
+    clearTimeout(flashTimer);
+    btn.textContent = text;
+    btn.classList.add('done');
+    flashTimer = setTimeout(() => {
+      btn.textContent = 'MIDI…';
+      btn.classList.remove('done');
+      then?.();
+    }, 900);
+  };
+  btn.addEventListener('click', async () => {
+    if (midiAsk) return; // already asking, or already granted
+    const granted = await startMIDI();
+    if (!granted) {
+      midiAsk = null; // a refusal can be asked again
+      flashBtn('refused');
+    } else if (midiDevices > 0) {
+      btn.hidden = true;
+    } else {
+      flashBtn('no device', () => (btn.hidden = true));
+    }
+  });
+}
 
 // --- Audio status line (finding 7): what the active tab is processing ---
 // Content scripts post `{type: 'deflection:stats', op: 'put', audio}` to the

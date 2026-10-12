@@ -491,7 +491,8 @@ detached window that answers to its own shape, and once both were built
 page, the column when tall and the mixer when dragged wide. The strip stays
 one choice away under *panel lives in*; it stayed opt-in because of two
 problems it showed on real pages — every site's permissions policy answered
-its MIDI request on load with a console violation or a prompt, and a frame
+its MIDI request on load with a console violation or a prompt (the strip now
+asks only on demand, under MIDI below), and a frame
 error still to be diagnosed from the console text. `panelHome` is
 a **panel preference, not a parameter**: it lives outside `DEFAULTS` beside
 `tooltips`, so no content script's param filter sees it, and the harness's
@@ -563,7 +564,9 @@ talks to the strip (`toggle`, `ready`).
   - **The mixer (240 px).** The panel's mixer layout: the global block as a
     260 px cluster at the left (title, A/B, chips, presets, the prefs line,
     and the MIDI line only when a controller is present; both lines wrap
-    inside the cluster), then the sections as columns in a lane — **sort ·
+    inside the cluster). **The strip asks for MIDI only on demand**: the
+    prefs line carries a small **MIDI…** button, and nothing requests MIDI
+    until it is clicked (see MIDI below). Then the sections as columns in a lane — **sort ·
     feedback · body · smear, all four in view with no sideways scroll at
     every width checked, 1280 to 1920 px** (John: video and audio controls
     at hand without horizontal scrolling). The lane is eight rows of 28 px:
@@ -663,7 +666,8 @@ the window if it is refused); whether a second toolbar click closes the
 side panel; that the MIDI grant from the window carries to the side panel
 (same origin, so it should); MIDI inside the strip at all (the iframe
 carries `allow="midi"`, but the permission prompt in a cross-origin frame
-and a page's own Permissions-Policy may refuse it); MIDI rows in the mixer
+and a page's own Permissions-Policy may refuse it — which is why the strip
+now asks only when MIDI… is clicked); MIDI rows in the mixer
 at 1280 (known: with a device the ⊙ column squeezes the lane's sliders to
 ~30 px and truncates the selects — too little width for MIDI rows at 1280;
 not addressed); that Chrome's command takes Ctrl+Shift+P before a page that
@@ -692,7 +696,19 @@ right.
 ## MIDI
 
 1. Open the panel on the kiosk once and grant the MIDI permission (it
-   persists in the profile).
+   persists in the profile). **The window and the side panel ask at boot;
+   the strip asks only on demand** (round 8): the strip's frame sits inside
+   whatever page is open, and that page's permissions policy decides whether
+   a frame may use MIDI, so asking on load drew a console violation or a
+   prompt from site after site. In the strip, click **MIDI…** in the prefs
+   line (beside *tooltips* and *panel lives in*): it makes the one request;
+   granted, it steps aside and the MIDI line takes over when a device is
+   there (a moment of *no device* first if none is); refused — the page
+   does not allow MIDI in frames — it flashes *refused* and stays, so it can
+   be tried on a page that does. The strip's iframe keeps `allow="midi"`,
+   which is what lets the on-demand request succeed where the page permits
+   it. The rail has no MIDI… (its prefs line is out of sight): unfold the
+   mixer.
 2. With a controller connected, the MIDI block appears at the bottom of
    the panel and every row, the A/B and the four chips show a ⊙ button
    (without a controller the block and every ⊙ are out of sight — MIDI is a
