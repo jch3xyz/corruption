@@ -2233,17 +2233,20 @@ async function tier3() {
       'a window booted square (700 × 700) is the column, its engine disclosure heading its group',
       layoutOf(f) === undefined && where(f) === 'group'
     );
-    const resize = async (w, h) => {
+    // The media query's change event lands a frame or two after the resize,
+    // later under load: poll for the expected state instead of sleeping.
+    const resize = async (w, h, settled) => {
       f.style.width = `${w}px`;
       f.style.height = `${h}px`;
-      await sleep(100);
+      const deadline = Date.now() + 2000;
+      while (!settled() && Date.now() < deadline) await sleep(40);
     };
-    await resize(1000, 320);
+    await resize(1000, 320, () => layoutOf(f) === 'mixer' && where(f) === 'head');
     check(
       'dragged wide (700 × 700 → 1000 × 320), the same page turns mixer and the disclosure moves up',
       layoutOf(f) === 'mixer' && where(f) === 'head'
     );
-    await resize(700, 700);
+    await resize(700, 700, () => layoutOf(f) === undefined && where(f) === 'group');
     check(
       'dragged back (→ 700 × 700), it is the column again and the disclosure returns to its group',
       layoutOf(f) === undefined && where(f) === 'group'
