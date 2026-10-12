@@ -31,6 +31,7 @@
 // Run: python3 test/serve.py  →  http://localhost:8437/test/harness/panel.html
 
 import { DEFAULTS } from '../../source/content/params.js';
+import { RAIL_HEIGHT, STRIP_HEIGHT } from '../../source/content/strip.js';
 import {
   DEFS,
   SECTIONS,
@@ -1501,6 +1502,10 @@ function tipsThatClip(d) {
   return overflow;
 }
 
+// Laptop to desktop: the strip is checked at each (John, 2026-10-12: 1280
+// is not a typical laptop).
+const WIDTHS = [1280, 1440, 1512, 1728, 1920];
+
 async function tier3() {
   tier('tier 3 — the strip and side-panel layouts (M9)');
 
@@ -1624,34 +1629,91 @@ async function tier3() {
     f.remove();
   }
 
-  // -- the strip at rest: the rail, 1280 × 28 --
-  {
-    const f = await bootFrame('./panel-frame.html?layout=strip', 1280, 28);
+  // -- the strip at rest: the rail, RAIL_HEIGHT tall, at laptop-to-desktop widths --
+  for (const width of WIDTHS) {
+    const first = width === WIDTHS[0];
+    const f = await bootFrame('./panel-frame.html?layout=strip', width, RAIL_HEIGHT);
     const w = f.contentWindow;
     const d = w.document;
     const q = (s) => d.querySelector(s);
     const rect = (el) => el.getBoundingClientRect();
     const vis = (el) => !!el && el.getClientRects().length > 0;
-    check('the frame really is 1280 × 28', w.innerWidth === 1280 && w.innerHeight === 28);
-    const parts = ['#ab', '.chip[data-key="video"] .chip-toggle', '.chip[data-key="audioEnabled"] .chip-toggle', '#preset-default', '#preset-save', '#strip-fold'];
+    check(`the frame really is ${width} × ${RAIL_HEIGHT}`, w.innerWidth === width && w.innerHeight === RAIL_HEIGHT);
+    const targets = [
+      '#ab',
+      ...['video', 'images', 'textScramble', 'audioEnabled'].map((k) => `.chip[data-key="${k}"] .chip-toggle`),
+      '#preset-default',
+      ...['A', 'B', 'C'].map((k) => `.btn.slot[data-slot="${k}"]`),
+      '#preset-save',
+      '#strip-fold',
+    ];
+    const missing = targets.filter((s) => !q(s));
+    check(`at ${width} px the rail's targets all exist (${missing.join(', ') || 'all'})`, missing.length === 0);
+    const present = targets.filter((s) => q(s));
     check(
-      'the rail is one line: the A/B, the four chips, the presets and the fold button, all in view and vertically aligned',
-      parts.every((s) => vis(q(s)) && rect(q(s)).top >= -0.5 && rect(q(s)).bottom <= w.innerHeight + 0.5) &&
+      `at ${width} px the rail is one line: the A/B, the four chips, the presets and the fold button, all in view and vertically aligned`,
+      present.every((s) => vis(q(s)) && rect(q(s)).top >= -0.5 && rect(q(s)).bottom <= w.innerHeight + 0.5) &&
         (() => {
-          const mids = parts.map((s) => (rect(q(s)).top + rect(q(s)).bottom) / 2);
+          const mids = present.map((s) => (rect(q(s)).top + rect(q(s)).bottom) / 2);
           return Math.max(...mids) - Math.min(...mids) <= 4;
         })()
     );
+    const small = present.filter((s) => rect(q(s)).height < 26 - 0.5).map((s) => `${s} ${Math.round(rect(q(s)).height)}px`);
+    check(`at ${width} px every target on the rail is at least 26 px tall (${small.join(', ') || 'all are'})`, small.length === 0);
+    const sc = q('#scroll');
+    const spill = [...sc.querySelectorAll('*')]
+      .filter((el) => el.getClientRects().length && rect(el).width > 0)
+      .filter((el) => rect(el).right > w.innerWidth + 0.5 || rect(el).bottom > w.innerHeight + 0.5 || rect(el).top < -0.5)
+      .map((el) => el.id || el.className || el.tagName);
+    check(
+      `at ${width} px nothing overflows the rail (${spill.slice(0, 4).join(', ') || 'nothing'})`,
+      spill.length === 0 && d.documentElement.scrollWidth <= w.innerWidth && d.documentElement.scrollHeight <= w.innerHeight
+    );
+    check(
+      `at ${width} px the fold button (26 × 26) offers to unfold (▴) at the rail’s right end`,
+      q('#strip-fold').textContent === '▴' && rect(q('#strip-fold')).left > w.innerWidth - 60 &&
+        Math.abs(rect(q('#strip-fold')).width - 26) < 1 && Math.abs(rect(q('#strip-fold')).height - 26) < 1
+    );
+    if (!first) {
+      f.remove();
+      continue;
+    }
     check(
       'the rail hides the sections, the prefs, the MIDI block and the A/B’s caption',
       !vis(q('#controls')) && !vis(q('#prefs')) && !vis(q('.midi')) && !vis(q('.ab .ab-say'))
     );
-    check('the fold button offers to unfold (▴) at the rail’s right end', q('#strip-fold').textContent === '▴' && rect(q('#strip-fold')).left > w.innerWidth - 60);
-    check('nothing overflows the rail', d.documentElement.scrollWidth <= w.innerWidth && d.documentElement.scrollHeight <= w.innerHeight);
+    check('the rail’s empty space says it can be pressed (pointer cursor, a title on the masthead)', w.getComputedStyle(q('#scroll')).cursor === 'pointer' && /unfold/.test(q('.masthead').title));
+    // Click anywhere that is not a control: the panel asks the strip to unfold.
+    const toggles = [];
+    const onMsg = (e) => {
+      if (e.source === w && e.data?.type === 'deflection:strip' && e.data.op === 'toggle') toggles.push(1);
+    };
+    window.addEventListener('message', onMsg);
+    const clickOn = async (el) => {
+      const n = toggles.length;
+      el.dispatchEvent(new w.MouseEvent('click', { bubbles: true, cancelable: true }));
+      await sleep(60);
+      return toggles.length - n;
+    };
+    check('a click on the rail’s background asks the strip to unfold (one toggle)', (await clickOn(q('#scroll'))) === 1);
+    check('a click on the title counts as empty: it unfolds too', (await clickOn(q('h1'))) === 1);
+    check('a click on a chip pill does not unfold (the chip does its own work)', (await clickOn(q('.chip[data-key="images"] .chip-toggle'))) === 0);
+    await clickOn(q('.chip[data-key="images"] .chip-toggle')); // put it back
+    check('a click on a chip name does not unfold either', (await clickOn(q('.chip[data-key="video"] .chip-name'))) === 0);
+    q('#preset-save').click();
+    await sleep(40);
+    q('#scroll').dispatchEvent(new w.PointerEvent('pointerdown', { bubbles: true, pointerId: 1, button: 0, isPrimary: true }));
+    const savedClicks = await clickOn(q('#scroll'));
+    check(
+      'in save mode a press on the background only cancels the save; it does not also unfold',
+      savedClicks === 0 && !q('#presets').classList.contains('saving')
+    );
+    check('the fold button asks once (its own click, not the background’s too)', (await clickOn(q('#strip-fold'))) === 1);
+    window.removeEventListener('message', onMsg);
     q('#ab').dispatchEvent(new w.MouseEvent('mouseover', { bubbles: true }));
     await sleep(420);
     check('no hover help in the rail: there is no room for a bubble', q('#tooltip').hidden);
-    // The A/B still works at 22 px.
+    // The A/B still works on the rail.
     q('#ab').click();
     await sleep(90);
     check('the rail’s A/B latches', w.__store.enabled === false && !q('#ab').classList.contains('on'));

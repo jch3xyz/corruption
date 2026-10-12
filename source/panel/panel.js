@@ -1349,10 +1349,12 @@ homeSelect.addEventListener('change', () => {
 // In the strip the panel is an iframe inside the page. It tells the strip
 // when it has booted (so a strip whose iframe never loads can take itself
 // down and leave the page as it was), asks it to grow or fold when the fold
-// button is pressed, and passes Ctrl+Shift+P up when the keystroke lands
-// inside the panel and no Chrome command claimed it first. Whether the
-// frame is the rail or the mixer is read from its own height (RAIL), so no
-// state has to travel down.
+// button is pressed — or, on the rail, when a click lands anywhere that is
+// not a control (the title and the gaps count as empty), so the whole bar
+// is a target — and passes Ctrl+Shift+P up when the keystroke lands inside
+// the panel and no Chrome command claimed it first. Whether the frame is
+// the rail or the mixer is read from its own height (RAIL), so no state has
+// to travel down.
 const foldBtn = document.getElementById('strip-fold');
 if (HOSTED) {
   const tell = (op) => {
@@ -1368,12 +1370,27 @@ if (HOSTED) {
       tell('toggle');
     }
   });
+  // A press that only cancels save mode (see above) does just that. Window
+  // capture runs before the document's, so this sees saveMode as it was.
+  let cancelling = false;
+  window.addEventListener('pointerdown', () => (cancelling = saveMode), true);
+  document.addEventListener('click', (e) => {
+    const cancelled = cancelling;
+    cancelling = false;
+    if (RAIL.matches && !cancelled && !e.target.closest('button, input, select, label, .chip, a')) tell('toggle');
+  });
   foldBtn.hidden = false;
+  // The rail suppresses the hover bubble, so its empty space says what a
+  // click does with a plain title instead (only the masthead carries it:
+  // the controls keep their own meaning under the pointer).
+  const masthead = document.querySelector('.masthead');
   const paintFold = () => {
     const rail = RAIL.matches;
     foldBtn.textContent = rail ? '▴' : '▾';
     foldBtn.setAttribute('aria-expanded', String(!rail));
     foldBtn.dataset.hint = rail ? 'Unfold the mixer.' : 'Fold back to one line.';
+    if (rail) masthead.title = 'Click the rail to unfold the mixer (Ctrl+Shift+P)';
+    else masthead.removeAttribute('title');
   };
   RAIL.addEventListener('change', paintFold);
   paintFold();

@@ -1,9 +1,11 @@
 // The bottom strip (design review M9; John's pick and the default home
 // since 2026-10-11): the panel as a mixer strip along the bottom of the
-// page. At rest it is a TRANSPORT LINE — one 28 px rail carrying the A/B,
-// the four medium chips and the presets, so the key gesture is always one
-// click away and almost nothing is covered. A fold button at its right end
-// (or Ctrl+Shift+P, or the toolbar icon) grows it to the full mixer.
+// page. At rest it is a TRANSPORT LINE — one 40 px rail carrying the A/B,
+// the four medium chips and the presets at sizes a stranger can hit, so the
+// key gesture is always one click away. A click anywhere on the rail that is
+// not a control (the panel relays it), the fold button at its right end, the
+// CORRUPTION tab standing on its top edge, Ctrl+Shift+P or the toolbar icon
+// grows it to the full mixer.
 //
 // The strip does not re-implement the panel. It hosts the shipped
 // panel.html in an iframe with `?layout=strip` (panel.css lays that out
@@ -15,9 +17,13 @@
 //     everything, its geometry set inline with !important so page CSS cannot
 //     move it, and a closed shadow root so page CSS cannot reach inside and
 //     nothing inside can reach the page;
-//   - the two heights (rail and open), toggled by the panel's fold button
-//     (a postMessage up), by Ctrl+Shift+P — the Chrome command when it is
-//     bound, a page keydown when it is not — and by the service worker;
+//   - the two heights (rail and open), toggled by the panel (its fold
+//     button, or a click on the rail's empty space: a postMessage up), by
+//     the tab, by Ctrl+Shift+P — the Chrome command when it is bound, a page
+//     keydown when it is not — and by the service worker;
+//   - the tab: a small CORRUPTION ▴/▾ label above the rail's right end, so
+//     the strip stands out from the page's own chrome and says what it is.
+//     It is pressed, never focused, and is not in the page's tab order;
 //   - the iframe is out of the page's tab order and nothing here ever takes
 //     focus, so the page's keyboard focus is never stolen; the frame is
 //     dropped while the tab is hidden, so only the visible tab runs a panel;
@@ -25,9 +31,10 @@
 //   - a failure path: if the panel never says it booted, or anything here
 //     throws, the host is removed and the page is exactly as it was.
 //
-// Known cost, accepted: the rail covers the bottom 28 px of the page and
-// the open mixer ~208 px, fixed footers included. It does not push the page
-// up — doing that means restyling the page. No hover-to-open, on purpose:
+// Known cost, accepted: the rail covers the bottom 40 px of the page (and
+// the tab a small corner above it), the open mixer ~208 px, fixed footers
+// included. It does not push the page up — doing that means restyling the
+// page (John, 2026-10-12: keep covering). No hover-to-open, on purpose:
 // the rail sits where a player's scrubber often is and the pointer crosses
 // it constantly.
 //
@@ -35,7 +42,8 @@
 // around it); initStrip() is the chrome.* glue the content script calls.
 
 const MSG = 'deflection:strip';
-export const RAIL_HEIGHT = 28;
+export const RAIL_HEIGHT = 40;
+const TAB_HEIGHT = 20;
 export const STRIP_HEIGHT = 208;
 const READY_TIMEOUT_MS = 8000;
 
@@ -75,6 +83,19 @@ const SHADOW_CSS = `
     border-top: 1px solid #34343c;
     box-shadow: 0 -6px 18px rgba(0, 0, 0, 0.45);
   }
+  /* The tab stands on the rail's top edge (over its border line, so the two
+     read as one piece) at the right end, above the fold button. */
+  .tab {
+    pointer-events: auto;
+    position: absolute; right: 18px; bottom: calc(100% - 1px);
+    height: ${TAB_HEIGHT}px; margin: 0; padding: 0 10px;
+    background: #131316; color: #e8e864;
+    border: 1px solid #34343c; border-bottom: none; border-radius: 5px 5px 0 0;
+    font: 600 11px ui-monospace, 'SF Mono', Menlo, monospace;
+    letter-spacing: 0.2em; line-height: ${TAB_HEIGHT - 1}px;
+    cursor: pointer; outline: none;
+  }
+  .tab:hover { border-color: #8a8a40; }
   iframe { display: block; width: 100%; height: 100%; border: 0; background: #131316; }
 `;
 
@@ -104,7 +125,12 @@ export function mountStrip({
     wrap.className = 'wrap';
     const bar = doc.createElement('div');
     bar.className = 'bar';
-    wrap.append(bar);
+    const tab = doc.createElement('button');
+    tab.className = 'tab';
+    tab.type = 'button';
+    tab.tabIndex = -1; // never in the page's tab order
+    // After the bar, so the bar's shadow does not fall across it.
+    wrap.append(bar, tab);
     root.append(style, wrap);
 
     let isOpen = false;
@@ -127,7 +153,7 @@ export function mountStrip({
     };
 
     // The iframe exists while the tab is visible — rail and open alike, the
-    // rail being the panel at 28 px — and is dropped while the tab is
+    // rail being the panel at RAIL_HEIGHT — and is dropped while the tab is
     // hidden, so no second panel runs. tabindex -1 keeps it, and everything
     // inside it, out of the page's sequential focus order.
     const syncFrame = () => {
@@ -153,6 +179,9 @@ export function mountStrip({
 
     const paint = () => {
       wrap.classList.toggle('open', isOpen);
+      tab.textContent = isOpen ? 'CORRUPTION ▾' : 'CORRUPTION ▴';
+      tab.title = isOpen ? 'Fold the controls back to one line (Ctrl+Shift+P)' : 'Unfold the controls (Ctrl+Shift+P)';
+      tab.setAttribute('aria-expanded', String(isOpen));
       syncFrame();
     };
 
@@ -185,6 +214,10 @@ export function mountStrip({
         ctl.toggle();
       }
     };
+
+    // The tab is pressed, never focused: whatever had focus keeps it.
+    tab.addEventListener('mousedown', (e) => e.preventDefault());
+    tab.addEventListener('click', () => ctl.toggle());
 
     const ctl = {
       host,
