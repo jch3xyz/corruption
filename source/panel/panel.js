@@ -66,7 +66,9 @@ const storedOf = (key) => fromView(defByKey[key], Number(inputs[key].value));
 // (images are one-shot stills; there is no image feedback).
 // motionGate lives here: it judges motion via the alpha trail, which only
 // exists where a composite runs — without a feedback mode it has nothing
-// to read. temperature is NOT here: it bites in straight sort too.
+// to read. temperature is NOT here: it bites in straight sort too. The
+// clear timings (resetMinS/resetMaxS) sit in the engine since the handles
+// round but still answer to the feedback switch.
 const FEEDBACK_SHARED = ['decay', 'driftX', 'driftY', 'resetMinS', 'resetMaxS', 'motionGate'];
 
 // Audio rows gray out when the audio master toggle is off; the smear rows
@@ -107,11 +109,18 @@ const AUDIO_TRIGGERS = ['audioEnabled', 'audioFeedback', 'audioFbClear', 'audioB
 
 // The sort knobs shape video and images alike; with both mediums off they
 // have nothing to act on. The feedback group is video only (round 3, item 7).
-const SORT_KEYS = ['threshold', 'flowAmount', 'flowMode', 'flowScale', 'flowSpeed', 'temperature'];
+// These gate by key, not by group: since the handles round the flow shape
+// knobs sit in the engine and `streak` (ribbons) in sort, and each still
+// answers to the medium (and the flow shape to flow, FLOW_ONLY). The other
+// engine rows (passes, max res, max videos) are not gated row by row; the
+// engine group hides with the mediums.
+const SORT_KEYS = ['threshold', 'flowAmount', 'temperature', 'streak', 'flowMode', 'flowScale', 'flowSpeed'];
 const FEEDBACK_KEYS = ['feedbackVideo', ...FEEDBACK_SHARED];
 const MEDIUM_TRIGGERS = ['video', 'images', 'feedbackVideo', 'flowAmount'];
 
 // The flow shape knobs only mean anything while flow amount is above zero.
+// They live in the folded engine, so with flow at 0 they are hidden twice:
+// by the fold and by this gate (data-gate="flow").
 const FLOW_ONLY = ['flowMode', 'flowScale', 'flowSpeed'];
 
 // A gated row is HIDDEN, not greyed (John, 2026-10-11: "if controls are

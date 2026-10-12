@@ -28,6 +28,13 @@
 // says "replace A" and a save-over can be undone; the chips land and flash;
 // the Video rows name the medium switch that would wake them.
 //
+// Handles round (John, 2026-10-12): threshold shows as amount, drift is one
+// pad, and each effect column holds only its handles, named for the result
+// (ribbons, trail, follow motion, level); the flow shape, the clear rhythm
+// and the body type are filed in the engines. Gates are keyed, so a demoted
+// row is hidden twice — by the fold and by its gate — and the checks read
+// `hidden`/`data-gate` rather than visibility for those.
+//
 // Run: python3 test/serve.py  →  http://localhost:8437/test/harness/panel.html
 
 import { DEFAULTS } from '../../source/content/params.js';
@@ -62,39 +69,43 @@ const GLOBAL_KEYS = ['enabled', 'video', 'images', 'textScramble', 'audioEnabled
 // The chips, in order, and the key each one drives.
 const CHIP_KEYS = ['video', 'images', 'textScramble', 'audioEnabled'];
 
-// The regrouped sections (design review M4/M8), in render order: rows that
-// sit above the groups, then each group's rows. Key → the player's label.
+// The regrouped sections (design review M4/M8; the handles round, John
+// 2026-10-12: each effect column holds only its handles, the rest is filed
+// in the engine), in render order: rows that sit above the groups, then each
+// group's rows. Key → the player's label.
 const LAYOUT = {
   video: {
     loose: [],
     groups: [
-      ['sort', ['threshold', 'flowAmount', 'flowMode', 'flowScale', 'flowSpeed', 'temperature']],
-      ['feedback', ['feedbackVideo', 'motionGate', 'decay', 'driftX', 'driftY', 'resetMinS', 'resetMaxS']],
-      ['engine', ['passes', 'streak', 'maxRes', 'maxVideos']],
+      ['sort', ['threshold', 'flowAmount', 'temperature', 'streak']],
+      ['feedback', ['feedbackVideo', 'decay', 'driftX', 'driftY', 'motionGate']],
+      ['engine', ['passes', 'maxRes', 'maxVideos', 'flowMode', 'flowScale', 'flowSpeed', 'resetMinS', 'resetMaxS']],
     ],
   },
   audio: {
     loose: [],
     groups: [
-      ['body', ['audioMix', 'audioBodyMix', 'audioBody', 'audioSustain', 'audioDrive']],
+      ['body', ['audioMix', 'audioBodyMix', 'audioSustain', 'audioDrive']],
       ['smear', ['audioFeedback', 'audioFbDecay', 'audioFbReturn', 'audioFbWobble']],
       [
         'engine',
-        ['audioDirect', 'audioMaxTaps', 'audioExciter', 'audioCombDamp', 'audioFbClear', 'audioFbClearS', 'audioFbClearMinS', 'audioFbClearMaxS'],
+        [
+          'audioBody', 'audioDirect', 'audioMaxTaps', 'audioExciter', 'audioCombDamp',
+          'audioFbClear', 'audioFbClearS', 'audioFbClearMinS', 'audioFbClearMaxS',
+        ],
       ],
     ],
   },
 };
 const LABELS = {
-  threshold: 'amount', flowAmount: 'flow', flowMode: 'flow mode', flowScale: 'flow scale',
-  flowSpeed: 'flow speed', temperature: 'jitter',
-  feedbackVideo: 'feedback', motionGate: 'motion gate', decay: 'decay', driftX: 'drift',
-  driftY: 'drift', resetMinS: 'clear min s', resetMaxS: 'clear max s',
-  passes: 'sort passes', streak: 'streak', maxRes: 'max res', maxVideos: 'max videos',
-  audioBodyMix: 'body amount', audioBody: 'body type', audioSustain: 'ring time',
-  audioDrive: 'drive', audioDirect: 'dry',
-  audioFeedback: 'smear', audioFbDecay: 'tail', audioFbReturn: 'return', audioFbWobble: 'wobble',
-  audioMix: 'mix', audioMaxTaps: 'max sources', audioExciter: 'exciter',
+  threshold: 'amount', flowAmount: 'flow', temperature: 'jitter', streak: 'ribbons',
+  feedbackVideo: 'feedback', decay: 'trail', driftX: 'drift', driftY: 'drift', motionGate: 'follow motion',
+  passes: 'sort passes', maxRes: 'max res', maxVideos: 'max videos',
+  flowMode: 'flow mode', flowScale: 'flow scale', flowSpeed: 'flow speed',
+  resetMinS: 'clear min s', resetMaxS: 'clear max s',
+  audioMix: 'mix', audioBodyMix: 'body amount', audioSustain: 'ring time', audioDrive: 'drive',
+  audioFeedback: 'smear', audioFbDecay: 'tail', audioFbReturn: 'level', audioFbWobble: 'wobble',
+  audioBody: 'body type', audioDirect: 'dry', audioMaxTaps: 'max sources', audioExciter: 'exciter',
   audioCombDamp: 'comb damp', audioFbClear: 'smear clear', audioFbClearS: 'clear fade s',
   audioFbClearMinS: 'clear min s', audioFbClearMaxS: 'clear max s',
 };
@@ -197,10 +208,27 @@ function tier1() {
     'the tips the review named lead with what you see or hear',
     byKey.threshold.tip.startsWith('How much of the picture is sorted. 0 = untouched; 1 = everything but true black, which always holds as a barrier. The most expressive knob.') &&
       byKey.temperature.tip.startsWith('Random swaps on top of the sort. 0 = clean ribbons; up = grain and shimmer.') &&
-      byKey.motionGate.tip.startsWith('Only moving parts get sorted. 0 = everything; 1 = only what moves. A wet/dry for motion.') &&
       byKey.audioBodyMix.tip.startsWith('How much of the resonant body you hear against the source. 0 = source only, 2 = all body.') &&
       byKey.audioDirect.tip.startsWith('The untouched source mixed back in. Up = intelligible again, which defeats the piece; kept for comparison.') &&
       byKey.audioMix.tip.startsWith('Wet/dry for the whole sound. 0 = the sound exactly as transmitted, 1 = all apparatus.')
+  );
+  // The handles round renamed five rows for the result; each tip's first
+  // sentence says that result before anything about the machine.
+  check(
+    'the renamed handles lead with what you see or hear (ribbons, trail, follow motion, level; amount above)',
+    byKey.streak.tip.startsWith('How far the ribbons run: the distance a pixel can travel in one frame.') &&
+      byKey.decay.tip.startsWith('How long the trail lingers.') &&
+      byKey.motionGate.tip.startsWith('How closely the sort follows motion. 0 = the whole picture sorts; 1 = only what moves.') &&
+      byKey.audioFbReturn.tip.startsWith('How loud the wash sits under the sound.')
+  );
+  // What left the effect columns for the engines, in order: the engines
+  // hold setup plus everything demoted, and nothing else.
+  check(
+    'the engines hold exactly their setup plus the demoted keys, in order (flow shape and clear rhythm; body type first)',
+    DEFS.filter((d) => d.section === 'video' && d.group === 'engine').map((d) => d.key).join() ===
+      'passes,maxRes,maxVideos,flowMode,flowScale,flowSpeed,resetMinS,resetMaxS' &&
+      DEFS.filter((d) => d.section === 'audio' && d.group === 'engine').map((d) => d.key).join() ===
+        'audioBody,audioDirect,audioMaxTaps,audioExciter,audioCombDamp,audioFbClear,audioFbClearS,audioFbClearMinS,audioFbClearMaxS'
   );
   // -- pads: two numeric keys played as one 2-D surface --
   {
@@ -677,6 +705,19 @@ async function tier2() {
     [...doc.querySelectorAll('#controls .group-head')].map((h) => text(h).replace(/\s*[▸▾]$/, '')).join() ===
       'sort,feedback,engine,body,smear,engine'
   );
+  {
+    const engineRows = (sec) =>
+      [...doc.querySelectorAll(`#controls .group.engine[data-section="${sec}"] .group-rows > .row`)].flatMap(keysOf);
+    check(
+      'the rendered engines hold exactly the setup and the demoted keys, in order, beneath their caption',
+      engineRows('video').join() === 'passes,maxRes,maxVideos,flowMode,flowScale,flowSpeed,resetMinS,resetMaxS' &&
+        engineRows('audio').join() ===
+          'audioBody,audioDirect,audioMaxTaps,audioExciter,audioCombDamp,audioFbClear,audioFbClearS,audioFbClearMinS,audioFbClearMaxS' &&
+        ['video', 'audio'].every(
+          (sec) => doc.querySelector(`#controls .group.engine[data-section="${sec}"] .group-rows`).firstElementChild.classList.contains('group-cap')
+        )
+    );
+  }
   check(
     'the rendered labels are the player’s',
     Object.entries(LABELS).every(([k, l]) => text(row(k).querySelector('label')) === l)
@@ -1139,11 +1180,11 @@ async function tier2() {
       '#controls .row[data-key="driftX"], #controls .row[data-key="driftY"], #controls .row[data-keys~="driftX"], #controls .row[data-keys~="driftY"]'
     );
     check(
-      'driftX and driftY render as ONE row, labelled drift, in the feedback group between decay and clear min s',
+      'driftX and driftY render as ONE row, labelled drift, in the feedback group between trail and follow motion',
       pairRows.length === 1 && padRow === row('driftY') && padRow.classList.contains('pad-row') &&
         text(padRow.querySelector('label')) === 'drift' &&
         padRow.closest('.group')?.dataset.group === 'feedback' &&
-        padRow.previousElementSibling === row('decay') && padRow.nextElementSibling === row('resetMinS')
+        padRow.previousElementSibling === row('decay') && padRow.nextElementSibling === row('motionGate')
     );
     const holders = [...pad.querySelectorAll('input[type=range]')];
     check(
@@ -1726,14 +1767,23 @@ async function tier2() {
       shown(row('feedbackVideo')) && groupShown('video', 'feedback')
   );
   await setToggle('feedbackVideo', true);
-  check('feedback on: the knobs unfold beneath the switch', ['motionGate', 'decay', 'resetMaxS'].every((k) => shown(row(k))));
+  // The clear timings live in the engine: gated by feedback all the same,
+  // and handed back (ungated) when it returns, however the engine folds.
+  const ungated = (k) => !row(k).hidden && !('gate' in row(k).dataset) && !row(k).querySelector('input, select').disabled;
+  check(
+    'feedback on: the knobs unfold beneath the switch, and the clear timings in the engine are handed back',
+    ['decay', 'driftX', 'motionGate'].every((k) => shown(row(k))) && ['resetMinS', 'resetMaxS'].every(ungated)
+  );
   type('flowAmount', '0');
   field('flowAmount').blur();
   await sleep(60);
   check('flow at 0: the flow shape knobs hide; flow itself stays', ['flowMode', 'flowScale', 'flowSpeed'].every((k) => gateSays(k, 'flow')) && shown(row('flowAmount')));
   fire(row('flowAmount'), 'dblclick');
   await sleep(60);
-  check('flow back up: the shape knobs return', ['flowMode', 'flowScale', 'flowSpeed'].every((k) => shown(row(k))));
+  check(
+    'flow back up: the shape knobs are ungated again (in the engine, where the fold decides whether they show)',
+    ['flowMode', 'flowScale', 'flowSpeed'].every(ungated)
+  );
   await setToggle('audioFeedback', false);
   check('smear off: tail, return, wobble and smear clear hide; the smear switch stays', ['audioFbDecay', 'audioFbReturn', 'audioFbWobble', 'audioFbClear'].every((k) => gateSays(k, 'smear')) && shown(row('audioFeedback')));
   await setToggle('audioFeedback', true);
@@ -1747,20 +1797,24 @@ async function tier2() {
   await setSelect('audioBody', 'modal');
 
   // Round 3, item 7: the Video rows name the medium switch that would wake them.
-  const SORT = ['threshold', 'flowAmount', 'flowMode', 'flowScale', 'flowSpeed', 'temperature'];
-  const FEEDBACK = ['feedbackVideo', 'motionGate', 'decay', 'driftX', 'driftY', 'resetMinS', 'resetMaxS'];
+  // The handles in their columns, and the keys of theirs filed in the engine.
+  const SORT = ['threshold', 'flowAmount', 'temperature', 'streak'];
+  const SORT_ENGINE = ['flowMode', 'flowScale', 'flowSpeed'];
+  const FEEDBACK = ['feedbackVideo', 'decay', 'driftX', 'driftY', 'motionGate'];
+  const FEEDBACK_ENGINE = ['resetMinS', 'resetMaxS'];
   chip('video').querySelector('.chip-toggle').click();
   await sleep(60);
   check(
-    'video off: the whole feedback group hides, its switch included; sort still serves images and the Video header stays',
-    FEEDBACK.every((k) => gateSays(k, 'video')) && !groupShown('video', 'feedback') &&
-      SORT.every((k) => shown(row(k))) && groupShown('video', 'sort') && !shown(offNote('video'))
+    'video off: the whole feedback group hides, its switch included, and the clear timings in the engine; sort still serves images and the Video header stays',
+    [...FEEDBACK, ...FEEDBACK_ENGINE].every((k) => gateSays(k, 'video')) && !groupShown('video', 'feedback') &&
+      SORT.every((k) => shown(row(k))) && SORT_ENGINE.every(ungated) &&
+      groupShown('video', 'sort') && !shown(offNote('video'))
   );
   chip('images').querySelector('.chip-toggle').click();
   await sleep(60);
   check(
     'video and images both off: every Video group hides and the section says which chips bring it back',
-    SORT.every((k) => gateSays(k, 'video or images')) &&
+    [...SORT, ...SORT_ENGINE].every((k) => gateSays(k, 'video or images')) &&
       ['sort', 'feedback', 'engine'].every((g) => !groupShown('video', g)) &&
       shown(offNote('video')) && text(offNote('video')) === 'off — switch video or images on above' &&
       shown($('#section-video h2'))
@@ -1769,7 +1823,8 @@ async function tier2() {
   await sleep(60);
   check(
     'video back on (images still off): sort and feedback return, the note goes',
-    [...SORT, ...FEEDBACK].every((k) => shown(row(k))) && !shown(offNote('video'))
+    [...SORT, ...FEEDBACK].every((k) => shown(row(k))) && [...SORT_ENGINE, ...FEEDBACK_ENGINE].every(ungated) &&
+      !shown(offNote('video'))
   );
   chip('images').querySelector('.chip-toggle').click();
   await sleep(60);
@@ -1902,20 +1957,49 @@ async function tier3() {
         [...c.querySelectorAll('.section, .row, .group-head')].filter(vis).every((el) => rect(el).top >= cr.top - 1 && rect(el).bottom <= cr.bottom + 1)
     );
     {
-      // The drift pad takes the two lane cells its two rows used to: decay
-      // above it, clear min s below, all in the feedback column.
+      // The drift pad takes two lane cells: trail above it, follow motion
+      // below, all in the feedback column, and nothing after follow motion
+      // (the next thing in the lane, the Audio header, starts a new column).
       const pr = q('.row.pad-row');
       const p = rect(pr);
       const above = rect(q('.row[data-key="decay"]'));
-      const below = rect(q('.row[data-key="resetMinS"]'));
+      const below = rect(q('.row[data-key="motionGate"]'));
       const sq = rect(pr.querySelector('.pad'));
+      const fbCol = [...c.querySelectorAll('.section, .row, .group-head, .group-cap')]
+        .filter(vis)
+        .filter((el) => Math.abs(rect(el).left - p.left) < 2 || (rect(el).left < p.left + 1 && rect(el).right > p.left + 1));
+      const last = fbCol.reduce((a, el) => (rect(el).bottom > rect(a).bottom ? el : a), fbCol[0]);
       check(
-        `at ${width} px the drift pad spans two lane rows (${Math.round(p.height)} px, square ${Math.round(sq.width)} px) between decay and clear min s, in the same column`,
+        `at ${width} px the drift pad spans two lane rows (${Math.round(p.height)} px, square ${Math.round(sq.width)} px) between trail and follow motion, in the same column, and follow motion ends it`,
         vis(pr) && Math.abs(p.height - 56) < 1 && Math.abs(sq.width - 50) < 1 && Math.abs(sq.height - 50) < 1 &&
           Math.abs(p.left - above.left) < 1 && Math.abs(p.left - below.left) < 1 &&
-          p.top >= above.bottom - 1 && below.top >= p.bottom - 1 && p.bottom <= cr.bottom + 1 &&
-          sq.top >= p.top - 0.5 && sq.bottom <= p.bottom + 0.5
+          p.top >= above.bottom - 1 && below.top >= p.bottom - 1 && below.bottom <= cr.bottom + 1 &&
+          sq.top >= p.top - 0.5 && sq.bottom <= p.bottom + 0.5 &&
+          last === q('.row[data-key="motionGate"]')
       );
+      // Every effect column fits its eight lane cells: had one spilled, its
+      // last rows would sit in the next column. So each group's visible rows
+      // share its caption's column.
+      const spilled = [['video', 'sort'], ['video', 'feedback'], ['audio', 'body'], ['audio', 'smear']]
+        .filter(([sec, g]) => {
+          const left = rect(groupHead(sec, g)).left;
+          const rows = [...q(`#controls .group[data-section="${sec}"][data-group="${g}"]`).querySelectorAll('.row')].filter(vis);
+          return !rows.length || rows.some((r) => Math.abs(rect(r).left + 4 - left) > 6);
+        })
+        .map(([, g]) => g);
+      check(
+        `at ${width} px each effect column fits its eight lane cells: no row spills into the next column (${spilled.join(', ') || 'none spill'})`,
+        spilled.length === 0
+      );
+    }
+    {
+      // A lane label is one line: the label column is sized to the widest
+      // ("follow motion"), so nothing wraps under its neighbours.
+      const wrapped = [...c.querySelectorAll('.row > label')]
+        .filter(vis)
+        .filter((l) => l.scrollWidth > l.clientWidth + 0.5 || rect(l).height > 18)
+        .map((l) => l.textContent);
+      check(`at ${width} px every lane label sits on one line (${wrapped.join(', ') || 'all do'})`, wrapped.length === 0);
     }
     check(
       `at ${width} px the Audio header and its status line share the column top without colliding with the body caption`,

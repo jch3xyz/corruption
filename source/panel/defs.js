@@ -20,7 +20,7 @@ export const SECTIONS = [
   {
     id: 'video',
     title: 'Video',
-    tip: 'Videos, and the sorting they share with images. Sort is what you see, Feedback is the trail it leaves, Engine is setup and stays folded away. Still images take every sort knob; feedback and the engine’s max videos are video only.',
+    tip: 'Videos, and the sorting they share with images. Sort is what you see, Feedback is the trail it leaves, Engine is setup and fine shape, folded away. Still images take every sort knob and the flow’s shape; feedback, its clear timing and max videos are video only.',
   },
   {
     id: 'audio',
@@ -30,7 +30,10 @@ export const SECTIONS = [
 ];
 
 // Groups inside a section (design review M4/M8, 2026-10-12): effect, effect,
-// engine. A row names its group with `group`; rows without one (the audio
+// engine. Since the handles round (John, 2026-10-12) an effect group holds
+// only its handles — three or four controls named for what they do to the
+// picture or the sound — and whatever shapes rather than steers (the flow's
+// shape, the clear rhythm, the body type) is filed in the engine. A row names its group with `group`; rows without one (the audio
 // master, the text rows) sit directly under the section header, above any
 // group. An `engine` group is folded away behind a disclosure; its open
 // state is panel furniture (storage key `engineOpen`), not a parameter.
@@ -39,26 +42,26 @@ export const GROUPS = [
     id: 'sort',
     section: 'video',
     title: 'sort',
-    tip: 'The visible effect: bright runs of the picture rearranged into ribbons. These knobs shape where and how — and they shape every image too.',
+    tip: 'The visible effect: runs of the picture rearranged into ribbons. How much sorts, how far the ribbons wander, how much they boil and how far they run — and every image takes these too.',
   },
   {
     id: 'feedback',
     section: 'video',
     title: 'feedback',
-    tip: 'The trail: each frame laid over the last, so damage builds, drifts and fades, then wipes clean at slow random moments. Video only.',
+    tip: 'The trail: each frame laid over the last, so damage builds, drifts and fades. Its switch, then how long it lingers, which way it slides, and whether the sort follows motion. Video only.',
   },
   {
     id: 'engine',
     section: 'video',
     title: 'engine',
     collapsible: true,
-    tip: 'Setup rather than look: how hard the sort works, at what detail, on how many videos. Folded away until you open it.',
+    tip: 'Setup and fine shape rather than look: how hard the sort works, at what detail, on how many videos; the shape of the flow (while flow is up); how often the trail wipes clean. Folded away until you open it.',
   },
   {
     id: 'body',
     section: 'audio',
     title: 'body',
-    tip: 'The apparatus: a fixed resonant object every sound passes through and rings. Mix sets how much of the process you hear at all; body amount is the identity dial.',
+    tip: 'The apparatus: a fixed resonant object every sound passes through and rings. Mix sets how much of the process you hear at all; body amount is the identity dial; ring time and drive set how it rings.',
   },
   {
     id: 'smear',
@@ -71,7 +74,7 @@ export const GROUPS = [
     section: 'audio',
     title: 'engine',
     collapsible: true,
-    tip: 'Setup rather than sound: the dry source inside the process, how many sources, how the body is driven, and whether the smear ever wipes itself. Folded away until you open it.',
+    tip: 'Setup rather than sound: what the body is made of, the dry source inside the process, how many sources, how the body is driven, and whether the smear ever wipes itself. Folded away until you open it.',
   },
 ];
 
@@ -105,7 +108,7 @@ export const DEFS = [
     tip: 'Images on/off. Off puts every still picture back as it arrived. Images take their look from the sort knobs in the Video section.',
   },
 
-  // --- Video · sort ---
+  // --- Video · sort: the handles ---
   {
     key: 'threshold',
     label: 'amount',
@@ -130,35 +133,6 @@ export const DEFS = [
     tip: 'How much the ribbons wander. 0 = straight vertical climbs; up = they curl along a slowly changing current. Sorting follows a morphing curl-noise field, and every video and image draws its own. Shapes images too.',
   },
   {
-    key: 'flowMode',
-    label: 'flow mode',
-    type: 'select',
-    options: ['paths', 'facets'],
-    section: 'video',
-    group: 'sort',
-    tip: 'The shape of the current. facets = straight runs pooling at fixed seams; paths = ribbons that round their curves. facets uses 8 fixed directions; paths uses 16 with a boundary that dithers every pass.',
-  },
-  {
-    key: 'flowScale',
-    label: 'flow scale',
-    min: 1,
-    max: 12,
-    step: 0.5,
-    section: 'video',
-    group: 'sort',
-    tip: 'Size of the swirls. Higher = tighter and busier; lower = broad sweeping currents. Counts noise cells across the frame.',
-  },
-  {
-    key: 'flowSpeed',
-    label: 'flow speed',
-    min: 0,
-    max: 0.2,
-    step: 0.005,
-    section: 'video',
-    group: 'sort',
-    tip: 'How fast the current changes. 0 = frozen shapes. The field re-forms in place rather than marching across the frame.',
-  },
-  {
     key: 'temperature',
     label: 'jitter',
     min: 0,
@@ -168,35 +142,35 @@ export const DEFS = [
     group: 'sort',
     tip: 'Random swaps on top of the sort. 0 = clean ribbons; up = grain and shimmer. A fraction of each pass’s decisions is flipped, so ribbons boil at their edges and never settle; dark barriers still hold. Shapes images too.',
   },
+  {
+    key: 'streak',
+    label: 'ribbons',
+    min: 1,
+    max: 256,
+    step: 1,
+    section: 'video',
+    group: 'sort',
+    tip: 'How far the ribbons run: the distance a pixel can travel in one frame. Short = fine grain; long = streaks across the frame. The longest swap distance, rounded down to a power of two. Shapes images too.',
+  },
 
-  // --- Video · feedback ---
+  // --- Video · feedback: the switch, then the handles ---
   {
     key: 'feedbackVideo',
     label: 'feedback',
     type: 'toggle',
     section: 'video',
     group: 'feedback',
-    tip: 'A trail: each frame is laid over the last, so damage builds up, drifts and fades. Off = every frame sorted fresh. The trail wipes to a clean frame at a random moment between clear min s and clear max s.',
-  },
-  {
-    key: 'motionGate',
-    label: 'motion gate',
-    min: 0,
-    max: 1,
-    step: 0.01,
-    section: 'video',
-    group: 'feedback',
-    tip: 'Only moving parts get sorted. 0 = everything; 1 = only what moves. A wet/dry for motion. Pixels trade only where the motion trail clears this, so action smears and stillness heals. Reads the feedback trail.',
+    tip: 'A trail: each frame is laid over the last, so damage builds up, drifts and fades. Off = every frame sorted fresh. The trail wipes to a clean frame at slow random moments, timed under engine.',
   },
   {
     key: 'decay',
-    label: 'decay',
+    label: 'trail',
     min: 0.8,
     max: 0.999,
     step: 0.001,
     section: 'video',
     group: 'feedback',
-    tip: 'How long the trail lingers. Up = longer. How much of the trail each frame keeps.',
+    tip: 'How long the trail lingers. Up = longer, so damage piles up before it fades. How much of the trail each frame keeps.',
   },
   {
     key: 'driftX',
@@ -221,27 +195,17 @@ export const DEFS = [
     tip: 'The trail slides up or down. Positive = up; the resting state climbs gently. Fractions of the frame per frame, picture only — it never moves the sound.',
   },
   {
-    key: 'resetMinS',
-    label: 'clear min s',
-    min: 1,
-    max: 30,
-    step: 1,
+    key: 'motionGate',
+    label: 'follow motion',
+    min: 0,
+    max: 1,
+    step: 0.01,
     section: 'video',
     group: 'feedback',
-    tip: 'Shortest wait, in seconds, before the trail wipes clean. It clears at a random moment between clear min s and clear max s.',
-  },
-  {
-    key: 'resetMaxS',
-    label: 'clear max s',
-    min: 2,
-    max: 60,
-    step: 1,
-    section: 'video',
-    group: 'feedback',
-    tip: 'Longest wait, in seconds, before the trail wipes clean. Slow by default: damage builds for half a minute or more before it clears.',
+    tip: 'How closely the sort follows motion. 0 = the whole picture sorts; 1 = only what moves. Pixels trade only where the motion trail clears this, so action smears and stillness heals. Reads the feedback trail.',
   },
 
-  // --- Video · engine ---
+  // --- Video · engine: setup, the shape of the flow, the clear rhythm ---
   {
     key: 'passes',
     label: 'sort passes',
@@ -251,16 +215,6 @@ export const DEFS = [
     section: 'video',
     group: 'engine',
     tip: 'How settled the ribbons get each frame. Fewer = rough and half-formed; more = fully sorted, at more cost to the graphics card. 18 passes complete one full cycle; 64 run about three and a half. Shapes images too.',
-  },
-  {
-    key: 'streak',
-    label: 'streak',
-    min: 1,
-    max: 256,
-    step: 1,
-    section: 'video',
-    group: 'engine',
-    tip: 'Ribbon length: how far a pixel can travel in one frame. Short = fine grain; long = streaks across the frame. The longest swap distance, rounded down to a power of two. Shapes images too.',
   },
   {
     key: 'maxRes',
@@ -281,6 +235,55 @@ export const DEFS = [
     section: 'video',
     group: 'engine',
     tip: 'How many videos bend at once, biggest on screen first; the rest play untouched. Paused videos count, and each gets one sorted still.',
+  },
+  {
+    key: 'flowMode',
+    label: 'flow mode',
+    type: 'select',
+    options: ['paths', 'facets'],
+    section: 'video',
+    group: 'engine',
+    tip: 'The shape of the current. facets = straight runs pooling at fixed seams; paths = ribbons that round their curves. facets uses 8 fixed directions; paths uses 16 with a boundary that dithers every pass.',
+  },
+  {
+    key: 'flowScale',
+    label: 'flow scale',
+    min: 1,
+    max: 12,
+    step: 0.5,
+    section: 'video',
+    group: 'engine',
+    tip: 'Size of the swirls. Higher = tighter and busier; lower = broad sweeping currents. Counts noise cells across the frame.',
+  },
+  {
+    key: 'flowSpeed',
+    label: 'flow speed',
+    min: 0,
+    max: 0.2,
+    step: 0.005,
+    section: 'video',
+    group: 'engine',
+    tip: 'How fast the current changes. 0 = frozen shapes. The field re-forms in place rather than marching across the frame.',
+  },
+  {
+    key: 'resetMinS',
+    label: 'clear min s',
+    min: 1,
+    max: 30,
+    step: 1,
+    section: 'video',
+    group: 'engine',
+    tip: 'Shortest wait, in seconds, before the trail wipes clean. It clears at a random moment between clear min s and clear max s.',
+  },
+  {
+    key: 'resetMaxS',
+    label: 'clear max s',
+    min: 2,
+    max: 60,
+    step: 1,
+    section: 'video',
+    group: 'engine',
+    tip: 'Longest wait, in seconds, before the trail wipes clean. Slow by default: damage builds for half a minute or more before it clears.',
   },
 
   {
@@ -316,15 +319,6 @@ export const DEFS = [
     section: 'audio',
     group: 'body',
     tip: 'How much of the resonant body you hear against the source. 0 = source only, 2 = all body. The identity dial: up for more of the fixed voice, down for more of the video.',
-  },
-  {
-    key: 'audioBody',
-    label: 'body type',
-    type: 'select',
-    options: ['modal', 'comb'],
-    section: 'audio',
-    group: 'body',
-    tip: 'What the sound rings through. modal = struck metal; comb = tube, pipe or spring. modal is 48 slightly stretched partials; comb is three exactly harmonic delay loops at about a tenth of the cost.',
   },
   {
     key: 'audioSustain',
@@ -364,11 +358,11 @@ export const DEFS = [
     step: 0.001,
     section: 'audio',
     group: 'smear',
-    tip: 'How long the wash hangs on. Up = longer — tens of seconds at the top. Tail length only, over the same range as the picture’s decay, so the two feel alike.',
+    tip: 'How long the wash hangs on. Up = longer — tens of seconds at the top. Tail length only, over the same range as the picture’s trail, so the two feel alike.',
   },
   {
     key: 'audioFbReturn',
-    label: 'return',
+    label: 'level',
     min: 0,
     max: 1,
     step: 0.01,
@@ -387,7 +381,16 @@ export const DEFS = [
     tip: 'Tape warble on the echoes. 0 = a steady wash, the resting state. Depth of the delay-time wobble; no picture knob ever moves it.',
   },
 
-  // --- Audio · engine ---
+  // --- Audio · engine: what the body is, and setup ---
+  {
+    key: 'audioBody',
+    label: 'body type',
+    type: 'select',
+    options: ['modal', 'comb'],
+    section: 'audio',
+    group: 'engine',
+    tip: 'What the sound rings through. modal = struck metal; comb = tube, pipe or spring. modal is 48 slightly stretched partials; comb is three exactly harmonic delay loops at about a tenth of the cost.',
+  },
   {
     key: 'audioDirect',
     label: 'dry',

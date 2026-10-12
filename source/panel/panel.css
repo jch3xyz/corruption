@@ -706,11 +706,13 @@ body:not(.midi-device) .midi { display: none; }
 :root[data-layout='mixer'] .row select { padding: 2px 4px; font-size: 12px; }
 
 /* Narrower cells than the column panel: the label column is the widest
-   lane label at this size ("clear fade s"), and the value field holds the
-   widest value ("-0.0025", seven characters). The slider takes whatever
-   the column's spread adds. */
-:root[data-layout='mixer'] .row { grid-template-columns: 88px 1fr 58px 24px; gap: 6px; font-size: 12px; }
-:root[data-layout='mixer'] body:not(.midi-device) .row { grid-template-columns: 88px 1fr 58px; }
+   lane label at this size ("follow motion", thirteen characters, since the
+   handles round: about 96 px of SF Mono, so 98 with a hair to spare and
+   no wrapping), and the value field holds the widest value ("-0.0025",
+   seven characters). The slider takes whatever the column's spread adds. */
+:root[data-layout='mixer'] .row { grid-template-columns: 98px 1fr 58px 24px; gap: 6px; font-size: 12px; }
+:root[data-layout='mixer'] body:not(.midi-device) .row { grid-template-columns: 98px 1fr 58px; }
+:root[data-layout='mixer'] #controls .row > label { white-space: nowrap; }
 :root[data-layout='mixer'] .row input.value.num { font-size: 12px; padding: 2px 2px; }
 
 /* A lane column at its narrowest (about 1280 px wide, the cluster taking
