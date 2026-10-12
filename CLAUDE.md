@@ -62,6 +62,11 @@ Quick facts:
 - How both pipelines actually work: [documentation/how-it-works.md](documentation/how-it-works.md).
   Per-knob documentation: [documentation/parameters.md](documentation/parameters.md).
   Site quirks: [documentation/site-notes.md](documentation/site-notes.md).
+- **Release form is the browser extension** (John, 2026-10-12; options
+  logged in build-plan.md — don't re-derive them). **Current stage is design
+  iteration of the panel, and the yardstick is usability per Nielsen's ten
+  heuristics** (John's copy: `~/Reference/Usability Heuristics/`). Read it
+  before changing the interface; state the heuristic trade-offs you make.
 - Discipline: one commit per verified iteration; run the relevant harness
   before committing; never break the page — every failure path must leave
   the original media untouched.

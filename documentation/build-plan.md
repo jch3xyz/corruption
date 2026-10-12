@@ -108,6 +108,41 @@ balance are the open item below. The previous sound is exactly reachable at
   (any audio work will need it to skip the first-gesture wait), `--start-fullscreen` vs
   `--kiosk` decision (popup panel conflicts with `--kiosk`), 72 h + 7-day
   soak, `kiosk-setup.md` written well enough to build the cold spare from.
+- **Packaging — decided (John, 2026-10-12): the standard browser extension
+  stays the release form.** The options were weighed once, in chat, and had
+  never been written down; this is the record so they aren't re-derived.
+  What any host has to supply: the CORS rewrite (`rules/cors-media.json`
+  keeps canvases and audio taps untainted — leave the extension model and
+  this becomes a proxy, i.e. the rejected Proposal A), WebGL2 with float
+  colour buffers, and AudioWorklet on cross-origin media.
+
+  | Form | What it is | Mobile | Cost |
+  |---|---|---|---|
+  | Chrome extension (current) | Web Store or sideload; the kiosk form | no | built |
+  | Firefox port | same MV3 code, manifest tweaks | Android (add-ons) | days |
+  | Safari web extension | Xcode converter wraps `source/` in a Mac/iOS app | iPhone/iPad | days + review |
+  | Electron shell | own Chromium, extension loaded; DNR unsupported → header hook | no | 1–2 weeks |
+  | Tauri / WKWebView app | system webview, injected scripts, own proxy for CORS | iOS/Android | longest; Phase 6 redone |
+
+  The bounded-app case was interface control; John chose to keep the
+  extension and put that effort into the extension's own UI instead. If
+  mobile comes up again, the cheapest probe is the Safari conversion (same
+  source; the open question is the media tap under Safari). Nothing here
+  reopens unprompted.
+- **Next stage — design iteration (John, 2026-10-12).** The work after
+  packaging is the interface. **Primary goal: usability**, as defined by
+  Nielsen's ten heuristics — John's working copy is
+  `~/Reference/Usability Heuristics/nielsen-usability-heuristics.md` (also
+  in Dropbox at the same path), read it before touching the panel. Its
+  framing for this project: the heuristics are lenses, not a checklist;
+  they conflict (status vs minimalism, control vs error prevention,
+  flexibility vs consistency) and the trade-offs are made on purpose and
+  stated; severity outranks count. Hold each panel change against the
+  ten-question pass at the end of that document. Expect the UI work to
+  feed back into the effects themselves — refinements and possibly new
+  layers will surface from designing the controls; log those as they
+  appear rather than folding them silently into panel commits. The
+  CSS-scramble toggle above is the first candidate in that queue.
 
 For a full technical description of both pipelines — the GL sort/composite
 path and the resonant-body audio path, with the reasoning behind each —
