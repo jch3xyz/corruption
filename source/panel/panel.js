@@ -5,8 +5,8 @@
 //
 // Five storage keys live OUTSIDE params.js DEFAULTS on purpose, so the
 // content scripts (which filter on `key in DEFAULTS`) never see them:
-// `midiMap`, `presets` (slots A/B/C), `presetBase` (the last-loaded preset,
-// which a row double-click returns to), `tooltips`, and `engineOpen`
+// `midiMap`, `presets` (slots A/B/C), `presetBase` (the last-loaded or
+// last-saved preset, which a row double-click returns to), `tooltips`, and `engineOpen`
 // ({video, audio}: whether each section's engine group is unfolded). A legacy
 // `userDefaults` (the old "set defaults" snapshot) migrates into slot A on
 // boot and is removed.
@@ -73,6 +73,12 @@ const AUDIO_FB_CLEAR_ONLY = ['audioFbClearS', 'audioFbClearMinS', 'audioFbClearM
 const AUDIO_COMB_ONLY = ['audioCombDamp'];
 const AUDIO_TRIGGERS = ['audioEnabled', 'audioFeedback', 'audioFbClear', 'audioBody'];
 
+// The sort knobs shape video and images alike; with both mediums off they
+// have nothing to act on. The feedback group is video only (round 3, item 7).
+const SORT_KEYS = ['threshold', 'flowAmount', 'flowMode', 'flowScale', 'flowSpeed', 'temperature'];
+const FEEDBACK_KEYS = ['feedbackVideo', ...FEEDBACK_SHARED];
+const MEDIUM_TRIGGERS = ['video', 'images', 'feedbackVideo', 'flowAmount'];
+
 // The text mode's reach only means anything while the mode is on.
 const TEXT_ONLY = ['textMin'];
 
@@ -83,6 +89,8 @@ const FLOW_ONLY = ['flowMode', 'flowScale', 'flowSpeed'];
 // switch that would bring it back, named by its panel label. Derived from
 // the gating above — nothing new is gated here.
 const GATE = {
+  video: 'needs video',
+  medium: 'needs video or images',
   feedback: 'needs feedback',
   flow: 'needs flow',
   text: 'needs text',
@@ -262,6 +270,7 @@ function buildSection(section) {
   head.tabIndex = -1;
   head.dataset.section = section.id;
   head.dataset.tip = section.tip;
+  head.addEventListener('animationend', () => head.classList.remove('flash'));
   const title = document.createElement('h2');
   title.textContent = section.title;
   head.appendChild(title);
@@ -304,6 +313,9 @@ function buildGroup(group, defs) {
     head.className = 'group-head';
     head.textContent = group.title;
   }
+  head.id = `group-${group.section}-${group.id}`; // jump target (images → sort)
+  if (!group.collapsible) head.tabIndex = -1; // focusable by the jump, not by Tab
+  head.addEventListener('animationend', () => head.classList.remove('flash'));
   head.dataset.tip = group.tip;
 
   const rows = document.createElement('div');
@@ -357,11 +369,19 @@ function buildTooltipRow() {
 }
 
 // --- The A/B (M1): one large button bound to `enabled` ---
-// Click latches. Press and hold (> HOLD_MS) bypasses momentarily: the piece
-// flips while held and comes back on release, so a stranger can hold to see
-// the original and let go to return. Keyboard Space/Enter latch (they arrive
-// as a click with detail 0; mouse clicks are handled by the pointer path).
+// Round 3 (all three reviewers): a press shorter than LATCH_MS latches, so a
+// slow, deliberate click never ends where it started. Only a press held past
+// LATCH_MS is a momentary compare: the face says "holding", and release
+// returns to exactly where the press began (as do pointer-leave and cancel).
+// The flip itself shows under the finger at HOLD_MS, so a compare does not
+// wait the full LATCH_MS to be seen; a release between the two keeps it, and
+// that is the latch. Keyboard Space/Enter latch (they arrive as a click with
+// detail 0; mouse clicks are handled by the pointer path).
 const HOLD_MS = 250;
+const LATCH_MS = 600;
+const NUDGE_MS = 1500;
+// Set by buildAB: a short message on the A/B's face (round 3, item 5d).
+let nudgeAB = () => {};
 
 function buildAB(def) {
   const wrap = document.createElement('div');
@@ -372,7 +392,7 @@ function buildAB(def) {
   ab.id = 'ab';
   ab.dataset.key = def.key;
   ab.dataset.tip = def.tip;
-  ab.dataset.hint = 'Click: latch. Hold: compare, release to come back.';
+  ab.dataset.hint = 'Click: latch. Hold past half a second: compare, release to come back.';
   const state = document.createElement('span');
   state.className = 'ab-state';
   const say = document.createElement('span');
@@ -388,55 +408,89 @@ function buildAB(def) {
   rowEls[def.key] = ab;
   learnEls[def.key] = learn;
 
-  let held = false;
-  onRender(def.key, (on) => {
+  let held = false; // past LATCH_MS: the "holding" face
+  let nudge = null; // a transient line on the face
+  let nudgeTimer = 0;
+  const paint = (on) => {
     ab.classList.toggle('on', on);
     ab.classList.toggle('held', held);
+    ab.classList.toggle('nudge', !!nudge && !held);
     ab.setAttribute('aria-pressed', String(on));
     state.textContent = on ? 'ON' : 'OFF';
     say.textContent = held
       ? on
         ? '— holding: bending · let go to return'
         : '— holding: page untouched · let go to return'
-      : on
-        ? '— bending the page'
-        : '— page untouched';
+      : nudge
+        ? `— ${nudge}`
+        : on
+          ? '— bending the page'
+          : '— page untouched';
     globals.classList.toggle('master-off', !on);
-  });
+  };
+  onRender(def.key, paint);
+  nudgeAB = (text) => {
+    clearTimeout(nudgeTimer);
+    nudge = text;
+    paint(inputs[def.key].checked);
+    nudgeTimer = setTimeout(() => {
+      nudge = null;
+      paint(inputs[def.key].checked);
+    }, NUDGE_MS);
+  };
 
   const setEnabled = (v) => {
     queueWrite(def.key, v);
     setUI(def.key, v);
   };
 
-  let timer = 0;
+  let flipTimer = 0;
+  let holdTimer = 0;
   let pointer = null;
-  let heldFrom = null;
+  let downAt = 0;
+  let from = null; // the state the press began in
+  let flipped = false;
+  const clearTimers = () => {
+    clearTimeout(flipTimer);
+    clearTimeout(holdTimer);
+    flipTimer = holdTimer = 0;
+  };
   ab.addEventListener('pointerdown', (e) => {
     if (e.button !== 0 || pointer !== null) return;
     pointer = e.pointerId;
-    timer = setTimeout(() => {
-      timer = 0;
-      held = true;
-      heldFrom = inputs[def.key].checked;
-      setEnabled(!heldFrom);
+    downAt = performance.now();
+    from = inputs[def.key].checked;
+    flipped = false;
+    flipTimer = setTimeout(() => {
+      flipTimer = 0;
+      flipped = true;
+      setEnabled(!from);
     }, HOLD_MS);
+    holdTimer = setTimeout(() => {
+      holdTimer = 0;
+      held = true;
+      paint(inputs[def.key].checked);
+    }, LATCH_MS);
   });
-  const release = (latch) => (e) => {
+  ab.addEventListener('pointerup', (e) => {
     if (pointer === null || e.pointerId !== pointer) return;
     pointer = null;
-    if (held) {
-      held = false;
-      setEnabled(heldFrom); // back to exactly where the hold began
-    } else if (timer) {
-      clearTimeout(timer);
-      timer = 0;
-      if (latch) setEnabled(!inputs[def.key].checked);
-    }
+    clearTimers();
+    const wasHeld = held || performance.now() - downAt >= LATCH_MS;
+    held = false;
+    if (wasHeld) setEnabled(from); // a compare: back to exactly where it began
+    else setEnabled(!from); // a press, however slow: latch
+  });
+  const abandon = (e) => {
+    if (pointer === null || e.pointerId !== pointer) return;
+    pointer = null;
+    clearTimers();
+    const wasFlipped = flipped || held;
+    held = false;
+    if (wasFlipped) setEnabled(from); // dragged off or cancelled: nothing changes
   };
-  ab.addEventListener('pointerup', release(true));
-  ab.addEventListener('pointercancel', release(false));
-  ab.addEventListener('pointerleave', release(false));
+  ab.addEventListener('pointercancel', abandon);
+  ab.addEventListener('pointerleave', abandon);
   ab.addEventListener('click', (e) => {
     if (e.detail === 0) setEnabled(!inputs[def.key].checked); // keyboard
   });
@@ -450,9 +504,11 @@ function buildAB(def) {
 // The pill toggles its key; the caption above it jumps to the section that
 // shapes that medium. text and audio drive the existing section masters —
 // their rows stay canonical, the chips are the fast path.
+// `target` overrides the landing: images land on the SORT caption (the only
+// knobs that shape them), with `say` in the help strip (round 3, item 6).
 const CHIPS = [
   { key: 'video', label: 'video', section: 'video' },
-  { key: 'images', label: 'images', section: 'video' },
+  { key: 'images', label: 'images', section: 'video', target: 'group-video-sort', say: 'images are shaped by SORT' },
   { key: 'textScramble', label: 'text', section: 'text' },
   { key: 'audioEnabled', label: 'audio', section: 'audio' },
 ];
@@ -470,11 +526,16 @@ function buildChips() {
     name.className = 'chip-name';
     name.textContent = `${chip.label} ↓`;
     const sectionTitle = SECTIONS.find((s) => s.id === chip.section)?.title ?? chip.section;
-    name.dataset.tip = `Jump to the ${sectionTitle} section, where ${chip.label} is shaped.`;
+    name.dataset.tip = chip.target
+      ? `Jump to the sort knobs in the ${sectionTitle} section: they are what shape ${chip.label}.`
+      : `Jump to the ${sectionTitle} section, where ${chip.label} is shaped.`;
     name.addEventListener('click', () => {
-      const head = document.getElementById(`section-${chip.section}`);
-      head?.scrollIntoView({ block: 'start', behavior: 'smooth' });
-      head?.focus({ preventScroll: true });
+      const head = document.getElementById(chip.target ?? `section-${chip.section}`);
+      if (!head) return;
+      head.scrollIntoView({ block: 'start', behavior: 'smooth' });
+      head.focus({ preventScroll: true });
+      whenLanded(() => flashEl(head));
+      if (chip.say) say(chip.say);
     });
 
     const pill = document.createElement('button');
@@ -485,6 +546,8 @@ function buildChips() {
       const v = !inputs[chip.key].checked;
       queueWrite(chip.key, v);
       setUI(chip.key, v);
+      // The switch works while the piece is off, but shows nothing: say so.
+      if (!inputs.enabled.checked) say('switch ON to see it');
     });
 
     // video and images have no section row: the chip is their only face.
@@ -502,6 +565,28 @@ function buildChips() {
     strip.appendChild(cell);
   }
   return strip;
+}
+
+// A jump has landed when the scroller stops (scrollend), or at once if
+// there was nothing to scroll; the timeout covers both.
+function whenLanded(fn) {
+  const scroller = document.getElementById('scroll');
+  let done = false;
+  const go = () => {
+    if (done) return;
+    done = true;
+    scroller.removeEventListener('scrollend', go);
+    fn();
+  };
+  scroller.addEventListener('scrollend', go);
+  setTimeout(go, 900);
+}
+
+// The landed header acknowledges the jump with the row flash.
+function flashEl(el) {
+  el.classList.remove('flash');
+  void el.offsetWidth;
+  el.classList.add('flash');
 }
 
 {
@@ -613,8 +698,7 @@ function setUI(key, v) {
 }
 
 function syncFor(key) {
-  if (key === 'feedbackVideo') syncFeedbackUI();
-  else if (key === 'flowAmount') syncFlowUI();
+  if (MEDIUM_TRIGGERS.includes(key)) syncVideoUI();
   else if (key === 'textScramble') syncTextUI(inputs.textScramble.checked);
   else if (AUDIO_TRIGGERS.includes(key)) syncAudioUI();
 }
@@ -629,14 +713,19 @@ function setInert(key, gate) {
   gateEls[key].textContent = gate || '';
 }
 
-function syncFeedbackUI() {
-  const video = inputs.feedbackVideo.checked;
-  for (const key of FEEDBACK_SHARED) setInert(key, video ? null : GATE.feedback);
-}
-
-function syncFlowUI() {
-  const on = Number(inputs.flowAmount.value) > 0;
-  for (const key of FLOW_ONLY) setInert(key, on ? null : GATE.flow);
+// The Video section's gating, outermost switch first: the mediums (the
+// `video`/`images` chips), then feedback, then flow.
+function syncVideoUI() {
+  const video = inputs.video.checked;
+  const anyMedium = video || inputs.images.checked;
+  const fbOn = inputs.feedbackVideo.checked;
+  const flowOn = Number(inputs.flowAmount.value) > 0;
+  for (const key of SORT_KEYS) {
+    setInert(key, !anyMedium ? GATE.medium : FLOW_ONLY.includes(key) && !flowOn ? GATE.flow : null);
+  }
+  for (const key of FEEDBACK_KEYS) {
+    setInert(key, !video ? GATE.video : key !== 'feedbackVideo' && !fbOn ? GATE.feedback : null);
+  }
 }
 
 function syncTextUI(on) {
@@ -682,16 +771,18 @@ function queueWrite(key, value) {
   }
 }
 
-// --- Presets (M2): original, slots A·B·C, save mode, undo ---
-// "original" is the compiled DEFAULTS and nothing can redefine it. The slots
-// are snapshots; clicking one LOADS it. Saving is a visible, one-shot mode
-// (save… then a slot), so the room slip — meaning to load, pressing save —
-// cannot happen. Every load and every restore offers undo for ten seconds.
-// The last-loaded preset is the BASE: a row double-click returns there.
+// --- Presets (M2): default, slots A·B·C, save mode, undo ---
+// "default" is the compiled DEFAULTS and nothing can redefine it (it was
+// labelled "original" until round 3; a stored presetBase of "original" still
+// reads as default). The slots are snapshots; clicking one LOADS it. Saving
+// is a visible, one-shot mode (save… then a slot), so the room slip —
+// meaning to load, pressing save — cannot happen. Every load, every restore
+// and every save over a filled slot offers undo for ten seconds. The base —
+// the last-loaded or last-saved preset — is where a row double-click returns.
 
 const UNDO_MS = 10000;
 const presetRow = document.getElementById('presets');
-const btnOriginal = document.getElementById('preset-original');
+const btnDefault = document.getElementById('preset-default');
 const btnSave = document.getElementById('preset-save');
 const btnCancel = document.getElementById('preset-cancel');
 const btnUndo = document.getElementById('preset-undo');
@@ -700,7 +791,10 @@ const slotEls = Object.fromEntries(
 );
 
 const emptyPresets = () => Object.fromEntries(PRESET_SLOTS.map((s) => [s, null]));
-const isBase = (name) => name === 'original' || PRESET_SLOTS.includes(name);
+const BASE_DEFAULT = 'default';
+// A stored base from before the rename ("original") is the same thing.
+const readBase = (name) =>
+  PRESET_SLOTS.includes(name) ? name : BASE_DEFAULT;
 
 function normalisePresets(p) {
   const out = emptyPresets();
@@ -713,16 +807,18 @@ function normalisePresets(p) {
 }
 
 let presets = emptyPresets();
-let presetBase = 'original';
+let presetBase = BASE_DEFAULT;
 let saveMode = false;
+// { kind: 'values', values, base } after a load or restore;
+// { kind: 'slot', slot, prev, base } after saving over a filled slot.
 let undoSnap = null;
 let undoTimer = 0;
 const flashing = new Map(); // button → transient label
 
 {
-  const stored = await store.get({ presets: null, presetBase: 'original', userDefaults: null });
+  const stored = await store.get({ presets: null, presetBase: BASE_DEFAULT, userDefaults: null });
   presets = normalisePresets(stored.presets);
-  presetBase = isBase(stored.presetBase) ? stored.presetBase : 'original';
+  presetBase = readBase(stored.presetBase);
   // Migration: the old single "set defaults" snapshot becomes slot A and the
   // base, so John's room settings are still what a double-click returns to.
   const legacy = stored.userDefaults;
@@ -740,7 +836,7 @@ const flashing = new Map(); // button → transient label
 
 const slotFilled = (s) => !!presets[s];
 const baseValues = () =>
-  presetBase !== 'original' && slotFilled(presetBase) ? presets[presetBase] : null;
+  presetBase !== BASE_DEFAULT && slotFilled(presetBase) ? presets[presetBase] : null;
 
 function currentValues() {
   const out = {};
@@ -801,25 +897,26 @@ function flash(button, text) {
 
 const BASE_HINT = 'Marked as the base: double-clicking any row puts it back to this preset’s value.';
 
+const DEFAULT_HINT = 'It can never be overwritten, so this way back always exists. Leaves the on/off switch where it is.';
+
 function renderPresets() {
   presetRow.classList.toggle('saving', saveMode);
-  btnOriginal.textContent = flashing.get(btnOriginal) ?? 'original';
-  btnOriginal.classList.toggle('base', presetBase === 'original');
-  btnOriginal.disabled = saveMode;
-  btnOriginal.dataset.hint =
-    presetBase === 'original' ? `${BASE_HINT} Undo appears for ten seconds after a restore.` : 'Undo appears for ten seconds afterwards.';
+  btnDefault.textContent = flashing.get(btnDefault) ?? 'default';
+  btnDefault.classList.toggle('base', presetBase === BASE_DEFAULT);
+  btnDefault.disabled = saveMode;
+  btnDefault.dataset.hint = presetBase === BASE_DEFAULT ? `${BASE_HINT} ${DEFAULT_HINT}` : DEFAULT_HINT;
 
   for (const s of PRESET_SLOTS) {
     const el = slotEls[s];
     const filled = slotFilled(s);
-    el.textContent = flashing.get(el) ?? (saveMode ? `save → ${s}` : s);
+    el.textContent = flashing.get(el) ?? (saveMode ? (filled ? `replace ${s}` : `save → ${s}`) : s);
     el.classList.toggle('empty', !filled && !saveMode);
     el.classList.toggle('base', presetBase === s && filled);
     if (saveMode) {
       el.dataset.tip = filled
-        ? `Save the current settings into ${s}, replacing what is there.`
+        ? `Replace what ${s} holds with the current settings. Undo puts the old ${s} back for ten seconds.`
         : `Save the current settings into the empty slot ${s}.`;
-      el.dataset.hint = 'Escape or a click elsewhere cancels.';
+      el.dataset.hint = 'Saving marks the slot as the base. Escape or a click elsewhere cancels.';
     } else if (filled) {
       el.dataset.tip = `Load preset ${s}: every setting jumps to what was saved here (the on/off switch stays put).`;
       el.dataset.hint =
@@ -829,14 +926,25 @@ function renderPresets() {
       el.dataset.hint = 'Nothing happens when an empty slot is clicked.';
     }
   }
+  btnSave.textContent = flashing.get(btnSave) ?? 'save…';
   btnSave.hidden = saveMode;
   btnCancel.hidden = !saveMode;
   btnUndo.hidden = !undoSnap || saveMode;
+  btnUndo.dataset.tip =
+    undoSnap?.kind === 'slot'
+      ? `Put back what ${undoSnap.slot} held before you saved over it — for ten seconds after the save.`
+      : 'Put back the settings you had just before that load — for ten seconds after it.';
 }
 
 function setSaveMode(on) {
   saveMode = on;
   renderPresets();
+}
+
+// Escape or a click elsewhere: leave save mode, and say nothing was saved.
+function cancelSave() {
+  setSaveMode(false);
+  flash(btnSave, 'cancelled');
 }
 
 function offerUndo(snap) {
@@ -855,30 +963,37 @@ function setBase(name) {
 }
 
 function loadPreset(name) {
-  const button = name === 'original' ? btnOriginal : slotEls[name];
-  if (name !== 'original' && !slotFilled(name)) {
+  const isDefault = name === BASE_DEFAULT;
+  const button = isDefault ? btnDefault : slotEls[name];
+  if (!isDefault && !slotFilled(name)) {
     flash(button, 'empty');
     return;
   }
-  const snap = { values: presetValues(), base: presetBase };
-  const source = name === 'original' ? null : presets[name];
+  const snap = { kind: 'values', values: presetValues(), base: presetBase };
+  const source = isDefault ? null : presets[name];
   const values = {};
   for (const def of DEFS) values[def.key] = defaultFor(def.key, source);
   applyValues(values);
   setBase(name);
   offerUndo(snap);
-  flash(button, name === 'original' ? 'restored' : 'loaded');
+  flash(button, isDefault ? 'restored' : 'loaded');
+  // The load landed, but with the piece off there is nothing to see yet.
+  if (!inputs.enabled.checked) nudgeAB('switch ON to see it');
 }
 
 function saveTo(slot) {
+  const prev = presets[slot];
+  const base = presetBase;
   presets = { ...presets, [slot]: presetValues() };
   store.set({ presets });
+  setBase(slot); // what you just saved is what a double-click returns to
   setSaveMode(false);
+  if (prev) offerUndo({ kind: 'slot', slot, prev, base });
   flash(slotEls[slot], `saved to ${slot}`);
 }
 
-btnOriginal.addEventListener('click', () => {
-  if (!saveMode) loadPreset('original');
+btnDefault.addEventListener('click', () => {
+  if (!saveMode) loadPreset(BASE_DEFAULT);
 });
 for (const [s, el] of Object.entries(slotEls)) {
   el.addEventListener('click', () => (saveMode ? saveTo(s) : loadPreset(s)));
@@ -890,17 +1005,23 @@ btnUndo.addEventListener('click', () => {
   const snap = undoSnap;
   undoSnap = null;
   clearTimeout(undoTimer);
-  applyValues(snap.values);
+  if (snap.kind === 'slot') {
+    // Undo a save-over: the slot gets its old contents back; the knobs stay.
+    presets = { ...presets, [snap.slot]: snap.prev };
+    store.set({ presets });
+  } else {
+    applyValues(snap.values);
+  }
   setBase(snap.base);
   renderPresets();
 });
 document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape' && saveMode) setSaveMode(false);
+  if (e.key === 'Escape' && saveMode) cancelSave();
 });
 document.addEventListener(
   'pointerdown',
   (e) => {
-    if (saveMode && !presetRow.contains(e.target)) setSaveMode(false);
+    if (saveMode && !presetRow.contains(e.target)) cancelSave();
   },
   true
 );
@@ -931,60 +1052,100 @@ document.addEventListener(
 })();
 
 // --- Tooltips (John, 2026-08-20: everything explains itself on hover) ---
-// Since 2026-10-12 (finding 6) the copy lives in a strip pinned to the
-// panel's bottom edge — a footer outside the scrolling area, so it can never
-// land on top of a row. At rest it carries the two gestures nothing else
-// shows; on hover, the control's tip, its gesture hint, and its storage key.
+// The copy lives in a strip pinned to the panel's bottom edge (finding 6).
+// Round 3: at rest it is one line — the legend for the two gestures nothing
+// else shows — in room the column leaves free, so it covers no row. On hover
+// it grows (to TIP_MAX) upward over the scroller's bottom as an overlay, so
+// no row moves; the scroller's own geometry never changes. A one-line
+// message (`say`) can take the strip for a moment; hover waits behind it.
 
 const tipEl = document.getElementById('tooltip');
 const tipToggle = document.getElementById('tooltips');
 const tipToggleValue = document.getElementById('tooltips-value');
-const TIP_IDLE = 'Hover anything to read what it does. Double-click a row’s name to put it back.';
+const TIP_IDLE = 'Hover to read a knob · double-click a name to reset it';
+const TIP_MAX = 136;
+const SAY_MS = 1800;
 let tooltipsOn = (await store.get({ tooltips: true })).tooltips !== false;
 let tipTimer = 0;
-let tipHost = null;
+let tipHost = null; // under the pointer
+let tipShown = null; // whose tip the strip is showing (after the delay)
+let tipSay = null; // a transient one-line message
+let sayTimer = 0;
 
-function idleTip() {
-  tipEl.textContent = '';
-  tipEl.classList.add('idle');
+function tipLine(text) {
   const p = document.createElement('div');
-  p.textContent = TIP_IDLE;
-  tipEl.appendChild(p);
+  p.textContent = text;
+  return p;
+}
+
+// Grow or shrink to fit the content, between one line and TIP_MAX. The
+// height is set in px so the change can transition.
+function sizeStrip() {
+  const from = tipEl.offsetHeight;
+  tipEl.style.height = 'auto';
+  const want = Math.min(TIP_MAX, tipEl.offsetHeight);
+  tipEl.style.height = `${from}px`;
+  void tipEl.offsetHeight;
+  tipEl.style.height = `${want}px`;
+}
+
+function renderTip() {
+  tipEl.hidden = !tooltipsOn;
+  if (!tooltipsOn) return;
+  tipEl.textContent = '';
+  tipEl.classList.toggle('say', !!tipSay);
+  tipEl.classList.toggle('idle', !tipSay && !tipShown);
+  tipEl.classList.toggle('open', !tipSay && !!tipShown);
+  if (tipSay) {
+    tipEl.appendChild(tipLine(tipSay));
+  } else if (tipShown) {
+    tipEl.appendChild(tipLine(tipShown.dataset.tip));
+    if (tipShown.dataset.hint) {
+      const hint = document.createElement('p');
+      hint.className = 'hint';
+      hint.textContent = tipShown.dataset.hint;
+      tipEl.appendChild(hint);
+    }
+    if (tipShown.dataset.param) {
+      const key = document.createElement('p');
+      key.className = 'key';
+      key.textContent = `key: ${tipShown.dataset.param}`;
+      tipEl.appendChild(key);
+    }
+  } else {
+    tipEl.appendChild(tipLine(TIP_IDLE));
+  }
+  sizeStrip();
 }
 
 function hideTip() {
   clearTimeout(tipTimer);
   tipTimer = 0;
-  if (tooltipsOn) idleTip();
+  if (!tipShown) return;
+  tipShown = null;
+  renderTip();
 }
 
-function showTip(host) {
-  tipEl.textContent = '';
-  tipEl.classList.remove('idle');
-  const body = document.createElement('div');
-  body.textContent = host.dataset.tip;
-  tipEl.appendChild(body);
-  if (host.dataset.hint) {
-    const hint = document.createElement('p');
-    hint.className = 'hint';
-    hint.textContent = host.dataset.hint;
-    tipEl.appendChild(hint);
-  }
-  if (host.dataset.param) {
-    const key = document.createElement('p');
-    key.className = 'key';
-    key.textContent = `key: ${host.dataset.param}`;
-    tipEl.appendChild(key);
-  }
+// A short line in the strip: what a click did that the panel cannot show.
+// With tooltips off the strip is gone, so the message goes nowhere.
+function say(text) {
+  clearTimeout(sayTimer);
+  tipSay = text;
+  renderTip();
+  sayTimer = setTimeout(() => {
+    tipSay = null;
+    renderTip();
+  }, SAY_MS);
 }
 
 function setTooltips(on) {
   tooltipsOn = on;
   tipToggle.checked = on;
   tipToggleValue.textContent = on ? 'on' : 'off';
-  tipEl.hidden = !on; // off silences the strip entirely, and gives its room back
-  if (on) hideTip();
-  else clearTimeout(tipTimer);
+  document.body.classList.toggle('tips-off', !on); // its line goes back to the scroller
+  clearTimeout(tipTimer);
+  tipShown = null;
+  renderTip();
 }
 
 document.addEventListener('mouseover', (e) => {
@@ -993,7 +1154,10 @@ document.addEventListener('mouseover', (e) => {
   tipHost = host;
   hideTip();
   if (!tooltipsOn || !host) return;
-  tipTimer = setTimeout(() => showTip(host), 280);
+  tipTimer = setTimeout(() => {
+    tipShown = host;
+    renderTip();
+  }, 280);
 });
 document.addEventListener('mouseout', (e) => {
   if (e.relatedTarget) return; // still inside the panel
@@ -1043,7 +1207,7 @@ store.onChanged((changes) => {
       presets = normalisePresets(newValue);
       renderPresets();
     } else if (key === 'presetBase') {
-      presetBase = isBase(newValue) ? newValue : 'original';
+      presetBase = readBase(newValue);
       renderPresets();
     } else if (key === 'tooltips') {
       setTooltips(newValue !== false);

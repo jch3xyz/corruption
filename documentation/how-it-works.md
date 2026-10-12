@@ -72,9 +72,9 @@ values; `paramsChanged(changed)` exists purely for side effects (re-ranking,
 still invalidation, pushing params to worklets).
 
 Consequence worth knowing: **stored values beat code defaults.** After editing
-`DEFAULTS`, press the panel's **original** preset or the old values persist
+`DEFAULTS`, press the panel's **default** preset or the old values persist
 from storage. Presets (`presets`, slots A/B/C) and the double-click base
-(`presetBase`) live in storage outside `DEFAULTS`; "original" is never
+(`presetBase`) live in storage outside `DEFAULTS`; "default" is never
 stored, so it always means the code as it stands.
 
 The registry gates jobs in `rebalance()`: `enabled` off suspends every job

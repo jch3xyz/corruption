@@ -489,3 +489,70 @@ restructure.
 5. Effects queue items as John picks them.
 6. Re-run the heuristic pass on the result; next room test on the fixed
    task list.
+
+---
+
+# Round 3: heuristic pass on the revised panel (2026-10-12)
+
+Three independent reviewers re-walked the ten stranger tasks against the
+panel after M6, the global block redesign and the regrouping landed
+(commits "Remove image feedback", "Panel global block", "Panel sections
+regrouped"). Same method and yardstick as round 1.
+
+## Round-1 findings, re-judged (consensus of three)
+
+| # | Finding | Verdict |
+|---|---|---|
+| 1 | No seam outside the panel | **improved**: badge, title, lede and shortcuts; no in-page mark (John's call, open) |
+| 2 | set/restore defaults twins | **closed** |
+| 3 | No "how much" handle, threshold backwards | **improved**: caps make direction legible; no macro |
+| 4 | Sliders pinned at ceilings | **improved**: caps folded into engine; headline knobs still at the rail |
+| 5 | Forty rows of equal weight | **improved**: groups, folds, chips; Text and Audio below the fold |
+| 6 | Author's vocabulary | **closed** (synth terms) |
+| 7 | Audio "on" while untapped | **closed in code**, unverified in a real Chrome |
+| 8 | Hidden gestures, slider double-click | **closed** |
+| 9 | Greyed rows without reason | **closed** |
+| 10 | ⊙ on every row | **closed** |
+| 11 | "set defaults" means save | **closed** |
+
+## New findings and what was done
+
+Fixed in the commit "Panel round 3":
+
+- **A slow deliberate click on the A/B did not latch** (3/3 reviewers,
+  severity 3). Any press over 250 ms became a momentary compare that
+  restored on release. Now any release under 600 ms latches; only a
+  longer hold is the compare.
+- **`original` beside an A/B that is about the original page** (3/3,
+  severity 2). Renamed `default`, row captioned PRESETS, base shown as a
+  dot rather than a pressed button.
+- **The help strip cost 136 px at rest** (3/3, severity 2). Idle at one
+  line; grows on hover as an overlay, never reflowing rows.
+- **Audio's wet/dry was folded away as "output" while `dry` led the
+  Body group** (2/3, severity 2–3). `mix` now leads Body; `dry` moved to
+  Engine.
+- Saving over a filled slot reads `replace A` and has undo; saving marks
+  the slot as base; cancelling save mode flashes; loading while OFF says
+  "switch ON to see it"; chip captions underline on hover and the landed
+  header flashes; the images jump lands on SORT; `video` off gates the
+  Feedback rows and both mediums off gate Sort; the MIDI hint hides
+  without a device.
+
+Held for John (they change what a knob means or put a seam on the page):
+
+- **Threshold shown inverted as an `amount`** (1 − threshold, default
+  0.95) so "wilder" has travel and the caps go away. The value cell would
+  diverge from the stored key.
+- **An intensity macro** driving threshold inversely and jitter or flow
+  forwardly, the single "how much" handle the stranger reaches for. A
+  second route to the same state; the raw rows stay canonical.
+- **The in-page first-run mark.** The remaining half of finding 1.
+- **Headline knobs at the rail** (ring time 12/12, drive 1, tail 0.999):
+  widening ranges or moving defaults is an effects decision.
+
+## Closing (consensus)
+
+A synth-literate stranger can now find the piece, play it, break it and
+recover in thirty seconds, in an instrument's words. What remains is the
+"how much" handle and the seam on the page, both John's calls, and the
+effects queue from round 2.

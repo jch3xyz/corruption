@@ -20,6 +20,14 @@
 // slider out of the row double-click, clamp flashes, and the tooltip moved
 // to a fixed strip under the scroller.
 //
+// Round 3 (three heuristic reviewers): the A/B latches on any press under
+// 600 ms and only a longer hold is a momentary compare; "original" is now
+// "default", under a PRESETS caption, with the base marked by a dot; the
+// strip rests at one line and grows over the rows on hover without moving
+// them; mix leads the audio body and dry moved to the engine; save mode
+// says "replace A" and a save-over can be undone; the chips land and flash;
+// the Video rows name the medium switch that would wake them.
+//
 // Run: python3 test/serve.py  →  http://localhost:8437/test/harness/panel.html
 
 import { DEFAULTS } from '../../source/content/params.js';
@@ -59,11 +67,11 @@ const LAYOUT = {
   audio: {
     loose: ['audioEnabled'],
     groups: [
-      ['body', ['audioBodyMix', 'audioBody', 'audioSustain', 'audioDrive', 'audioDirect']],
+      ['body', ['audioMix', 'audioBodyMix', 'audioBody', 'audioSustain', 'audioDrive']],
       ['smear', ['audioFeedback', 'audioFbDecay', 'audioFbReturn', 'audioFbWobble']],
       [
         'engine',
-        ['audioMix', 'audioMaxTaps', 'audioExciter', 'audioCombDamp', 'audioFbClear', 'audioFbClearS', 'audioFbClearMinS', 'audioFbClearMaxS'],
+        ['audioDirect', 'audioMaxTaps', 'audioExciter', 'audioCombDamp', 'audioFbClear', 'audioFbClearS', 'audioFbClearMinS', 'audioFbClearMaxS'],
       ],
     ],
   },
@@ -78,7 +86,7 @@ const LABELS = {
   audioBodyMix: 'body amount', audioBody: 'body type', audioSustain: 'ring time',
   audioDrive: 'drive', audioDirect: 'dry',
   audioFeedback: 'smear', audioFbDecay: 'tail', audioFbReturn: 'return', audioFbWobble: 'wobble',
-  audioMix: 'output', audioMaxTaps: 'max sources', audioExciter: 'exciter',
+  audioMix: 'mix', audioMaxTaps: 'max sources', audioExciter: 'exciter',
   audioCombDamp: 'comb damp', audioFbClear: 'smear clear', audioFbClearS: 'clear fade s',
   audioFbClearMinS: 'clear min s', audioFbClearMaxS: 'clear max s',
 };
@@ -183,7 +191,8 @@ function tier1() {
       byKey.temperature.tip.startsWith('Random swaps on top of the sort. 0 = clean ribbons; up = grain and shimmer.') &&
       byKey.motionGate.tip.startsWith('Only moving parts get sorted. 0 = everything; 1 = only what moves. A wet/dry for motion.') &&
       byKey.audioBodyMix.tip.startsWith('How much of the resonant body you hear against the source. 0 = source only, 2 = all body.') &&
-      byKey.audioDirect.tip.startsWith('The untouched source mixed back in. Up = intelligible again, which defeats the piece; kept for comparison.')
+      byKey.audioDirect.tip.startsWith('The untouched source mixed back in. Up = intelligible again, which defeats the piece; kept for comparison.') &&
+      byKey.audioMix.tip.startsWith('Wet/dry for the whole sound. 0 = the sound exactly as transmitted, 1 = all apparatus.')
   );
   check('threshold shows its direction at the slider ends (more · less)', byKey.threshold.ends?.join() === 'more,less');
   check(
@@ -253,7 +262,7 @@ function tier1() {
   );
 
   check(
-    'with "original" as the base, defaults come from the code',
+    'with "default" as the base, defaults come from the code',
     DEFS.every((d) => defaultFor(d.key, null) === DEFAULTS[d.key])
   );
   check(
@@ -443,8 +452,34 @@ async function tier2() {
     })()
   );
   check(
-    'the preset row is original · A · B · C · save…, and nothing else shows',
-    [...$('#presets').children].filter((b) => !b.hidden).map(text).join() === 'original,A,B,C,save…'
+    'the preset row is default · A · B · C · save…, and nothing else shows',
+    [...$('#presets').children].filter((b) => !b.hidden).map(text).join() === 'default,A,B,C,save…'
+  );
+  check(
+    'the row carries a small muted PRESETS caption, styled like the group captions',
+    (() => {
+      const cap = $('#presets-head');
+      if (!cap || cap.nextElementSibling !== $('#presets')) return false;
+      const a = win.getComputedStyle(cap);
+      const b = win.getComputedStyle(doc.querySelector('#controls div.group-head'));
+      return text(cap) === 'presets' && a.textTransform === 'uppercase' && a.fontSize === b.fontSize && a.color === b.color;
+    })()
+  );
+  check(
+    'the base preset is marked by a small dot, not a pressed look: no button in the row differs in fill or edge',
+    (() => {
+      const base = $('#preset-default');
+      const dot = win.getComputedStyle(base, '::before');
+      const cs = win.getComputedStyle(base);
+      const plain = win.getComputedStyle($('#preset-save'));
+      return (
+        base.classList.contains('base') &&
+        dot.content !== 'none' && dot.backgroundColor === 'rgb(232, 232, 100)' && parseFloat(dot.width) <= 6 &&
+        cs.boxShadow === 'none' &&
+        cs.backgroundColor === plain.backgroundColor &&
+        cs.borderTopColor === plain.borderTopColor
+      );
+    })()
   );
   check(
     'one line says changes persist and presets are snapshots',
@@ -605,8 +640,13 @@ async function tier2() {
       learns.every((el) => !shown(el)) &&
       /no device|unavailable|denied/i.test($('#midi-status').textContent)
   );
+  check(
+    'with no MIDI device the "click a param’s ⊙" instruction is hidden too',
+    !shown($('.midi .midi-hint')) && shown($('#midi-status'))
+  );
   doc.body.classList.add('midi-device');
   await sleep(30);
+  check('a connected device shows the learn instruction', shown($('.midi .midi-hint')));
   check(
     'a connected device (the midi-device class) brings every visible row’s ⊙ back',
     learns.filter((el) => shown(el.closest('.row, .ab-row'))).every((el) => shown(el)) &&
@@ -640,31 +680,49 @@ async function tier2() {
   ab.click();
   await sleep(90);
 
+  // Round 3: a slow deliberate click (under LATCH_MS = 600) still latches,
+  // even though the flip already showed under the finger.
   pointer(ab, 'pointerdown');
   await sleep(400);
-  await sleep(60);
+  const slowFlipped = store.enabled === false;
+  pointer(ab, 'pointerup');
+  await sleep(90);
   check(
-    'press and hold bypasses: the piece is off while held',
-    store.enabled === false && ab.classList.contains('held') && text(ab).includes('let go')
+    'a slow 400 ms press latches: the piece stays off after release, with no "holding" face',
+    slowFlipped && store.enabled === false && !ab.classList.contains('held') && text(ab).startsWith('OFF')
+  );
+  ab.click();
+  await sleep(90);
+
+  pointer(ab, 'pointerdown');
+  await sleep(900);
+  check(
+    'held past 600 ms it is a compare: the piece is off while held and the face says "holding … let go"',
+    store.enabled === false && ab.classList.contains('held') && text(ab).includes('holding') && text(ab).includes('let go')
   );
   pointer(ab, 'pointerup');
   await sleep(90);
   check(
-    'release after a hold comes back — no latch',
+    'release after a 900 ms hold comes back — no latch',
     store.enabled === true && ab.classList.contains('on') && !ab.classList.contains('held')
   );
+
+  pointer(ab, 'pointerdown');
+  await sleep(900);
+  pointer(ab, 'pointerleave');
+  await sleep(90);
+  check('dragging off the A/B mid-hold also comes back', store.enabled === true && !ab.classList.contains('held'));
 
   pointer(ab, 'pointerdown');
   await sleep(400);
   pointer(ab, 'pointerleave');
   await sleep(90);
-  check('dragging off the A/B mid-hold also comes back', store.enabled === true);
+  check('dragging off before the latch decides changes nothing', store.enabled === true);
 
   ab.click(); // latched off: a hold now bypasses the other way
   await sleep(90);
   pointer(ab, 'pointerdown');
-  await sleep(400);
-  await sleep(60);
+  await sleep(900);
   const heldOn = store.enabled === true;
   pointer(ab, 'pointercancel');
   await sleep(90);
@@ -710,15 +768,54 @@ async function tier2() {
     })()
   );
 
-  for (const key of ['textScramble', 'audioEnabled']) {
+  check(
+    'while the piece is OFF a chip still switches, and the strip says "switch ON to see it"',
+    await (async () => {
+      ab.click();
+      await sleep(90);
+      chip('video').querySelector('.chip-toggle').click();
+      await sleep(60);
+      const said = $('#tooltip').classList.contains('say') && text($('#tooltip')) === 'switch ON to see it';
+      const switched = store.video === false;
+      chip('video').querySelector('.chip-toggle').click();
+      await sleep(60);
+      ab.click();
+      await sleep(90);
+      return said && switched && store.video === true && store.enabled === true;
+    })()
+  );
+  check(
+    'a chip caption reads as a link: pointer cursor, underlined on hover',
+    win.getComputedStyle($('.chip-name')).cursor === 'pointer' &&
+      [...doc.styleSheets].some((sh) =>
+        [...sh.cssRules].some((r) => r.selectorText === '.chip-name:hover' && /underline/.test(r.style.textDecoration || r.style.textDecorationLine))
+      )
+  );
+
+  const landing = { textScramble: 'section-text', audioEnabled: 'section-audio', images: 'group-video-sort' };
+  for (const key of ['textScramble', 'audioEnabled', 'images']) {
+    $('#scroll').scrollTo(0, 0);
+    await sleep(60);
     chip(key).querySelector('.chip-name').click();
-    const head = doc.getElementById(`section-${defsSection(key)}`);
+    const head = doc.getElementById(landing[key]);
     let top = Infinity;
-    for (let i = 0; i < 30 && Math.abs(top) > 20; i++) {
-      await sleep(50);
+    let flashed = false;
+    for (let i = 0; i < 50; i++) {
+      await sleep(30);
       top = head.getBoundingClientRect().top;
+      flashed ||= head.classList.contains('flash');
+      if (flashed && Math.abs(top) < 40) break;
     }
-    check(`clicking the ${key} chip's caption scrolls its section header into view`, top >= -2 && top < 40);
+    check(
+      `clicking the ${key} chip's caption scrolls ${landing[key]} into view and flashes it when it lands`,
+      top >= -2 && top < 40 && flashed
+    );
+    if (key === 'images') {
+      check(
+        'the images jump lands on the SORT caption, and the strip says "images are shaped by SORT"',
+        head.classList.contains('group-head') && /^sort$/i.test(text(head)) && text($('#tooltip')) === 'images are shaped by SORT'
+      );
+    }
   }
   $('#scroll').scrollTo(0, 0);
   await sleep(60);
@@ -833,7 +930,7 @@ async function tier2() {
   await sleep(60);
 
   // -- presets --
-  const btnOriginal = $('#preset-original');
+  const btnDefault = $('#preset-default');
   const slot = (x) => $(`#presets .slot[data-slot="${x}"]`);
   const btnSave = $('#preset-save');
   const btnCancel = $('#preset-cancel');
@@ -856,7 +953,7 @@ async function tier2() {
   btnSave.click();
   await sleep(30);
   check(
-    'save… puts the row in a visible save mode',
+    'save… puts the row in a visible save mode (empty slots read "save → A")',
     $('#presets').classList.contains('saving') &&
       text(slot('A')) === 'save → A' &&
       text(slot('C')) === 'save → C' &&
@@ -865,13 +962,22 @@ async function tier2() {
   );
   press(doc.body, 'Escape');
   await sleep(30);
-  check('Escape cancels save mode', !$('#presets').classList.contains('saving') && text(slot('A')) === 'A');
+  check(
+    'Escape cancels save mode, and the save button flashes "cancelled"',
+    !$('#presets').classList.contains('saving') && text(slot('A')) === 'A' && !btnSave.hidden && text(btnSave) === 'cancelled'
+  );
+  await sleep(950);
+  check('the "cancelled" flash clears itself', text(btnSave) === 'save…');
 
   btnSave.click();
   await sleep(30);
   pointer($('#controls'), 'pointerdown');
   await sleep(30);
-  check('a click elsewhere cancels save mode', !$('#presets').classList.contains('saving'));
+  check(
+    'a click elsewhere cancels save mode, also flashing "cancelled"',
+    !$('#presets').classList.contains('saving') && text(btnSave) === 'cancelled'
+  );
+  await sleep(950);
 
   btnSave.click();
   await sleep(30);
@@ -896,39 +1002,88 @@ async function tier2() {
     'the slot flashes "saved to A" and the row is back in load mode',
     text(slot('A')) === 'saved to A' && !$('#presets').classList.contains('saving') && !btnSave.hidden
   );
-  check('saving does not move the base', (store.presetBase ?? 'original') === 'original');
+  check(
+    'saving marks the slot as the base (and saving to an empty slot offers no undo)',
+    store.presetBase === 'A' && slot('A').classList.contains('base') && !btnDefault.classList.contains('base') && btnUndo.hidden
+  );
   await sleep(900);
   check('a saved slot no longer looks empty', !slot('A').classList.contains('empty'));
 
-  // original: every row back to DEFAULTS, the A/B left where it is
+  // Saving over a filled slot: "replace A", and undo gives the old A back.
+  type('threshold', '0.55');
+  field('threshold').blur();
+  await sleep(60);
+  btnSave.click();
+  await sleep(30);
+  check(
+    'in save mode a filled slot reads "replace A", an empty one "save → B"',
+    text(slot('A')) === 'replace A' && text(slot('B')) === 'save → B' && /replace/i.test(slot('A').dataset.tip)
+  );
+  check(
+    'save-mode labels fit their buttons, and the row does not overflow',
+    [...$('#presets').children].filter((b) => !b.hidden).every((b) => b.scrollWidth <= b.clientWidth + 1) &&
+      $('#presets').scrollWidth <= $('#presets').clientWidth + 1
+  );
+  slot('A').click();
+  await sleep(60);
+  check(
+    'saving over A writes the new values and offers undo',
+    store.presets.A.threshold === 0.55 && !btnUndo.hidden && /before you saved over it/.test(btnUndo.dataset.tip)
+  );
+  btnUndo.click();
+  await sleep(90);
+  check(
+    'undo after a save-over puts A’s old contents back and leaves the knobs alone',
+    store.presets.A.threshold === 0.42 && store.presets.A.passes === 30 && store.threshold === 0.55 &&
+      Number(slider('threshold').value) === 0.55 && btnUndo.hidden && store.presetBase === 'A'
+  );
+  await sleep(900);
+
+  // default: every row back to DEFAULTS, the A/B left where it is
   type('threshold', '0.7');
   field('threshold').blur();
   ab.click();
   await sleep(90);
-  btnOriginal.click();
+  btnDefault.click();
   await sleep(90);
   const notRestored = DEFS.filter(
     (d) => !PRESET_EXCLUDED.includes(d.key) && store[d.key] !== DEFAULTS[d.key]
   ).map((d) => d.key);
   check(
-    `"original" restores every row to the compiled defaults (${notRestored.join(', ') || 'all'})`,
+    `"default" restores every row to the compiled defaults (${notRestored.join(', ') || 'all'})`,
     notRestored.length === 0 &&
       Number(slider('threshold').value) === DEFAULTS.threshold &&
       field('passes').value === fmtNumber(byKey.passes, DEFAULTS.passes)
   );
-  check('"original" leaves the A/B alone', store.enabled === false);
-  check('"original" flashes "restored" and offers undo', text(btnOriginal) === 'restored' && !btnUndo.hidden);
-  check('the base is original, and it is marked', store.presetBase === 'original' && btnOriginal.classList.contains('base'));
+  check('"default" leaves the A/B alone', store.enabled === false);
+  check('"default" flashes "restored" and offers undo', text(btnDefault) === 'restored' && !btnUndo.hidden);
+  check(
+    'with the piece OFF, the A/B face says "switch ON to see it", then lets go of it',
+    await (async () => {
+      const said = text(ab).includes('switch ON to see it') && ab.classList.contains('nudge');
+      await sleep(1600);
+      return said && !text(ab).includes('switch ON') && text(ab).includes('page untouched');
+    })()
+  );
+  check('the base is default, and it is marked', store.presetBase === 'default' && btnDefault.classList.contains('base'));
   ab.click();
   await sleep(90);
+  check('with the piece ON, a load leaves the A/B face alone', !text(ab).includes('switch ON'));
+  // (the undo window is still open: 10 s from the restore)
 
   btnUndo.click();
   await sleep(90);
   check(
-    'undo after a restore reinstates the values from before it',
-    store.threshold === 0.7 && store.passes === 30 && Number(slider('threshold').value) === 0.7 && btnUndo.hidden
+    'undo after a restore reinstates the values and the base from before it',
+    store.threshold === 0.7 && store.passes === 30 && Number(slider('threshold').value) === 0.7 && btnUndo.hidden &&
+      store.presetBase === 'A'
   );
 
+  btnDefault.click();
+  await sleep(90);
+  type('threshold', '0.7');
+  field('threshold').blur();
+  await sleep(60);
   slot('A').click();
   await sleep(90);
   check(
@@ -937,14 +1092,14 @@ async function tier2() {
   );
   check(
     'the base follows the load, and A is marked as the base',
-    store.presetBase === 'A' && slot('A').classList.contains('base') && !btnOriginal.classList.contains('base')
+    store.presetBase === 'A' && slot('A').classList.contains('base') && !btnDefault.classList.contains('base')
   );
   check('A’s tooltip says it is the base', /base/i.test(slot('A').dataset.hint));
   btnUndo.click();
   await sleep(90);
   check(
     'undo after a load reinstates the previous values and the previous base',
-    store.threshold === 0.7 && store.presetBase === 'original' && btnOriginal.classList.contains('base')
+    store.threshold === 0.7 && store.presetBase === 'default' && btnDefault.classList.contains('base')
   );
 
   slot('A').click();
@@ -956,22 +1111,35 @@ async function tier2() {
   await sleep(90);
   check('a row double-click returns to the base preset (A)', store.threshold === 0.42);
 
-  btnOriginal.click();
+  btnDefault.click();
   await sleep(90);
   type('threshold', '0.9');
   field('threshold').blur();
   await sleep(90);
   fire(row('threshold'), 'dblclick');
   await sleep(90);
-  check('with original as the base, a double-click returns to the code default', store.threshold === DEFAULTS.threshold);
+  check('with default as the base, a double-click returns to the code default', store.threshold === DEFAULTS.threshold);
 
   slot('A').click(); // a fresh undo window, then let it lapse
   await sleep(90);
   const undoShown = !btnUndo.hidden;
   await sleep(10200);
   check('undo is offered for ten seconds, then withdrawn', undoShown && btnUndo.hidden);
-  btnOriginal.click();
+  btnDefault.click();
   await sleep(90);
+
+  // -- a base stored before the rename ("original") reads as default --
+  {
+    const seed = { presetBase: 'original', presets: { A: { threshold: 0.3 }, B: null, C: null } };
+    const f = await bootFrame(`./panel-frame.html?seed=${encodeURIComponent(JSON.stringify(seed))}`);
+    const wd = f.contentWindow.document;
+    check(
+      'a stored presetBase of "original" (from before the rename) marks default as the base',
+      wd.getElementById('preset-default').classList.contains('base') &&
+        !wd.querySelector('.slot[data-slot="A"]').classList.contains('base')
+    );
+    f.remove();
+  }
 
   // -- migration: a legacy userDefaults becomes slot A and the base --
   {
@@ -1023,10 +1191,42 @@ async function tier2() {
     f.remove();
   }
 
-  // -- tooltips --
+  // -- tooltips: the help strip (round 3: one line at rest, an overlay on hover) --
   const tip = $('#tooltip');
+  const sc = $('#scroll');
+  $('#scroll').scrollTo(0, 0);
+  fire($('#controls'), 'mouseover');
+  await sleep(300);
+  check(
+    'at rest the strip is one line (~40 px) carrying the legend',
+    !tip.hidden && tip.classList.contains('idle') &&
+      Math.abs(tip.getBoundingClientRect().height - 40) <= 2 &&
+      text(tip) === 'Hover to read a knob · double-click a name to reset it' &&
+      tip.firstElementChild.scrollWidth <= tip.firstElementChild.clientWidth + 1
+  );
+  check(
+    'the strip is full width and pinned to the panel’s bottom edge',
+    (() => {
+      const r = tip.getBoundingClientRect();
+      return Math.abs(r.bottom - win.innerHeight) <= 1 && r.left <= 0.5 && Math.abs(r.width - win.innerWidth) <= 1;
+    })()
+  );
+  check(
+    'at rest the strip covers no row: the scroller ends where the idle strip begins',
+    !sc.contains(tip) &&
+      ['auto', 'scroll'].includes(win.getComputedStyle(sc).overflowY) &&
+      Math.abs(sc.getBoundingClientRect().bottom - tip.getBoundingClientRect().top) <= 0.5
+  );
+  const geometry = () => ({
+    sh: sc.scrollHeight,
+    ch: sc.clientHeight,
+    st: sc.scrollTop,
+    tops: [...doc.querySelectorAll('.row')].map((r) => r.offsetTop).join(),
+  });
+  const restGeom = geometry();
+
   fire(row('threshold'), 'mouseover');
-  await sleep(420);
+  await sleep(520);
   check(
     'hovering a row shows that row’s explanation',
     !tip.hidden && tip.textContent.includes(byKey.threshold.tip.slice(0, 40))
@@ -1036,52 +1236,45 @@ async function tier2() {
     tip.textContent.toLowerCase().includes('double-click')
   );
   check(
-    'the tooltip stays inside the panel window',
-    (() => {
-      const r = tip.getBoundingClientRect();
-      return r.left >= 0 && r.top >= 0 && r.right <= win.innerWidth + 1;
-    })()
-  );
-  check(
     'the tip’s last line is the internal key, muted',
     tip.lastElementChild?.classList.contains('key') && text(tip.lastElementChild) === 'key: threshold'
   );
   check(
-    'the tip is a full-width strip pinned to the panel’s bottom edge',
+    'on hover the strip grows to fit (at most 136 px), still pinned to the bottom, over the scroller',
     (() => {
       const r = tip.getBoundingClientRect();
-      return Math.abs(r.bottom - win.innerHeight) <= 1 && r.left <= 0.5 && Math.abs(r.width - win.innerWidth) <= 1;
-    })()
-  );
-  check(
-    'the strip never overlaps a row: it sits below the clipping scroller, outside it',
-    (() => {
-      const sc = $('#scroll');
-      const cs = win.getComputedStyle(sc);
       return (
-        !sc.contains(tip) &&
-        ['auto', 'scroll'].includes(cs.overflowY) &&
-        sc.getBoundingClientRect().bottom <= tip.getBoundingClientRect().top + 0.5
+        tip.classList.contains('open') && r.height > 44 && r.height <= 136.5 &&
+        Math.abs(r.bottom - win.innerHeight) <= 1 && r.top < sc.getBoundingClientRect().bottom &&
+        tip.scrollHeight <= tip.clientHeight + 1
       );
     })()
   );
   {
-    // Hover the row lying lowest in the visible scroller: still uncovered.
-    const sc = $('#scroll').getBoundingClientRect();
-    const low = [...doc.querySelectorAll('.row')]
-      .filter((r) => shown(r) && r.getBoundingClientRect().bottom <= sc.bottom && r.getBoundingClientRect().top >= sc.top)
-      .sort((a, b) => b.getBoundingClientRect().bottom - a.getBoundingClientRect().bottom)[0];
-    fire(low, 'mouseover');
-    await sleep(420);
+    const g = geometry();
     check(
-      `hovering the lowest visible row (${low?.dataset.key ?? low?.className}) leaves it uncovered`,
-      !!low && !tip.hidden && low.getBoundingClientRect().bottom <= tip.getBoundingClientRect().top + 0.5
+      'the grown strip is an overlay: the scroller’s scrollHeight, height, scroll position and every row’s offsetTop are unchanged',
+      g.sh === restGeom.sh && g.ch === restGeom.ch && g.st === restGeom.st && g.tops === restGeom.tops
     );
   }
+  check(
+    'the strip ignores the pointer, so growing over the hovered row cannot steal its hover',
+    win.getComputedStyle(tip).pointerEvents === 'none'
+  );
+  check(
+    'the strip animates its height (~120 ms)',
+    /height/.test(win.getComputedStyle(tip).transitionProperty) &&
+      Math.abs(parseFloat(win.getComputedStyle(tip).transitionDuration) - 0.12) < 0.03
+  );
   {
-    // Every tip has to fit the fixed strip: render each one into it exactly
-    // as the panel does (tip, hint, key) and look for overflow.
+    // Every tip has to fit the grown strip: render each one into it exactly
+    // as the panel does (tip, hint, key) at natural height and look for
+    // overflow past the 136 px cap.
     const saved = [...tip.childNodes];
+    const savedClass = tip.className;
+    const savedHeight = tip.style.height;
+    tip.className = 'open';
+    tip.style.height = 'auto';
     const overflow = [];
     for (const host of doc.querySelectorAll('[data-tip]')) {
       tip.textContent = '';
@@ -1095,17 +1288,20 @@ async function tier2() {
         p.textContent = t;
         tip.appendChild(p);
       }
-      if (tip.scrollHeight > tip.clientHeight + 1) overflow.push(host.dataset.param || host.className || host.tagName);
+      if (tip.scrollHeight > tip.clientHeight + 1) overflow.push(host.dataset.param || host.id || host.className || host.tagName);
     }
     tip.replaceChildren(...saved);
+    tip.className = savedClass;
+    tip.style.height = savedHeight;
     check(`every tip fits the strip without clipping (${overflow.join(', ') || 'all fit'})`, overflow.length === 0);
   }
 
   fire($('#controls'), 'mouseover');
-  await sleep(60);
+  await sleep(300);
   check(
-    'leaving the row returns the strip to its resting line (the two hidden gestures)',
-    !tip.hidden && tip.classList.contains('idle') && /double-click/i.test(tip.textContent) && /hover/i.test(tip.textContent)
+    'leaving the row returns the strip to its one-line resting legend (the two hidden gestures)',
+    !tip.hidden && tip.classList.contains('idle') && /double-click/i.test(tip.textContent) && /hover/i.test(tip.textContent) &&
+      Math.abs(tip.getBoundingClientRect().height - 40) <= 2
   );
 
   fire(field('passes'), 'mouseover');
@@ -1120,7 +1316,10 @@ async function tier2() {
   toggle.checked = false;
   toggle.dispatchEvent(new win.Event('change', { bubbles: true }));
   await sleep(60);
-  check('turning tooltips off hides the current one', tip.hidden);
+  check(
+    'turning tooltips off removes the strip and gives its line back to the scroller',
+    tip.hidden && Math.abs(sc.getBoundingClientRect().bottom - win.innerHeight) <= 0.5
+  );
   fire($('#controls'), 'mouseover');
   fire(row('decay'), 'mouseover');
   await sleep(420);
@@ -1214,6 +1413,31 @@ async function tier2() {
   check('text off: text min says "needs text"', gateSays('textMin', 'needs text'));
   chip('textScramble').querySelector('.chip-toggle').click();
   await sleep(60);
+
+  // Round 3, item 7: the Video rows name the medium switch that would wake them.
+  const SORT = ['threshold', 'flowAmount', 'flowMode', 'flowScale', 'flowSpeed', 'temperature'];
+  const FEEDBACK = ['feedbackVideo', 'motionGate', 'decay', 'driftX', 'driftY', 'resetMinS', 'resetMaxS'];
+  chip('video').querySelector('.chip-toggle').click();
+  await sleep(60);
+  check(
+    'video off: every feedback row, its switch included, says "needs video"; sort still serves images',
+    FEEDBACK.every((k) => gateSays(k, 'needs video')) && SORT.every((k) => !row(k).classList.contains('inert'))
+  );
+  chip('images').querySelector('.chip-toggle').click();
+  await sleep(60);
+  check(
+    'video and images both off: every sort row says "needs video or images"',
+    SORT.every((k) => gateSays(k, 'needs video or images'))
+  );
+  chip('video').querySelector('.chip-toggle').click();
+  await sleep(60);
+  check(
+    'video back on (images still off): sort and feedback wake',
+    [...SORT, ...FEEDBACK].every((k) => !row(k).classList.contains('inert'))
+  );
+  chip('images').querySelector('.chip-toggle').click();
+  await sleep(60);
+  check('the medium gates hand every row back', store.video === true && store.images === true && !row('threshold').classList.contains('inert'));
 
   // -- the panel never invents parameters --
   const strays = Object.keys(store).filter(

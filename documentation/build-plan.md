@@ -185,6 +185,15 @@ balance are the open item below. The previous sound is exactly reachable at
   their gate; ⊙ hidden until a MIDI device; slider out of the double-click;
   clamps flash). The effects questions (M4's distortion handle, M5, M8's
   source-following apparatus) stay open.
+  **Round 3 fixes landed 2026-10-12** (three heuristic reviewers): the A/B
+  latches on any press under 600 ms and only a longer hold compares;
+  *original* is now *default* under a PRESETS caption, base marked by a dot;
+  the help strip rests at one line and grows over the rows on hover without
+  reflow; mix leads the audio body, dry moved to the engine; save mode says
+  *replace A*, a save-over can be undone, saving marks the base, cancelling
+  flashes; loads and chips while OFF say *switch ON to see it*; chip jumps
+  flash where they land (images → SORT); Video rows read *needs video* /
+  *needs video or images*; the MIDI learn line hides with no device.
 
 For a full technical description of both pipelines — the GL sort/composite
 path and the resonant-body audio path, with the reasoning behind each —
@@ -257,9 +266,9 @@ Design invariants that hold everywhere:
 7. **Chrome heuristic-caches old-mtime modules for hours** — always test
    through `test/serve.py` (sends no-store), never a plain http.server.
 8. **Stored params beat code defaults**: after changing DEFAULTS, press
-   **original** in the panel's preset row or the old values persist from
-   storage. "original" is never stored, so it always reaches freshly edited
-   code defaults. (Until 2026-10-12 a saved "set defaults" snapshot,
+   **default** in the panel's preset row or the old values persist from
+   storage. "default" (labelled "original" until round 3) is never stored,
+   so it always reaches freshly edited code defaults. (Until 2026-10-12 a saved "set defaults" snapshot,
    `userDefaults`, stood in front of them; it now migrates to preset slot A.
    A row double-click returns to the last-loaded preset, `presetBase`.)
 9. **An effect must be a process done to the audio, not a synth the audio

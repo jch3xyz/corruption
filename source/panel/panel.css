@@ -8,13 +8,19 @@ body {
   margin: 0;
   padding: 0;
   user-select: none;
-  /* The panel is a column: everything scrolls in #scroll, and the help
-     strip (#tooltip) is a footer under it, never on top of a row. */
+  /* The panel is a column: everything scrolls in #scroll. The column keeps
+     one strip line free at the bottom (--strip), where the help strip rests;
+     a grown strip overlays the scroller instead of pushing it (round 3). */
+  --strip: 40px;
   height: 100vh;
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  padding-bottom: var(--strip);
 }
+
+/* tooltips off: the strip is gone and its line goes back to the scroller. */
+body.tips-off { padding-bottom: 0; }
 
 #scroll {
   flex: 1 1 auto;
@@ -93,6 +99,9 @@ h1 {
   border-color: #e8e864;
 }
 
+/* A nudge on the face: something just changed that OFF is hiding. */
+.ab.nudge .ab-say { color: #e8e864; }
+
 /* Held: the momentary bypass — a dashed edge says "this will spring back". */
 .ab.held { outline: 2px dashed #e8e864; outline-offset: 3px; }
 
@@ -121,7 +130,11 @@ h1 {
   cursor: pointer;
 }
 
-.chip-name:hover { color: #e8e864; }
+.chip-name:hover {
+  color: #e8e864;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
 
 .chip-toggle {
   height: 28px;
@@ -142,26 +155,45 @@ h1 {
   border-color: #8a8a40;
 }
 
-/* Presets: original · A · B · C · save… (· undo). */
+/* Presets: default · A · B · C · save… (· undo), under a small caption. */
+.group-head.presets-head { margin: 18px 0 5px; }
+
 .presets {
   display: flex;
   flex-wrap: nowrap; /* save mode relabels the slots in place — no reflow */
   gap: 6px;
   align-items: center;
-  margin: 16px 0 0;
+  margin: 0;
 }
 
 .presets .btn { white-space: nowrap; }
 
 .btn.preset { padding: 6px 10px; }
 
-/* The slots share the spare width, so "save → A" fits where "A" stood. */
-.btn.slot { flex: 1 1 0; min-width: 34px; padding: 6px 4px; }
+/* The slots share the spare width; they size from their label, so
+   "replace A" takes what it needs where "A" stood. */
+.btn.slot { flex: 1 1 auto; min-width: 34px; padding: 6px 4px; }
+
+/* Save mode is about where to write, not what the base is: the dot goes,
+   and the row tightens so three "replace" labels still fit at 400 px. */
+.presets.saving .btn.base::before { display: none; }
+.presets.saving .btn { padding-left: 6px; padding-right: 6px; }
 
 .btn.slot.empty { border-style: dashed; color: #55555c; }
 
-/* The base preset — the one a row double-click returns to. */
-.btn.base { box-shadow: inset 0 -2px 0 #e8e864; }
+/* The base preset — the one a row double-click returns to — carries a small
+   yellow dot before its name. A mark, not a pressed state: nothing in the
+   row looks selected. */
+.btn.base::before {
+  content: '';
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  margin: 0 5px 1px 0;
+  border-radius: 50%;
+  background: #e8e864;
+  vertical-align: middle;
+}
 
 .presets.saving .slot { border-color: #8a8a40; color: #e8e864; }
 
@@ -171,9 +203,11 @@ h1 {
 
 .hint.note { font-size: 10px; margin: 7px 0 0; }
 
-/* Section headers are jump targets for the chips. */
-.section { scroll-margin-top: 12px; }
-.section:focus { outline: none; }
+/* Section headers (and the sort caption, for images) are jump targets for
+   the chips; the landed one flashes. */
+.section, .group-head { scroll-margin-top: 12px; }
+.section.flash, .group-head.flash { animation: rowflash 520ms ease-out; }
+.section:focus, div.group-head:focus { outline: none; }
 
 #prefs { margin-top: 12px; }
 
@@ -422,13 +456,27 @@ body:not(.midi-device) .ab-row { grid-template-columns: 1fr; }
 
 .hint { color: #55555c; margin: 6px 0 0; }
 
+/* The learn instruction only means something with a controller connected. */
+body:not(.midi-device) .midi-hint { display: none; }
+
 /* Hover copy for every control in the panel: a strip pinned to the bottom
-   edge, outside the scroller (finding 6). Fixed height, so hovering never
-   moves anything; every tip is written to fit (the harness checks). */
+   edge (finding 6). At rest it is one line tall and sits in the room the
+   column leaves free, so it covers nothing. On hover it grows (to at most
+   136px) upward over the scroller's bottom as an overlay — no row moves.
+   It ignores the pointer, so growing over the hovered row cannot steal the
+   hover and flicker. Every tip is written to fit 136px (the harness checks). */
 #tooltip {
-  flex: none;
-  height: 136px;
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 2;
+  height: var(--strip);
+  min-height: var(--strip);
+  max-height: 136px;
   overflow: hidden;
+  pointer-events: none;
+  transition: height 120ms ease-out;
   background: #1b1b21;
   color: #d8d8dc;
   border-top: 1px solid #34343c;
@@ -439,7 +487,25 @@ body:not(.midi-device) .ab-row { grid-template-columns: 1fr; }
 
 #tooltip[hidden] { display: none; }
 
+/* Grown over the rows: a shadow says it is lying on top of them. */
+#tooltip.open { box-shadow: 0 -6px 14px rgba(0, 0, 0, 0.35); }
+
+/* At rest, and for a one-line message: a single line, centred in the strip. */
+#tooltip.idle, #tooltip.say {
+  display: flex;
+  align-items: center;
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+#tooltip.idle > *, #tooltip.say > * {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 #tooltip.idle { color: #6c6c76; }
+#tooltip.say { color: #e8e864; }
 
 #tooltip .hint {
   color: #8a8a94;

@@ -20,7 +20,7 @@ in panel order, group by group.
 | Param | Panel label | Default | Range | What it does |
 |---|---|---|---|---|
 | **Global block (above the first divider)** | | | | |
-| `enabled` | the A/B (big button) | on | on/off | Master switch — the panel's big **A/B** button (click latches, press-and-hold bypasses while held). Off restores every video/image/word untouched and ramps audio dry. The toolbar badge reads **ON** while it is on. |
+| `enabled` | the A/B (big button) | on | on/off | Master switch — the panel's big **A/B** button (a press under 600 ms latches; a hold past 600 ms is a momentary compare that returns on release). Off restores every video/image/word untouched and ramps audio dry. The toolbar badge reads **ON** while it is on. |
 | `video` | video chip | on | on/off | Video on/off (the **video** chip, 2026-10-12). Off suspends every video job exactly as `enabled: false` does — overlay dropped, the video shown as transmitted — while images, text and audio carry on. |
 | `images` | images chip | on | on/off | Images on/off (the **images** chip, 2026-10-12). Off suspends every image job — the still shown as it arrived. Image look comes from the sort knobs under Video. |
 | **Video · sort** | | | | |
@@ -48,18 +48,18 @@ in panel order, group by group.
 | **Audio (master, above the groups)** | | | | |
 | `audioEnabled` | audio | on | on/off | Audio master. Off ramps every tap to dry — the tap itself is permanent by design. |
 | **Audio · body** | | | | |
+| `audioMix` | mix | 1 | 0–1 | Wet/dry for the whole sound, in the tap graph after everything else (30 ms ramps). 0 = the internet as transmitted, 1 = all apparatus. Leads the body group since round 3: it is the first level a player reaches for. Distinct from `audioDirect`, which is inside the DSP. |
 | `audioBodyMix` | body amount | **1** | 0–2 | Resonant part against the direct path — the identity dial. Up for more fixed voice, down for more of the video. Making the bank a filter costs lattice salience (25 → ~7 measured, raw audio being 5.6); this is the knob that buys some back. |
 | `audioBody` | body type | **modal** | modal / comb | Which apparatus the signal passes through. **modal** = the 48 stretched partials, struck metal. **comb** = three recirculating lines on the same fundamentals, exactly harmonic — tube/pipe/spring, and about a tenth of the cost. The A/B John called for (2026-08-13); the character difference is inherent, not a defect (see below). |
 | `audioSustain` | ring time | **12** | 2–12 | T60 at the lowest string (55 Hz), seconds. Higher modes always die faster ((55/f)^0.7) — the ring-length knob. |
 | `audioDrive` | drive | **1.0** | 0–1 | Strike force into the resonators. Per-mode caps bound runaway, so drive shapes attack more than loudness. |
-| `audioDirect` | dry | **1** | 0–1 | Direct signal level *inside* the DSP: both engines sum their resonant part with this, so the source passes through the apparatus instead of only driving it. **0 = the pre-2026-08-13 behaviour**, where the output never contained the input and every video sounded alike. |
 | **Audio · smear** | | | | |
 | `audioFeedback` | smear | **on** | on/off | The smear: the engine's output recirculates through a 0.35 s delay line (0.1 Hz wobble, tanh-clipped write-back), continuously — see `audioFbClear`. |
 | `audioFbDecay` | tail | **0.999** | 0.8–0.999 | *Audio fb only.* The smear's **tail length** — and only that since 2026-08-13. Maps to loop gain 0.5–0.95, the visual `decay` knob's range, so it feels like the same knob. |
 | `audioFbReturn` | return | **0.25** | 0–1 | *Audio fb only.* How loud the wash sits, as a **fraction of the loop gain**. Tail and level used to be one number, which is why nothing survived it: at loop gain 0.95 the wash settles ~1/(1−g) ≈ 20× above whatever just arrived and buries it. **1 = the old behaviour exactly.** Measured: dropping to 0.25 takes envelope correlation with the source from 0.22 to 0.89 with the 47 s tail untouched. |
 | `audioFbWobble` | wobble | **0** | 0–0.4 | *Audio fb only.* Delay wobble depth — the tape-warble on the echo stack. **0 = no wobble, a static echo stack** (the resting state). Until 2026-08-12 this rode the visual `driftY` slider; detangled so performing the video never bends the sound. |
 | **Audio · engine (folded)** | | | | |
-| `audioMix` | output | 1 | 0–1 | Wet/dry in the tap graph (30 ms ramps). 0 = the internet as transmitted. Distinct from `audioDirect`, which is inside the DSP. |
+| `audioDirect` | dry | **1** | 0–1 | Direct signal level *inside* the DSP: both engines sum their resonant part with this, so the source passes through the apparatus instead of only driving it. **0 = the pre-2026-08-13 behaviour**, where the output never contained the input and every video sounded alike. |
 | `audioMaxTaps` | max sources | **8** | 1–8 | Concurrent *engaged* taps, most recently playing first — the audio sibling of `maxVideos`. Everything safe gets tapped; beyond the cap, elements play dry (idle processors cost ~nothing). Matters on feed pages with several sounding videos; each engaged tap is its own worklet. |
 | `audioExciter` | exciter | **continuous** | gated / continuous | **Continuous is the piece**: the stream drives the body always, bounded by resonz normalization and per-mode caps. Gated = onsets open a 60 ms window and the body is *struck* instead. |
 | `audioCombDamp` | comb damp | **0.45** | 0–0.9 | *Comb only.* Loop lowpass: the comb's version of "higher partials die faster". Low = metallic and bright, high = woody and dark. |
@@ -216,18 +216,27 @@ explains itself on hover.
   `chrome.commands.getAll()` (so a rebind at chrome://extensions/shortcuts
   shows), falling back to the manifest's suggested keys.
 - **The A/B** — one large button bound to `enabled`. Yellow *ON — bending
-  the page* or dark *OFF — page untouched*. **Click latches. Press and hold**
-  (longer than 250 ms) **bypasses**: the piece flips while held and comes
-  back the moment you let go (also on pointer-leave or cancel), so a
-  stranger can hold to see the original and release to return. Space/Enter
-  latch. Its ⊙ MIDI learn sits beside it.
+  the page* or dark *OFF — page untouched*. **Any press shorter than 600 ms
+  latches** (`LATCH_MS`), however slow and deliberate the click. **A press
+  held past 600 ms is a momentary compare**: the face reads *holding … let
+  go to return*, and release (or pointer-leave, or cancel) puts the piece
+  back exactly where the press began, so a stranger can hold to see the
+  page untouched and let go to return. The flip itself shows under the
+  finger at 250 ms, so a compare is seen before the latch window closes; a
+  release before 600 ms keeps it. Space/Enter latch. Its ⊙ MIDI learn sits
+  beside it. Loading a preset or *default* while the piece is OFF puts
+  *switch ON to see it* on the face for ~1.5 s, since the load landed but
+  nothing shows.
 - **The four medium chips** — video · images · text · audio. The pill
   switches the medium (`video`, `images`, `textScramble`, `audioEnabled`);
-  the caption above it jumps to the section that shapes it (images jump to
-  Video, where their knobs live). The text and audio rows in their own
-  sections stay canonical — chip and row are one control. Chips dim while
-  the A/B is off, because it governs all four.
-- **Presets** (below).
+  the caption above it (underlined on hover) jumps to the section that
+  shapes it, and the header it lands on flashes. **images** lands on the
+  **sort** caption under Video — the only knobs that shape a still — and
+  the help strip says *images are shaped by SORT*. The text and audio rows
+  in their own sections stay canonical — chip and row are one control.
+  Chips dim while the A/B is off, because it governs all four; a chip still
+  switches then, and the strip says *switch ON to see it*.
+- **Presets** (below), under a small muted *PRESETS* caption.
 
 The sort knobs genuinely belong to video *and* images — one shader, two
 callers — and John's call (2026-08-20) is that they live under **Video**,
@@ -247,9 +256,11 @@ you can see or hear comes first and the setup folds away:
   feedback trail, decay, drift x/y, clear min/max s), **engine** (sort
   passes, streak, max res, max videos).
 - **Audio** — the `audio` switch first, above the groups; then **body**
-  (body amount, the identity dial, then body type, ring time, drive, dry),
-  **smear** (its own switch, tail, return, wobble), **engine** (output, max
-  sources, exciter, comb damp, smear clear, clear fade s, clear min/max s).
+  (mix, the whole-sound wet/dry, then body amount, the identity dial, body
+  type, ring time, drive), **smear** (its own switch, tail, return,
+  wobble), **engine** (dry, max sources, exciter, comb damp, smear clear,
+  clear fade s, clear min/max s). Mix leads body and dry sits in the engine
+  since round 3: mix is the level a player reaches for; dry is setup.
 - **Text** is two rows and has no groups.
 
 Both **engine** groups start folded behind a disclosure (`engine ▸`; click
@@ -278,9 +289,12 @@ a failure only stops the reporter.
 
 **Greyed rows say why.** A row that cannot act right now dims, and its knob
 cell shows the switch that would wake it, in muted italics: *needs
-feedback*, *needs flow*, *needs text*, *needs audio*, *needs smear*,
-*needs clear*, *comb only*. When several apply, the outermost switch is
-named. The gating itself is unchanged.
+video*, *needs video or images*, *needs feedback*, *needs flow*, *needs
+text*, *needs audio*, *needs smear*, *needs clear*, *comb only*. When
+several apply, the outermost switch is named. The medium gates come from
+the chips: with `video` off every feedback row (its switch included) reads
+*needs video*; with `video` and `images` both off every sort row reads
+*needs video or images*.
 
 **Typing values.** Every numeric row's readout is an editable field. Type a
 number and the knob follows as you type; press Enter (or click away) and the
@@ -293,22 +307,28 @@ but a value arriving from elsewhere — MIDI, a preset load, the other panel
 window — does update it.
 
 **Presets.** Every move is already kept (storage persists across restarts);
-presets are snapshots to jump between. The row is **original · A · B · C ·
-save…**:
+presets are snapshots to jump between. Under a small *PRESETS* caption the
+row is **default · A · B · C · save…** (*default* was labelled *original*
+until round 3; a stored `presetBase` of `"original"` still reads as
+default):
 
-- **original** puts every parameter back to the `DEFAULTS` compiled into
+- **default** puts every parameter back to the `DEFAULTS` compiled into
   `params.js`. Nothing in the UI can redefine it, so the way back to the
   shipped piece always exists.
 - **A · B · C** are slots. Clicking one **loads** it; an empty slot is
   dashed and only says "empty".
 - **save…** is deliberately secondary and two clicks: it puts the row in a
-  visible save mode (slots read *save → A*, a Cancel appears), the next slot
-  click writes the current settings there and flashes "saved to A", and the
-  row returns to load mode. Escape or a click anywhere else cancels. This is
-  the fix for the room slip (meaning to restore, pressing save).
-- **Every load and every original restore** flashes ("loaded" /
+  visible save mode (an empty slot reads *save → B*, a filled one *replace
+  A*; a Cancel appears), the next slot click writes the current settings
+  there, flashes "saved to A", **marks that slot as the base**, and the row
+  returns to load mode. Escape or a click anywhere else cancels, and the
+  save button flashes "cancelled" so the exit is seen. This is the fix for
+  the room slip (meaning to restore, pressing save).
+- **Every load and every default restore** flashes ("loaded" /
   "restored") and offers **undo** for ten seconds, which puts back exactly
-  the settings from before.
+  the settings — and the base — from before.
+- **Saving over a filled slot** offers the same ten-second **undo**, which
+  puts the slot's previous contents back (the knobs are left as they are).
 - Presets never capture or load the A/B (`enabled`): loading a look while
   comparing must not switch the page back on.
 
@@ -320,27 +340,35 @@ base, and `userDefaults` is removed.
 
 **One parameter at a time.** Double-click a row's name (or anywhere on the
 row but its slider and value field) to put just that parameter back to the
-**base preset** — the last one loaded (original, or the slot last loaded;
-stored as `presetBase`). The base is marked with a yellow underline and its
-tooltip says so. The row flashes to confirm. Double-clicking inside a value
+**base preset** — the last one loaded or saved (default, or a slot;
+stored as `presetBase`). The base is marked with a small yellow dot before
+its name — a mark, not a pressed look, so nothing in the row reads as
+selected — and its tooltip says so. The row flashes to confirm. Double-clicking inside a value
 field selects the text instead, as it should, and two quick clicks on a
 slider thumb are a nudge, never a reset. A typed value that had to clamp
 flashes its row the same way, so the clamp is visible.
 
 **Tooltips.** Everything in the panel — the title line, the A/B, the chips,
-every row, value field, section header, group caption and button, the MIDI
-block — carries hover copy explaining what it is and what it does. The copy
-appears in a **help strip pinned to the bottom edge** of the panel, full
-width, below the scrolling area, so it never lands on top of a row; at rest
-it reads *Hover anything to read what it does. Double-click a row's name to
-put it back.* A parameter's tip leads with what you will see or hear, then
-the precise sentence, then the gesture hint, and ends with its storage key
-in muted type (`key: audioFbReturn`) so the panel and this sheet stay
-cross-referenced. The strip has a fixed height, so hovering never moves
-anything; the harness checks every tip fits it. The `tooltips` switch at
-the bottom, under the MIDI block, turns the layer off entirely (the strip
-goes and gives its room back); it defaults on and the setting persists
-(storage key `tooltips`, also outside `DEFAULTS`).
+the presets caption, every row, value field, section header, group caption
+and button, the MIDI block — carries hover copy explaining what it is and
+what it does. The copy appears in a **help strip pinned to the bottom
+edge** of the panel, full width. At rest it is **one line** (~40 px)
+reading *Hover to read a knob · double-click a name to reset it*, in room
+the panel column keeps free below the scroller, so at rest it covers no
+row. On hover it **grows to fit the tip** (at most 136 px, ~120 ms)
+upward **as an overlay** over the bottom of the scroller: no row moves, and
+the scroller's height and scroll length never change. The strip ignores
+the pointer, so growing over the hovered row cannot steal the hover; the
+cost is that a tip can briefly cover the lowest rows while it is read. A
+click can also put a one-line message there for a moment (*switch ON to
+see it*, *images are shaped by SORT*). A parameter's tip leads with what
+you will see or hear, then the precise sentence, then the gesture hint, and
+ends with its storage key in muted type (`key: audioFbReturn`) so the panel
+and this sheet stay cross-referenced. The harness checks every tip fits
+the 136 px cap and that hovering moves no row. The `tooltips` switch at the
+bottom, under the MIDI block, turns the layer off entirely (the strip goes
+and gives its line back to the scroller); it defaults on and the setting
+persists (storage key `tooltips`, also outside `DEFAULTS`).
 
 **Outside the panel.** The toolbar icon carries a yellow **ON** badge while
 `enabled` is on and none when off, and its hover title names the piece and
@@ -354,7 +382,8 @@ The panel has its own harness: `test/harness/panel.html`.
 1. Open the panel on the kiosk once and grant the MIDI permission (it
    persists in the profile).
 2. With a controller connected, every row shows a ⊙ button (they stay
-   hidden while the MIDI block reads "no device"). Click one (it arms,
+   hidden while the MIDI block reads "no device", and so does the block's
+   "click a param's ⊙" instruction). Click one (it arms,
    highlighted), move a knob — that CC is now bound and the button shows
    its number. Folded engine rows have theirs too: unfold the engine first. Mappings persist in
    storage; re-learn to change, one CC per param.
@@ -362,7 +391,7 @@ The panel has its own harness: `test/harness/panel.html`.
 
 Any class-compliant controller works. Suggested performance set (panel
 labels in brackets): threshold, `decay`, `driftY` (drift y), `passes` (sort
-passes). For audio: `audioMix` (output), `audioSustain` (ring time),
+passes). For audio: `audioMix` (mix), `audioSustain` (ring time),
 `audioBodyMix` (body amount) and `audioFbReturn` (return) — the two that
 move the balance between the apparatus and the video — `audioFbDecay`
 (tail), `audioFbWobble` (wobble).

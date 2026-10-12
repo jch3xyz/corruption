@@ -61,7 +61,7 @@ export const GROUPS = [
     id: 'body',
     section: 'audio',
     title: 'body',
-    tip: 'The apparatus: a fixed resonant object every sound passes through and rings. Body amount is the identity dial.',
+    tip: 'The apparatus: a fixed resonant object every sound passes through and rings. Mix sets how much of the process you hear at all; body amount is the identity dial.',
   },
   {
     id: 'smear',
@@ -74,7 +74,7 @@ export const GROUPS = [
     section: 'audio',
     title: 'engine',
     collapsible: true,
-    tip: 'Setup rather than sound: overall output, how many sources, how the body is driven, and whether the smear ever wipes itself. Folded away until you open it.',
+    tip: 'Setup rather than sound: the dry source inside the process, how many sources, how the body is driven, and whether the smear ever wipes itself. Folded away until you open it.',
   },
 ];
 
@@ -93,7 +93,7 @@ export const DEFS = [
     key: 'enabled',
     label: 'enabled',
     type: 'toggle',
-    tip: 'The A/B: the whole piece on or off — video, images, text and sound. Click to latch. Press and hold to see and hear the page untouched for as long as you hold; let go and the bending comes back. Ctrl+Shift+D flips it from any page without the panel.',
+    tip: 'The A/B: the whole piece on or off — video, images, text and sound. Click to latch. Press and hold past half a second to see and hear the page untouched for as long as you hold; let go and the bending comes back. Ctrl+Shift+D flips it from any page without the panel.',
   },
   {
     key: 'video',
@@ -309,7 +309,17 @@ export const DEFS = [
     tip: 'Sound on/off. Off = every source plays exactly as it arrived. The tap on each source stays in place by design; off routes it around the process.',
   },
 
-  // --- Audio · body ---
+  // --- Audio · body (the level first: mix, then the apparatus) ---
+  {
+    key: 'audioMix',
+    label: 'mix',
+    min: 0,
+    max: 1,
+    step: 0.01,
+    section: 'audio',
+    group: 'body',
+    tip: 'Wet/dry for the whole sound. 0 = the sound exactly as transmitted, 1 = all apparatus. Applied after everything else, on 30 ms ramps — unlike dry (under engine), which lives inside the process.',
+  },
   {
     key: 'audioBodyMix',
     label: 'body amount',
@@ -348,16 +358,6 @@ export const DEFS = [
     section: 'audio',
     group: 'body',
     tip: 'How hard the sound strikes the body. Shapes the attack more than the loudness, because every partial is capped.',
-  },
-  {
-    key: 'audioDirect',
-    label: 'dry',
-    min: 0,
-    max: 1,
-    step: 0.01,
-    section: 'audio',
-    group: 'body',
-    tip: 'The untouched source mixed back in. Up = intelligible again, which defeats the piece; kept for comparison. The source’s level inside the process, summed with the body; 0 = only the body is heard, struck by the source.',
   },
 
   // --- Audio · smear ---
@@ -402,14 +402,14 @@ export const DEFS = [
 
   // --- Audio · engine ---
   {
-    key: 'audioMix',
-    label: 'output',
+    key: 'audioDirect',
+    label: 'dry',
     min: 0,
     max: 1,
     step: 0.01,
     section: 'audio',
     group: 'engine',
-    tip: 'The whole process against the original. 0 = the sound exactly as transmitted; 1 = fully processed. A wet/dry after everything else, on 30 ms ramps — unlike dry, which lives inside the process.',
+    tip: 'The untouched source mixed back in. Up = intelligible again, which defeats the piece; kept for comparison. The source’s level inside the process, summed with the body; 0 = only the body is heard, struck by the source.',
   },
   {
     key: 'audioMaxTaps',
@@ -512,8 +512,8 @@ export const fmtValue = (def, v) => {
 };
 
 // A row's restore value resolves through the BASE preset first — the slot
-// last loaded (A/B/C), or null when the base is "original" — then the code
-// DEFAULTS. "original" is never stored, so the compiled DEFAULTS are always
+// last loaded (A/B/C), or null when the base is "default" — then the code
+// DEFAULTS. "default" is never stored, so the compiled DEFAULTS are always
 // one click away (correction #8: edit DEFAULTS in source and the panel can
 // still reach them). A partial preset falls through per key.
 export function defaultFor(key, base) {
@@ -529,7 +529,7 @@ export function defaultFor(key, base) {
 export const PRESET_SLOTS = ['A', 'B', 'C'];
 
 // Keys a preset neither captures nor loads. The A/B is the comparison
-// gesture, not part of a look: loading a preset (or "original") while the
+// gesture, not part of a look: loading a preset (or "default") while the
 // page is switched off must not switch it back on, and a save made mid-hold
 // must not capture the bypass.
 export const PRESET_EXCLUDED = ['enabled'];
