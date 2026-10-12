@@ -921,6 +921,66 @@ function tier0() {
       same(run(spanSteps(512, { flow: 1 })), flowed)
   );
 
+  // --- Where: the soft barrier (round 8 part 3) ----------------------------
+  // Threshold 0.5, soft 0.3: the band is luma 0.2–0.5. A random mix of three
+  // grey families — bright (≥ 140/255), just under (90–114, luma ~0.35–0.45:
+  // inside the band) and deep (0–38, luma ≤ 0.15: under the band) — so the
+  // hard barrier holds both dark families and the soft one only the deep.
+  const softSrc = src((x) => {
+    for (let j = 0; j < H; j++) {
+      for (let i = 0; i < W; i++) {
+        const r = rnd();
+        const v = r < 0.45 ? 140 + ((rnd() * 116) | 0) : r < 0.75 ? 90 + ((rnd() * 25) | 0) : (rnd() * 39) | 0;
+        x.fillStyle = `rgb(${v},${v},${v})`;
+        x.fillRect(i, j, 1, 1);
+      }
+    }
+  });
+  const softSteps = (soft, { seed, img = softSrc, threshold = 0.5, temperature = 0 } = {}) => (p, b) => {
+    p.uploadFrame(b, img);
+    p.runReset(b);
+    p.runSortPasses(b, 200, threshold, 64, { soft, seed, temperature });
+  };
+  const softIn = run((p, b) => {
+    p.uploadFrame(b, softSrc);
+    p.runReset(b);
+  });
+  // Pixels of a family that left their place (by the input's family at each
+  // position: a moved pixel changes its position's value, or another
+  // pixel lands on it).
+  const familyMoved = (px, lo, hi) => {
+    let n = 0;
+    for (let i = 0; i < px.length; i += 4) {
+      if (softIn[i] >= lo && softIn[i] <= hi && px[i] !== softIn[i]) n++;
+    }
+    return n;
+  };
+  const hard = run(softSteps(0));
+  check(
+    'soft barrier: 0 is inert — bit-identical to the sort without the option (threshold 0 and 0.5)',
+    same(run(softSteps(0, { img: noisy, threshold: 0 })), s1) &&
+      same(hard, run((p, b) => {
+        p.uploadFrame(b, softSrc);
+        p.runReset(b);
+        p.runSortPasses(b, 200, 0.5, 64);
+      }))
+  );
+  const soft3 = run(softSteps(0.3, { seed: 1234 }));
+  check(
+    `soft barrier 0.3: pixels just under the threshold now trade (${familyMoved(soft3, 90, 114)} moved; hard cut ${familyMoved(hard, 90, 114)}) and none under threshold − soft does (${familyMoved(soft3, 0, 38)} moved)`,
+    familyMoved(soft3, 90, 114) > 0 && familyMoved(hard, 90, 114) === 0 && familyMoved(soft3, 0, 38) === 0 && familyMoved(hard, 0, 38) === 0
+  );
+  check(
+    'soft barrier: a permutation (0.3 and 0.5, with jitter too)',
+    globalKey(soft3) === globalKey(softIn) && globalKey(run(softSteps(0.5))) === globalKey(softIn) &&
+      globalKey(run(softSteps(0.3, { temperature: 0.3 }))) === globalKey(softIn)
+  );
+  check(
+    'soft barrier: deterministic for a seed sequence (runSortPasses opts.seed) — the same seed replays it, another seed draws differently; jitter replays too',
+    same(soft3, run(softSteps(0.3, { seed: 1234 }))) && !same(soft3, run(softSteps(0.3, { seed: 99 }))) &&
+      same(run(softSteps(0, { temperature: 0.3, seed: 7 })), run(softSteps(0, { temperature: 0.3, seed: 7 })))
+  );
+
 }
 
 // --- The boot guard (round 8) ------------------------------------------------

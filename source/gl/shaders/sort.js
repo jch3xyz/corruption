@@ -92,6 +92,20 @@
 // negative direction would put a wall one pixel in from the edge, and a
 // span longer than the frame would not be "no wall". Cells are contiguous
 // along the projection, so the midpoint needs no check of its own.
+//
+// uSoft — the soft barrier (`barrierSoft`). The luma barrier becomes a
+// band: at or above uThreshold a member passes; below uThreshold − uSoft it
+// never does; in between it passes when the pair's draw falls under
+// (l − (uThreshold − uSoft)) / uSoft, so the odds rise toward the
+// threshold and ribbon ends fray instead of cutting clean. ONE draw per
+// pair per pass, from the temperature's hash family — keyed on the upper
+// member and uSeed — with different constants, so it is independent of the
+// temperature's draw; the same draw judges self, other and the midpoint,
+// so both members reach the same verdict and the pass stays a permutation.
+// At uSoft 0 the old comparisons run untouched (their own branch), so the
+// hard cut is bit-identical. The band is not floored at black: with a low
+// threshold (the resting 0.05) a wide band reaches below 0, and black
+// itself then trades with odds (uSoft − uThreshold) / uSoft.
 import { GLSL_LUMA } from './common.js';
 
 export const FRAG_SORT = `#version 300 es
@@ -112,6 +126,7 @@ uniform float uAngle;
 uniform sampler2D uEdge;
 uniform float uEdgeGate;
 uniform float uSpan;
+uniform float uSoft;
 in vec2 vUV;
 out vec4 outColor;
 ${GLSL_LUMA}
@@ -166,6 +181,24 @@ ivec2 quantizeDir(float a) {
   int k = int(round(a / SECTOR + uSectorJitter));
   return DIRS[((k % 16) + 16) % 16];
 }
+// The soft barrier's draw for a pair (only while uSoft > 0): [0, 1), keyed
+// on the upper member and the pass seed like the temperature's, with other
+// constants so the two draws are independent.
+float softDraw(ivec2 up) {
+  uint h = (uint(up.x) * 374761393u) ^ (uint(up.y) * 668265263u) ^
+           (uint(uSeed) * 3266489917u) ^ 0x9E3779B9u;
+  h = (h ^ (h >> 15u)) * 2246822519u;
+  h = (h ^ (h >> 13u)) * 3266489917u;
+  h = h ^ (h >> 16u);
+  return float(h & 0x00FFFFFFu) / 16777216.0;
+}
+// One member against the soft barrier, under the pair's draw.
+bool softPass(float l, float draw) {
+  if (l >= uThreshold) return true;
+  float lo = uThreshold - uSoft;
+  if (l < lo) return false;
+  return draw < (l - lo) / uSoft;
+}
 // The edges gate for one texel (only called while uEdgeGate != 0).
 bool edgeOK(ivec2 c) {
   float e = texelFetch(uEdge, c, 0).r;
@@ -217,8 +250,17 @@ void main() {
   }
   vec4 other = texelFetch(uTex, q, 0);
 
-  // The barrier reads luma whatever the key.
-  if (luma(self.rgb) < uThreshold || luma(other.rgb) < uThreshold) {
+  // The barrier reads luma whatever the key. Hard (uSoft 0, the old
+  // comparisons, untouched) or soft: one draw for the pair, shared by both
+  // members and the midpoint.
+  float draw = 0.0;
+  if (uSoft > 0.0) {
+    draw = softDraw(isUpper ? p : q);
+    if (!softPass(luma(self.rgb), draw) || !softPass(luma(other.rgb), draw)) {
+      outColor = self;
+      return;
+    }
+  } else if (luma(self.rgb) < uThreshold || luma(other.rgb) < uThreshold) {
     outColor = self;
     return;
   }
@@ -245,7 +287,7 @@ void main() {
   if (s > 1) {
     ivec2 m = isUpper ? p + (s / 2) * v : p - (s / 2) * v;
     vec4 mid = texelFetch(uTex, m, 0);
-    if (luma(mid.rgb) < uThreshold) {
+    if (uSoft > 0.0 ? !softPass(luma(mid.rgb), draw) : luma(mid.rgb) < uThreshold) {
       outColor = self;
       return;
     }

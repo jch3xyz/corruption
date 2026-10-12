@@ -60,6 +60,7 @@ export function createPipeline(gl) {
     'uEdge',
     'uEdgeGate',
     'uSpan',
+    'uSoft',
   ]);
   const edge = buildProgram(gl, VERT_FULLSCREEN, FRAG_EDGE, ['uFrame', 'uTexel']);
   const field = buildProgram(gl, VERT_FULLSCREEN, FRAG_FIELD, [
@@ -232,10 +233,19 @@ export function createPipeline(gl) {
       // Span walls (round 8 part 3): pixels along the sort direction, whole
       // numbers; 0 = none.
       gl.uniform1f(sort.uniforms.uSpan, Math.max(0, Math.floor(opts.span || 0)));
+      // The soft barrier (round 8 part 3): how far under threshold the band
+      // reaches; 0 = the hard cut.
+      gl.uniform1f(sort.uniforms.uSoft, Math.max(0, opts.soft || 0));
       gl.uniform1i(sort.uniforms.uEdge, 2);
       gl.activeTexture(gl.TEXTURE2);
       gl.bindTexture(gl.TEXTURE_2D, bundle.edge.tex);
       gl.activeTexture(gl.TEXTURE0);
+      // The per-pass seed (temperature, soft barrier): the shared counter,
+      // or — when opts.seed is an integer — a sequence starting from it, so
+      // a caller (tier 0) can replay the exact draws. The counter does not
+      // advance for a seeded call.
+      const seeded = Number.isInteger(opts.seed);
+      const base = seeded ? opts.seed : sortSeed;
       for (let i = 0; i < passes; i++) {
         const [stride, parity] = schedule[i % schedule.length];
         const write = bindWrite(bundle);
@@ -246,11 +256,11 @@ export function createPipeline(gl) {
         // the pass index WITHIN this call (not the global seed) so
         // identical calls stay bit-identical — tier 0 asserts that.
         gl.uniform1f(sort.uniforms.uSectorJitter, ((i * 0.6180339887498949) % 1) - 0.5);
-        sortSeed = (sortSeed + 1) & 0x7fffffff;
-        gl.uniform1i(sort.uniforms.uSeed, sortSeed);
+        gl.uniform1i(sort.uniforms.uSeed, (base + i + 1) & 0x7fffffff);
         drawQuad();
         bundle.read = write;
       }
+      if (!seeded) sortSeed = (sortSeed + passes) & 0x7fffffff;
     },
 
     // Draw the current accumulator to the default framebuffer (bottom-left
