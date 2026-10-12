@@ -31,6 +31,22 @@ no build step — "Load unpacked" points at `source/`.
 
 ## Status — everything below is committed and harness-verified
 
+**Handoff, 2026-10-12 (end of the cloud session; John continues locally).**
+Branch `claude/release-packaging-options-w09tf2`, draft PR #1, everything
+pushed. The design-iteration stage is through its first loop: heuristic
+review ×3 rounds, room evidence, and four panel commits (image feedback
+removed; the global block with the A/B, four medium switches and presets;
+Video/Audio regrouped into effect / effect / engine; round-3 fixes), plus
+the two panel-placement prototypes behind `panelHome`. Suites at head:
+panel 211/211, strip 36/36, text 35/35, audio tiers 34/34; the visual
+suite's headless run fails the same 10 starvation checks as the untouched
+base and needs a visible tab. **Nothing on this branch has been exercised
+in a real Chrome yet**, so the first local step is the checklist below, then
+the two decisions John holds (seam on the page; placement default), then
+the effects queue in `design-review.md`. Read `design-review.md` before
+touching the panel again; it carries the reasoning and the open items.
+
+
 | Commit | What landed |
 |---|---|
 | Phase 0 | Repo, MV3 skeleton (bootstrap → dynamic-import modules), icons |
@@ -200,7 +216,17 @@ balance are the open item below. The previous sound is exactly reachable at
   by the panel preference `panelHome` (row "panel lives in"); see
   [parameters.md](parameters.md#where-the-panel-lives-panelhome-prototypes-pending-johns-choice)
   for what is verified and what needs a real Chrome. Strip suite:
-  `test/harness/strip.html`.
+  `test/harness/strip.html`. The prototypes were cherry-picked onto the
+  branch after round 3 and reconciled with it (strip layout keeps a
+  full-height help column; the overlay strip is window-mode only).
+
+  **Open items John holds (2026-10-12):** (1) the in-page first-run mark,
+  the remaining half of the seam; (2) which `panelHome` becomes the
+  default, after the real-Chrome checks below; (3) threshold shown
+  inverted as an *amount*; (4) an intensity macro; (5) headline knobs that
+  ship at the rail (ring time, drive, tail); (6) the effects queue in
+  design-review.md (feedback blend, direct sort handles, source-following
+  audio body, performance ramp); (7) the comb body / gated exciter A/B.
 
 For a full technical description of both pipelines — the GL sort/composite
 path and the resonant-body audio path, with the reasoning behind each —
@@ -348,6 +374,23 @@ python3 test/serve.py 8439   # second origin for the image CORS-route test
 
 ## John's manual checklist (needs real Chrome; not yet all exercised)
 
+- **Panel, first.** Load unpacked from `source/` at the branch head. Open
+  YouTube, click the icon: the A/B latches on a click and compares while
+  held past 600 ms; the four switches drop their medium; the room's old
+  `userDefaults` has migrated into preset slot A (base dot on A); `save…`
+  then a slot, load, `undo` within ten seconds; the help strip grows on
+  hover; the audio status line under AUDIO names sources on a playing
+  video (the stats plumbing content script → service worker → panel is
+  untested outside the harness); the toolbar badge reads ON and clears on
+  Ctrl+Shift+D.
+- **Placement.** Set `panel lives in` (bottom of the panel) to `side`,
+  close, Ctrl+Shift+P: does the side panel open, does a second icon click
+  close it, does MIDI work there without a new prompt? Then `strip` on
+  YouTube: does it appear, does MIDI work inside its iframe, how badly
+  does it cover the player's own controls, does fullscreen hide it? The
+  answers decide the default; log the verdict in design-review.md M9.
+- **MIDI** in every home: the ⊙ column must appear only when a controller
+  is present; learn and bind one knob per home.
 - Visual suite re-run in real Chrome (the embedded pane starves rVFC and
   can't adjudicate it — verified identical at baseline).
 - Audio plumbing: page mute/volume through the chain; a cross-origin-audio
