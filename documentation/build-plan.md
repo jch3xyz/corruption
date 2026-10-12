@@ -144,6 +144,22 @@ balance are the open item below. The previous sound is exactly reachable at
   appear rather than folding them silently into panel commits. The
   CSS-scramble toggle above is the first candidate in that queue.
 
+  **Who the user is (John, 2026-10-12): the stranger, not John.** The
+  panel was built for John tuning a preset he could leave on a kiosk and
+  forget. That framing is retired. The piece is now **an instrument, and
+  the interactivity is integral to it**: the person who installed it from
+  the store, or walked up at an art crawl, is meant to play it, with no
+  mental model of sort passes or resonators. John's expert surface stays
+  reachable but is the second user. Method, in order: (1) a Nielsen
+  heuristic evaluation by several independent reviewers against the
+  shipped panel, findings ranked by severity, logged in
+  `documentation/design-review.md`; (2) a think-aloud test with real
+  people on a fixed task list — John already holds first-hand observations
+  from two art crawls, which go into that round as evidence that outranks
+  the heuristics; (3) merge both into one ranked list, fix the painful
+  items first, re-run the heuristic pass on the revised panel. The panel
+  harness stays the regression net throughout.
+
 For a full technical description of both pipelines — the GL sort/composite
 path and the resonant-body audio path, with the reasoning behind each —
 see [how-it-works.md](how-it-works.md).
