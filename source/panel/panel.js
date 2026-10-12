@@ -3,16 +3,18 @@
 // Outside the extension (dev preview, panel harness) a local shim stands in
 // for storage so the UI is testable in a plain tab.
 //
-// Four storage keys live OUTSIDE params.js DEFAULTS on purpose, so the
+// Five storage keys live OUTSIDE params.js DEFAULTS on purpose, so the
 // content scripts (which filter on `key in DEFAULTS`) never see them:
 // `midiMap`, `presets` (slots A/B/C), `presetBase` (the last-loaded preset,
-// which a row double-click returns to) and `tooltips`. A legacy
+// which a row double-click returns to), `tooltips`, and `engineOpen`
+// ({video, audio}: whether each section's engine group is unfolded). A legacy
 // `userDefaults` (the old "set defaults" snapshot) migrates into slot A on
 // boot and is removed.
 
 import { DEFAULTS } from '../content/params.js';
 import {
   SECTIONS,
+  GROUPS,
   DEFS,
   ROW_HINT,
   NUM_HINT,
@@ -77,6 +79,19 @@ const TEXT_ONLY = ['textMin'];
 // The flow shape knobs only mean anything while flow amount is above zero.
 const FLOW_ONLY = ['flowMode', 'flowScale', 'flowSpeed'];
 
+// What an inert row says instead of its knob (design review finding 9): the
+// switch that would bring it back, named by its panel label. Derived from
+// the gating above — nothing new is gated here.
+const GATE = {
+  feedback: 'needs feedback',
+  flow: 'needs flow',
+  text: 'needs text',
+  audio: 'needs audio',
+  smear: 'needs smear',
+  clear: 'needs clear',
+  comb: 'comb only',
+};
+
 const hasChrome = typeof chrome !== 'undefined' && !!chrome.storage?.local;
 const shim = { data: { ...DEFAULTS }, listeners: [] };
 
@@ -131,6 +146,7 @@ const inputs = {};
 const valueEls = {};
 const learnEls = {};
 const rowEls = {};
+const gateEls = {};
 const renderers = {};
 const onRender = (key, fn) => (renderers[key] ??= []).push(fn);
 
@@ -140,6 +156,7 @@ function buildRow(def) {
   row.dataset.key = def.key;
   row.dataset.tip = def.tip;
   row.dataset.hint = ROW_HINT;
+  row.dataset.param = def.key; // the tooltip's last line: the key, for John and the MIDI sheet
 
   const label = document.createElement('label');
   label.textContent = def.label;
@@ -163,6 +180,20 @@ function buildRow(def) {
     input.max = def.max;
     input.step = def.step;
   }
+  // The control cell. A row with `ends` gets tiny captions at both ends of
+  // its slider, so an inverted knob (threshold: left = more) reads without
+  // hovering.
+  let knob = input;
+  if (def.ends) {
+    knob = document.createElement('div');
+    knob.className = 'ends';
+    const lo = document.createElement('span');
+    const hi = document.createElement('span');
+    lo.className = hi.className = 'cap';
+    [lo.textContent, hi.textContent] = def.ends;
+    knob.append(lo, input, hi);
+  }
+  knob.classList.add('knob');
   input.addEventListener('input', () => {
     const v =
       def.type === 'toggle'
@@ -187,6 +218,7 @@ function buildRow(def) {
     value.spellcheck = false;
     value.dataset.tip = def.tip;
     value.dataset.hint = NUM_HINT;
+    value.dataset.param = def.key;
     attachNumberField(def, value, input);
   } else {
     value = document.createElement('span');
@@ -198,19 +230,28 @@ function buildRow(def) {
   learn.textContent = '⊙';
   learn.addEventListener('click', () => armLearn(def.key));
 
+  // Shown in place of the knob while the row is inert: the switch that
+  // would wake it (finding 9).
+  const gate = document.createElement('span');
+  gate.className = 'gate';
+
   // Double-click the row to restore this one parameter — the alternative to
   // all-or-nothing (John, 2026-08-20). The number field is excluded so that
-  // double-clicking inside it still selects the text.
+  // double-clicking inside it still selects the text, and the slider is
+  // excluded so two quick nudges of its thumb never reset the row (finding 8).
   row.addEventListener('dblclick', (e) => {
     if (e.target === value && isNumeric(def)) return;
+    if (e.target === input && input.type === 'range') return;
     resetParam(def.key);
   });
 
-  row.append(label, input, value, learn);
+  row.append(label, knob, value, learn, gate);
+  row.addEventListener('animationend', () => row.classList.remove('flash'));
   inputs[def.key] = input;
   valueEls[def.key] = value;
   learnEls[def.key] = learn;
   rowEls[def.key] = row;
+  gateEls[def.key] = gate;
   return row;
 }
 
@@ -224,7 +265,66 @@ function buildSection(section) {
   const title = document.createElement('h2');
   title.textContent = section.title;
   head.appendChild(title);
+  if (section.id === 'audio') {
+    // What is passing through the body in the tab being looked at (finding
+    // 7): silence should never be a mystery. Filled by the stats plumbing
+    // below; empty wherever that plumbing is unavailable.
+    const status = document.createElement('p');
+    status.className = 'status';
+    status.id = 'audio-status';
+    status.dataset.tip =
+      'What the sound process is doing in the tab you are looking at: how many sources are passing through the body right now. Paused sources, and ones the browser will not let the piece reach, play untouched.';
+    head.appendChild(status);
+  }
   return head;
+}
+
+// A group inside a section: a small caption, then its rows. An engine group
+// folds away behind a disclosure; its rows stay in the DOM (hidden), so
+// presets, MIDI and storage reach them exactly as before.
+const engineGroups = {}; // section id → { head, rows }
+
+function buildGroup(group, defs) {
+  const wrap = document.createElement('div');
+  wrap.className = 'group';
+  wrap.dataset.group = group.id;
+  wrap.dataset.section = group.section;
+
+  let head;
+  if (group.collapsible) {
+    head = document.createElement('button');
+    head.type = 'button';
+    head.className = 'group-head disclosure';
+    head.setAttribute('aria-expanded', 'false');
+    head.addEventListener('click', () => {
+      setEngineOpen(group.section, head.getAttribute('aria-expanded') !== 'true', true);
+    });
+  } else {
+    head = document.createElement('div');
+    head.className = 'group-head';
+    head.textContent = group.title;
+  }
+  head.dataset.tip = group.tip;
+
+  const rows = document.createElement('div');
+  rows.className = 'group-rows';
+  for (const def of defs) rows.appendChild(buildRow(def));
+  wrap.append(head, rows);
+
+  if (group.collapsible) {
+    engineGroups[group.section] = { head, rows, title: group.title };
+    paintEngine(group.section, false);
+  }
+  return wrap;
+}
+
+function paintEngine(sectionId, open) {
+  const g = engineGroups[sectionId];
+  if (!g) return;
+  g.head.textContent = `${g.title} ${open ? '▾' : '▸'}`;
+  g.head.setAttribute('aria-expanded', String(open));
+  g.head.dataset.hint = open ? 'Click to fold the engine away.' : 'Click to unfold the engine.';
+  g.rows.hidden = !open;
 }
 
 // The tooltips switch is panel furniture rather than a parameter of the
@@ -246,6 +346,7 @@ function buildTooltipRow() {
   const input = document.createElement('input');
   input.type = 'checkbox';
   input.id = 'tooltips';
+  input.className = 'knob';
 
   const value = document.createElement('span');
   value.className = 'value';
@@ -422,7 +523,20 @@ function buildChips() {
   globals.appendChild(buildAB(defByKey.enabled));
   for (const section of SECTIONS) {
     controls.appendChild(buildSection(section));
-    for (const def of bySection.get(section.id)) controls.appendChild(buildRow(def));
+    const defs = bySection.get(section.id);
+    // Ungrouped rows (a section's master, the text rows) come first, then
+    // each group in GROUPS order with its rows in DEFS order.
+    for (const def of defs.filter((d) => !d.group)) controls.appendChild(buildRow(def));
+    for (const group of GROUPS.filter((g) => g.section === section.id)) {
+      const members = defs.filter((d) => d.group === group.id);
+      if (members.length) controls.appendChild(buildGroup(group, members));
+    }
+    for (const def of defs.filter(
+      (d) => d.group && !GROUPS.some((g) => g.section === section.id && g.id === d.group)
+    )) {
+      console.warn('[panel] unknown group', def.group, def.key);
+      controls.appendChild(buildRow(def)); // never lose a row to a typo
+    }
   }
   globals.appendChild(buildChips()); // after the rows: text/audio chips read their defs
   document.getElementById('prefs').appendChild(buildTooltipRow());
@@ -447,6 +561,8 @@ function writeValueCell(def, v) {
 function attachNumberField(def, el, slider) {
   const commit = (n) => {
     const v = quantize(def, n);
+    // A value that had to clamp says so (finding 8): the row flashes.
+    if (n < Number(def.min) || n > Number(def.max)) flashRow(def.key);
     slider.value = v;
     queueWrite(def.key, v);
     syncFor(def.key);
@@ -503,25 +619,28 @@ function syncFor(key) {
   else if (AUDIO_TRIGGERS.includes(key)) syncAudioUI();
 }
 
-function setInert(key, inert) {
+// `gate` is null for a live row, or the GATE text naming what would wake it.
+function setInert(key, gate) {
+  const inert = !!gate;
   inputs[key].disabled = inert;
   const value = valueEls[key];
   if (value.tagName === 'INPUT') value.disabled = inert;
   rowEls[key].classList.toggle('inert', inert);
+  gateEls[key].textContent = gate || '';
 }
 
 function syncFeedbackUI() {
   const video = inputs.feedbackVideo.checked;
-  for (const key of FEEDBACK_SHARED) setInert(key, !video);
+  for (const key of FEEDBACK_SHARED) setInert(key, video ? null : GATE.feedback);
 }
 
 function syncFlowUI() {
   const on = Number(inputs.flowAmount.value) > 0;
-  for (const key of FLOW_ONLY) setInert(key, !on);
+  for (const key of FLOW_ONLY) setInert(key, on ? null : GATE.flow);
 }
 
 function syncTextUI(on) {
-  for (const key of TEXT_ONLY) setInert(key, !on);
+  for (const key of TEXT_ONLY) setInert(key, on ? null : GATE.text);
 }
 
 function syncAudioUI() {
@@ -530,12 +649,18 @@ function syncAudioUI() {
   const clearOn = inputs.audioFbClear.checked;
   const comb = inputs.audioBody.value === 'comb';
   for (const key of AUDIO_ONLY) {
+    // The outermost switch that is off is the one named.
     setInert(
       key,
-      !on ||
-        (AUDIO_FB_ONLY.includes(key) && !fbOn) ||
-        (AUDIO_FB_CLEAR_ONLY.includes(key) && !clearOn) ||
-        (AUDIO_COMB_ONLY.includes(key) && !comb),
+      !on
+        ? GATE.audio
+        : AUDIO_FB_ONLY.includes(key) && !fbOn
+          ? GATE.smear
+          : AUDIO_FB_CLEAR_ONLY.includes(key) && !clearOn
+            ? GATE.clear
+            : AUDIO_COMB_ONLY.includes(key) && !comb
+              ? GATE.comb
+              : null,
     );
   }
 }
@@ -650,9 +775,15 @@ function resetParam(key) {
   if (v === undefined) return;
   queueWrite(key, v);
   setUI(key, v);
+  flashRow(key);
+}
+
+// The row acknowledges something it did on its own: a restore, a clamp.
+function flashRow(key) {
   const row = rowEls[key];
+  if (!row) return;
   row.classList.remove('flash');
-  void row.offsetWidth; // restart the animation on a repeat double-click
+  void row.offsetWidth; // restart the animation on a repeat
   row.classList.add('flash');
 }
 
@@ -800,22 +931,36 @@ document.addEventListener(
 })();
 
 // --- Tooltips (John, 2026-08-20: everything explains itself on hover) ---
+// Since 2026-10-12 (finding 6) the copy lives in a strip pinned to the
+// panel's bottom edge — a footer outside the scrolling area, so it can never
+// land on top of a row. At rest it carries the two gestures nothing else
+// shows; on hover, the control's tip, its gesture hint, and its storage key.
 
 const tipEl = document.getElementById('tooltip');
 const tipToggle = document.getElementById('tooltips');
 const tipToggleValue = document.getElementById('tooltips-value');
+const TIP_IDLE = 'Hover anything to read what it does. Double-click a row’s name to put it back.';
 let tooltipsOn = (await store.get({ tooltips: true })).tooltips !== false;
 let tipTimer = 0;
 let tipHost = null;
 
+function idleTip() {
+  tipEl.textContent = '';
+  tipEl.classList.add('idle');
+  const p = document.createElement('div');
+  p.textContent = TIP_IDLE;
+  tipEl.appendChild(p);
+}
+
 function hideTip() {
   clearTimeout(tipTimer);
   tipTimer = 0;
-  tipEl.hidden = true;
+  if (tooltipsOn) idleTip();
 }
 
-function placeTip(host) {
+function showTip(host) {
   tipEl.textContent = '';
+  tipEl.classList.remove('idle');
   const body = document.createElement('div');
   body.textContent = host.dataset.tip;
   tipEl.appendChild(body);
@@ -825,24 +970,21 @@ function placeTip(host) {
     hint.textContent = host.dataset.hint;
     tipEl.appendChild(hint);
   }
-  // Measure, then clamp into the (narrow) panel window.
-  tipEl.style.left = '0px';
-  tipEl.style.top = '0px';
-  tipEl.hidden = false;
-  const r = host.getBoundingClientRect();
-  const t = tipEl.getBoundingClientRect();
-  const left = Math.max(8, Math.min(r.left, window.innerWidth - t.width - 8));
-  const below = r.bottom + 6;
-  const top = below + t.height > window.innerHeight - 8 ? Math.max(8, r.top - t.height - 6) : below;
-  tipEl.style.left = `${Math.round(left)}px`;
-  tipEl.style.top = `${Math.round(top)}px`;
+  if (host.dataset.param) {
+    const key = document.createElement('p');
+    key.className = 'key';
+    key.textContent = `key: ${host.dataset.param}`;
+    tipEl.appendChild(key);
+  }
 }
 
 function setTooltips(on) {
   tooltipsOn = on;
   tipToggle.checked = on;
   tipToggleValue.textContent = on ? 'on' : 'off';
-  if (!on) hideTip();
+  tipEl.hidden = !on; // off silences the strip entirely, and gives its room back
+  if (on) hideTip();
+  else clearTimeout(tipTimer);
 }
 
 document.addEventListener('mouseover', (e) => {
@@ -851,7 +993,7 @@ document.addEventListener('mouseover', (e) => {
   tipHost = host;
   hideTip();
   if (!tooltipsOn || !host) return;
-  tipTimer = setTimeout(() => placeTip(host), 280);
+  tipTimer = setTimeout(() => showTip(host), 280);
 });
 document.addEventListener('mouseout', (e) => {
   if (e.relatedTarget) return; // still inside the panel
@@ -867,6 +1009,26 @@ tipToggle.addEventListener('change', () => {
   setTooltips(tipToggle.checked);
   store.set({ tooltips: tooltipsOn });
 });
+
+// --- The engine disclosures (M4/M8): folded by default, remembered ---
+// One storage key, `engineOpen` = {video, audio}; panel furniture like
+// `tooltips`, outside DEFAULTS.
+
+let engineOpen = { video: false, audio: false };
+
+function normaliseEngineOpen(v) {
+  const o = v && typeof v === 'object' ? v : {};
+  return { video: o.video === true, audio: o.audio === true };
+}
+
+function setEngineOpen(sectionId, open, persist) {
+  engineOpen = { ...engineOpen, [sectionId]: open };
+  paintEngine(sectionId, open);
+  if (persist) store.set({ engineOpen });
+}
+
+engineOpen = normaliseEngineOpen((await store.get({ engineOpen: null })).engineOpen);
+for (const id of Object.keys(engineGroups)) paintEngine(id, engineOpen[id]);
 
 // --- Hydrate, subscribe ---
 
@@ -885,6 +1047,9 @@ store.onChanged((changes) => {
       renderPresets();
     } else if (key === 'tooltips') {
       setTooltips(newValue !== false);
+    } else if (key === 'engineOpen') {
+      engineOpen = normaliseEngineOpen(newValue);
+      for (const id of Object.keys(engineGroups)) paintEngine(id, engineOpen[id]);
     } else if (key in inputs) {
       setUI(key, newValue);
     }
@@ -917,10 +1082,20 @@ function refreshMapped() {
 }
 refreshMapped();
 
+// The ⊙ learn buttons stay out of sight until a controller is connected
+// (finding 10): `midi-device` on <body> shows them. No Web MIDI, a refused
+// permission or zero inputs all leave them hidden; the MIDI block's status
+// line says which.
+function setMidiDevices(count) {
+  document.body.classList.toggle('midi-device', count > 0);
+  if (count === 0 && learnKey) armLearn(learnKey); // disarm a learn nobody can answer
+}
+
 initMIDI({
   onStatus(text) {
     document.getElementById('midi-status').textContent = text;
   },
+  onDevices: setMidiDevices,
   onCC(cc, value) {
     if (learnKey) {
       // Unmap any previous CC for this param, then bind.
@@ -950,3 +1125,75 @@ initMIDI({
     setUI(key, v);
   },
 });
+
+// --- Audio status line (finding 7): what the active tab is processing ---
+// Content scripts post `{type: 'deflection:stats', op: 'put', audio}` to the
+// service worker, which keeps the latest per tab (summed over frames). The
+// panel asks for the active tab's on open and every 2 s (`op: 'get'`), and
+// takes the worker's pushes (`op: 'push'`) between asks. Outside the
+// extension — the dev preview, the panel harness — there is no runtime, and
+// the line stays empty.
+
+const STATS_TYPE = 'deflection:stats';
+const audioStatusEl = document.getElementById('audio-status');
+const runtime = typeof chrome !== 'undefined' ? chrome.runtime : undefined;
+const canAskStats = !!(runtime?.id && runtime.sendMessage && runtime.onMessage);
+let statsTabId = null;
+let statsAudio = null;
+let statsKnown = false;
+
+function renderAudioStatus() {
+  if (!audioStatusEl) return;
+  if (!canAskStats || !statsKnown) {
+    audioStatusEl.textContent = '';
+    return;
+  }
+  const plural = (n, one, many) => (n === 1 ? one : many);
+  let text;
+  if (!inputs.enabled.checked) text = 'piece off — sound plays untouched';
+  else if (!inputs.audioEnabled.checked) text = 'audio off — sound plays untouched';
+  else if (!statsAudio || !statsAudio.taps) text = 'nothing on this page to tap';
+  else if (statsAudio.engaged > 0) {
+    const n = statsAudio.engaged;
+    text = `${n} ${plural(n, 'source', 'sources')} through the body`;
+  } else {
+    const n = statsAudio.taps;
+    text = `${n} ${plural(n, 'source', 'sources')} on this page, ${plural(n, 'not', 'none')} reaching the body`;
+  }
+  audioStatusEl.textContent = text;
+}
+
+onRender('enabled', renderAudioStatus);
+onRender('audioEnabled', renderAudioStatus);
+
+if (canAskStats) {
+  const ask = () => {
+    try {
+      Promise.resolve(runtime.sendMessage({ type: STATS_TYPE, op: 'get' }))
+        .then((reply) => {
+          if (!reply || reply.type !== STATS_TYPE) return;
+          statsTabId = reply.tabId ?? null;
+          statsAudio = reply.audio ?? null;
+          statsKnown = true;
+          renderAudioStatus();
+        })
+        .catch(() => {});
+    } catch {
+      // the extension was reloaded under this window: stay quiet
+    }
+  };
+  try {
+    runtime.onMessage.addListener((msg) => {
+      if (msg?.type !== STATS_TYPE || msg.op !== 'push') return;
+      if (statsTabId === null || msg.tabId !== statsTabId) return;
+      statsAudio = msg.audio ?? null;
+      statsKnown = true;
+      renderAudioStatus();
+    });
+  } catch {
+    // no listener: the 2 s ask still keeps the line current
+  }
+  ask();
+  setInterval(ask, 2000);
+}
+renderAudioStatus();

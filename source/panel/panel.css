@@ -6,8 +6,22 @@ body {
   font-family: ui-monospace, 'SF Mono', Menlo, monospace;
   font-size: 12px;
   margin: 0;
-  padding: 18px;
+  padding: 0;
   user-select: none;
+  /* The panel is a column: everything scrolls in #scroll, and the help
+     strip (#tooltip) is a footer under it, never on top of a row. */
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+#scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding: 18px;
 }
 
 h1 {
@@ -184,6 +198,44 @@ h2 {
   color: #9a9a70;
 }
 
+/* Audio's status line: what is passing through the body right now. */
+.section .status {
+  margin: 4px 0 0;
+  min-height: 1em;
+  color: #7a9a7a;
+  font-size: 10px;
+}
+
+.section .status:empty { display: none; }
+
+/* Groups inside a section (M4/M8): sort · feedback · engine, body · smear ·
+   engine. A small caption, then the rows; engine folds away. */
+.group { margin: 12px 0 0; }
+
+.group-head {
+  display: block;
+  margin: 0 0 2px;
+  padding: 0;
+  color: #6c6c76;
+  font-family: inherit;
+  font-size: 9px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  text-align: left;
+}
+
+.group-head.disclosure {
+  background: none;
+  border: none;
+  color: #8a8a94; /* a shade brighter than the captions: it is a control */
+  cursor: pointer;
+}
+
+.group-head.disclosure:hover { color: #e8e864; }
+.group-head.disclosure:focus-visible { outline: 1px solid #8a8a40; outline-offset: 2px; }
+
+.group-rows[hidden] { display: none; }
+
 .row {
   display: grid;
   /* 104px is the widest label in the table — no label wraps. */
@@ -195,11 +247,51 @@ h2 {
   border-radius: 3px;
 }
 
+/* Every cell is placed explicitly, so the gate caption can share the knob's
+   cell without pushing anything along. */
+.row > * { grid-row: 1; min-width: 0; }
+.row > label { grid-column: 1; }
+.row > .knob { grid-column: 2; }
+.row > .value { grid-column: 3; }
+.row > :nth-child(4) { grid-column: 4; }
+.row > .gate { grid-column: 2; }
+
 .row label { color: #9a9aa2; }
 
 .row.pref label { cursor: pointer; }
 
-.row.inert { opacity: 0.35; }
+/* Inert: dimmed, and the knob gives its cell to a caption naming the switch
+   that would wake it (finding 9). The caption itself is not dimmed. */
+.row.inert > :not(.gate) { opacity: 0.35; }
+.row.inert > .knob { visibility: hidden; }
+
+.row > .gate {
+  display: none;
+  color: #8a8a70;
+  font-size: 10px;
+  font-style: italic;
+  text-align: right;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.row.inert > .gate { display: block; }
+
+/* A slider with captions at its ends (threshold: more · less). */
+.ends {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.ends input[type='range'] { flex: 1 1 auto; min-width: 0; }
+
+.ends .cap {
+  flex: none;
+  color: #5c5c66;
+  font-size: 9px;
+}
 
 /* Double-click acknowledgement: the row that just went back to default. */
 @keyframes rowflash {
@@ -273,6 +365,13 @@ select {
   padding: 3px 4px;
 }
 
+/* MIDI learn stays hidden until a controller is connected (finding 10),
+   and its column goes with it, so the knobs get the width back. */
+body:not(.midi-device) .learn { display: none; }
+body:not(.midi-device) .row { grid-template-columns: 104px 1fr 62px; }
+body:not(.midi-device) .row > :nth-child(4) { display: none; }
+body:not(.midi-device) .ab-row { grid-template-columns: 1fr; }
+
 .learn {
   width: 26px;
   height: 22px;
@@ -323,26 +422,33 @@ select {
 
 .hint { color: #55555c; margin: 6px 0 0; }
 
-/* Hover copy for every control in the panel. */
+/* Hover copy for every control in the panel: a strip pinned to the bottom
+   edge, outside the scroller (finding 6). Fixed height, so hovering never
+   moves anything; every tip is written to fit (the harness checks). */
 #tooltip {
-  position: fixed;
-  z-index: 10;
-  max-width: 300px;
-  background: #22222a;
+  flex: none;
+  height: 136px;
+  overflow: hidden;
+  background: #1b1b21;
   color: #d8d8dc;
-  border: 1px solid #3a3a44;
-  border-radius: 5px;
-  padding: 7px 9px;
+  border-top: 1px solid #34343c;
+  padding: 8px 14px;
   font-size: 11px;
-  line-height: 1.45;
-  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.55);
-  pointer-events: none;
+  line-height: 1.4;
 }
 
 #tooltip[hidden] { display: none; }
+
+#tooltip.idle { color: #6c6c76; }
 
 #tooltip .hint {
   color: #8a8a94;
   font-size: 10px;
   margin: 5px 0 0;
+}
+
+#tooltip .key {
+  color: #5c5c66;
+  font-size: 10px;
+  margin: 3px 0 0;
 }

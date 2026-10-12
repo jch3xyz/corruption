@@ -13,12 +13,20 @@
 // chips, and presets (immutable original, slots A/B/C behind a save mode,
 // undo after every load). The old "set defaults" snapshot migrates to A.
 //
+// 2026-10-12, later (M4/M8 + round-1 findings 6–10): Video and Audio regroup
+// into effect / effect / engine with the engine folded away (`engineOpen`),
+// labels in the player's vocabulary (keys unchanged), an audio status line,
+// gate captions on inert rows, ⊙ hidden until a MIDI device appears, the
+// slider out of the row double-click, clamp flashes, and the tooltip moved
+// to a fixed strip under the scroller.
+//
 // Run: python3 test/serve.py  →  http://localhost:8437/test/harness/panel.html
 
 import { DEFAULTS } from '../../source/content/params.js';
 import {
   DEFS,
   SECTIONS,
+  GROUPS,
   quantize,
   fmtValue,
   fmtNumber,
@@ -30,11 +38,52 @@ import {
 
 // Keys the panel may store that are NOT parameters: panel furniture and the
 // preset store. Excluded from "every stored key has a row".
-const PANEL_ONLY = ['tooltips', 'midiMap', 'presets', 'presetBase'];
+const PANEL_ONLY = ['tooltips', 'midiMap', 'presets', 'presetBase', 'engineOpen'];
 // Sectionless rows: the global block's own controls.
 const GLOBAL_KEYS = ['enabled', 'video', 'images'];
 // The chips, in order, and the key each one drives.
 const CHIP_KEYS = ['video', 'images', 'textScramble', 'audioEnabled'];
+
+// The regrouped sections (design review M4/M8), in render order: rows that
+// sit above the groups, then each group's rows. Key → the player's label.
+const LAYOUT = {
+  video: {
+    loose: [],
+    groups: [
+      ['sort', ['threshold', 'flowAmount', 'flowMode', 'flowScale', 'flowSpeed', 'temperature']],
+      ['feedback', ['feedbackVideo', 'motionGate', 'decay', 'driftX', 'driftY', 'resetMinS', 'resetMaxS']],
+      ['engine', ['passes', 'streak', 'maxRes', 'maxVideos']],
+    ],
+  },
+  text: { loose: ['textScramble', 'textMin'], groups: [] },
+  audio: {
+    loose: ['audioEnabled'],
+    groups: [
+      ['body', ['audioBodyMix', 'audioBody', 'audioSustain', 'audioDrive', 'audioDirect']],
+      ['smear', ['audioFeedback', 'audioFbDecay', 'audioFbReturn', 'audioFbWobble']],
+      [
+        'engine',
+        ['audioMix', 'audioMaxTaps', 'audioExciter', 'audioCombDamp', 'audioFbClear', 'audioFbClearS', 'audioFbClearMinS', 'audioFbClearMaxS'],
+      ],
+    ],
+  },
+};
+const LABELS = {
+  threshold: 'threshold', flowAmount: 'flow', flowMode: 'flow mode', flowScale: 'flow scale',
+  flowSpeed: 'flow speed', temperature: 'jitter',
+  feedbackVideo: 'feedback', motionGate: 'motion gate', decay: 'decay', driftX: 'drift x',
+  driftY: 'drift y', resetMinS: 'clear min s', resetMaxS: 'clear max s',
+  passes: 'sort passes', streak: 'streak', maxRes: 'max res', maxVideos: 'max videos',
+  audioEnabled: 'audio',
+  audioBodyMix: 'body amount', audioBody: 'body type', audioSustain: 'ring time',
+  audioDrive: 'drive', audioDirect: 'dry',
+  audioFeedback: 'smear', audioFbDecay: 'tail', audioFbReturn: 'return', audioFbWobble: 'wobble',
+  audioMix: 'output', audioMaxTaps: 'max sources', audioExciter: 'exciter',
+  audioCombDamp: 'comb damp', audioFbClear: 'smear clear', audioFbClearS: 'clear fade s',
+  audioFbClearMinS: 'clear min s', audioFbClearMaxS: 'clear max s',
+};
+// Changelog has no place in hover copy (finding 6).
+const CHANGELOG = /since the detangle|until 20\d\d|pre-20\d\d|old synth|the old behaviour|20\d\d-\d\d-\d\d/i;
 
 const status = document.getElementById('status');
 let passCount = 0;
@@ -96,6 +145,47 @@ function tier1() {
       byKey.video?.type === 'toggle' &&
       byKey.images?.type === 'toggle'
   );
+  check(
+    'every grouped row names a group declared for its own section',
+    DEFS.filter((d) => d.group).every((d) => GROUPS.some((g) => g.section === d.section && g.id === d.group))
+  );
+  check(
+    'every group carries hover copy, and only the engines fold away',
+    GROUPS.every((g) => typeof g.tip === 'string' && g.tip.length > 20) &&
+      GROUPS.filter((g) => g.collapsible).map((g) => `${g.section}.${g.id}`).join() === 'video.engine,audio.engine'
+  );
+  {
+    const wantOrder = Object.entries(LAYOUT).flatMap(([, l]) => [...l.loose, ...l.groups.flatMap(([, keys]) => keys)]);
+    const haveOrder = DEFS.filter((d) => d.section).map((d) => d.key);
+    check('the control table lists every section row in the stated group order', haveOrder.join() === wantOrder.join());
+    const wantGroups = Object.values(LAYOUT).flatMap((l) => [
+      ...l.loose.map((k) => [k, undefined]),
+      ...l.groups.flatMap(([g, keys]) => keys.map((k) => [k, g])),
+    ]);
+    const wrongGroup = wantGroups.filter(([k, g]) => byKey[k]?.group !== g).map(([k]) => k);
+    check(`every row sits in its stated group (${wrongGroup.join(', ') || 'all'})`, wrongGroup.length === 0);
+  }
+  {
+    const wrong = Object.entries(LABELS).filter(([k, l]) => byKey[k]?.label !== l).map(([k]) => k);
+    check(`Video and Audio rows carry the player’s labels (${wrong.join(', ') || 'all'})`, wrong.length === 0);
+  }
+  check(
+    'the labels are the stranger’s, not the machine’s (no fb, taps, direct, temperature, sustain)',
+    DEFS.every((d) => !/\bfb\b|taps|direct|temperature|sustain|body mix|audio mix/.test(d.label))
+  );
+  {
+    const dated = DEFS.filter((d) => CHANGELOG.test(d.tip)).map((d) => d.key);
+    check(`no tip carries changelog (${dated.join(', ') || 'clean'})`, dated.length === 0);
+  }
+  check(
+    'the tips the review named lead with what you see or hear',
+    byKey.threshold.tip.startsWith('Lower = more of the picture is sorted. 0 tears everything but true black; 1 leaves it untouched. The most expressive knob.') &&
+      byKey.temperature.tip.startsWith('Random swaps on top of the sort. 0 = clean ribbons; up = grain and shimmer.') &&
+      byKey.motionGate.tip.startsWith('Only moving parts get sorted. 0 = everything; 1 = only what moves. A wet/dry for motion.') &&
+      byKey.audioBodyMix.tip.startsWith('How much of the resonant body you hear against the source. 0 = source only, 2 = all body.') &&
+      byKey.audioDirect.tip.startsWith('The untouched source mixed back in. Up = intelligible again, which defeats the piece; kept for comparison.')
+  );
+  check('threshold shows its direction at the slider ends (more · less)', byKey.threshold.ends?.join() === 'more,less');
   check(
     'presets are three slots and never capture the A/B',
     PRESET_SLOTS.join() === 'A,B,C' && PRESET_EXCLUDED.includes('enabled')
@@ -272,7 +362,7 @@ async function tier2() {
   let currentSection = null;
   const misplaced = [];
   const strayBeforeFirstDivider = [];
-  for (const el of $('#controls').children) {
+  for (const el of $('#controls').querySelectorAll('.section, .row')) {
     if (el.classList.contains('section')) {
       currentSection = el.dataset.section;
       continue;
@@ -344,7 +434,7 @@ async function tier2() {
   check(
     'the presets close the global block, above every divider',
     (() => {
-      const body = [...doc.body.children];
+      const body = [...$('#globals').parentElement.children];
       const g = body.indexOf($('#globals'));
       const p = body.indexOf($('#presets'));
       const n = body.indexOf($('#persist-note'));
@@ -387,8 +477,148 @@ async function tier2() {
   );
   check(
     'nothing in the panel overflows its 400 px window',
-    doc.documentElement.scrollWidth <= win.innerWidth
+    doc.documentElement.scrollWidth <= win.innerWidth && $('#scroll').scrollWidth <= $('#scroll').clientWidth
   );
+
+  // -- groups (M4/M8) --
+  {
+    const misgrouped = [];
+    for (const [sectionId, l] of Object.entries(LAYOUT)) {
+      const head = doc.getElementById(`section-${sectionId}`);
+      // Rows between this header and the next, in document order.
+      const rowsAfter = [...doc.querySelectorAll('#controls .section, #controls .row')];
+      const from = rowsAfter.indexOf(head);
+      const until = rowsAfter.findIndex((el, i) => i > from && el.classList.contains('section'));
+      const inSection = rowsAfter.slice(from + 1, until < 0 ? undefined : until).map((r) => r.dataset.key);
+      const want = [...l.loose, ...l.groups.flatMap(([, keys]) => keys)];
+      if (inSection.join() !== want.join()) misgrouped.push(`${sectionId} order`);
+      const loose = inSection.filter((k) => !row(k).closest('.group'));
+      if (loose.join() !== l.loose.join()) misgrouped.push(`${sectionId} loose rows`);
+      const groupEls = [...doc.querySelectorAll(`#controls .group[data-section="${sectionId}"]`)];
+      if (groupEls.map((g) => g.dataset.group).join() !== l.groups.map(([g]) => g).join()) {
+        misgrouped.push(`${sectionId} groups`);
+      }
+      for (const [gid, keys] of l.groups) {
+        const g = groupEls.find((el) => el.dataset.group === gid);
+        const have = g ? [...g.querySelectorAll('.row')].map((r) => r.dataset.key) : [];
+        if (have.join() !== keys.join()) misgrouped.push(`${sectionId}.${gid}`);
+      }
+    }
+    check(
+      `every row renders inside its group, in the stated order (${misgrouped.join(', ') || 'all in place'})`,
+      misgrouped.length === 0
+    );
+  }
+  check(
+    'each group shows a small caption: sort · feedback · engine, body · smear · engine',
+    [...doc.querySelectorAll('#controls .group-head')].map((h) => text(h).replace(/\s*[▸▾]$/, '')).join() ===
+      'sort,feedback,engine,body,smear,engine'
+  );
+  check(
+    'the rendered labels are the player’s',
+    Object.entries(LABELS).every(([k, l]) => text(row(k).querySelector('label')) === l)
+  );
+  check(
+    'the audio master stays first in its section, above the groups',
+    (() => {
+      const head = $('#section-audio');
+      const next = head.nextElementSibling;
+      return next?.dataset.key === 'audioEnabled' && next.nextElementSibling?.classList.contains('group');
+    })()
+  );
+  check(
+    'threshold shows "more" and "less" at its slider ends without hovering',
+    (() => {
+      const caps = [...row('threshold').querySelectorAll('.cap')];
+      const r = slider('threshold').getBoundingClientRect();
+      return (
+        caps.map(text).join() === 'more,less' &&
+        caps[0].getBoundingClientRect().right <= r.left + 1 &&
+        caps[1].getBoundingClientRect().left >= r.right - 1 &&
+        caps.every((c) => c.getBoundingClientRect().width > 0)
+      );
+    })()
+  );
+
+  const engineHead = (sec) => doc.querySelector(`#controls .group[data-section="${sec}"][data-group="engine"] .group-head`);
+  const ENGINE_KEYS = {
+    video: LAYOUT.video.groups.find(([g]) => g === 'engine')[1],
+    audio: LAYOUT.audio.groups.find(([g]) => g === 'engine')[1],
+  };
+  const shown = (el) => !!el && el.getClientRects().length > 0;
+  check(
+    'both engine groups start folded, labelled "engine ▸"',
+    ['video', 'audio'].every(
+      (sec) => text(engineHead(sec)) === 'engine ▸' && engineHead(sec).getAttribute('aria-expanded') === 'false'
+    )
+  );
+  check(
+    'folded engine rows still exist in the DOM (so every param keeps its row), just out of sight',
+    ['video', 'audio'].every((sec) => ENGINE_KEYS[sec].every((k) => !!row(k) && !shown(row(k))))
+  );
+  check('a folded engine writes nothing on boot', !('engineOpen' in store));
+  engineHead('video').click();
+  await sleep(60);
+  check(
+    'clicking the disclosure unfolds the video engine and says so (▾)',
+    text(engineHead('video')) === 'engine ▾' &&
+      ENGINE_KEYS.video.every((k) => shown(row(k))) &&
+      ENGINE_KEYS.audio.every((k) => !shown(row(k)))
+  );
+  check(
+    'the open state persists as engineOpen {video, audio}',
+    store.engineOpen?.video === true && store.engineOpen?.audio === false
+  );
+  engineHead('audio').click();
+  await sleep(60);
+  engineHead('video').click();
+  await sleep(60);
+  check(
+    'each engine folds and unfolds on its own, and storage follows',
+    store.engineOpen?.video === false &&
+      store.engineOpen?.audio === true &&
+      ENGINE_KEYS.audio.every((k) => shown(row(k))) &&
+      ENGINE_KEYS.video.every((k) => !shown(row(k)))
+  );
+  win.chrome.storage.local.set({ engineOpen: { video: true, audio: true } });
+  await sleep(60);
+  check(
+    'an engineOpen change from elsewhere (the other panel window) is followed',
+    text(engineHead('video')) === 'engine ▾' && ENGINE_KEYS.video.every((k) => shown(row(k)))
+  );
+
+  // -- the audio status line --
+  check(
+    'the audio status line sits under the Audio header, and is empty without chrome.runtime',
+    !win.chrome.runtime &&
+      $('#section-audio #audio-status') !== null &&
+      $('#audio-status').textContent === '' &&
+      !shown($('#audio-status'))
+  );
+
+  // -- MIDI learn hidden until a device is present --
+  const learns = [...doc.querySelectorAll('.learn')];
+  check(
+    'with no MIDI device every ⊙ is hidden, the A/B’s too, and the status says "no device"',
+    !doc.body.classList.contains('midi-device') &&
+      learns.length === DEFS.filter((d) => d.section).length + 1 &&
+      learns.every((el) => !shown(el)) &&
+      /no device|unavailable|denied/i.test($('#midi-status').textContent)
+  );
+  doc.body.classList.add('midi-device');
+  await sleep(30);
+  check(
+    'a connected device (the midi-device class) brings every visible row’s ⊙ back',
+    learns.filter((el) => shown(el.closest('.row, .ab-row'))).every((el) => shown(el)) &&
+      shown($('.ab-row .learn'))
+  );
+  check(
+    'and the tooltips switch still lines up with the rows in that layout',
+    win.getComputedStyle($('#prefs .row.pref')).gridTemplateColumns ===
+      win.getComputedStyle(row('threshold')).gridTemplateColumns
+  );
+  doc.body.classList.remove('midi-device');
+  await sleep(30);
 
   // -- the A/B --
   ab.click(); // keyboard-style activation (detail 0): Space/Enter
@@ -490,7 +720,7 @@ async function tier2() {
     }
     check(`clicking the ${key} chip's caption scrolls its section header into view`, top >= -2 && top < 40);
   }
-  win.scrollTo(0, 0);
+  $('#scroll').scrollTo(0, 0);
   await sleep(60);
 
   // -- typed values --
@@ -572,6 +802,35 @@ async function tier2() {
     'double-clicking inside a value field does not reset it (text stays selectable)',
     field('threshold').value === before && store.threshold === 1
   );
+
+  // Finding 8: two quick clicks on a slider thumb are a nudge, not a reset.
+  fire(slider('threshold'), 'dblclick');
+  await sleep(60);
+  check('double-clicking on a slider does not reset the row', store.threshold === 1);
+  fire(row('threshold').querySelector('label'), 'dblclick');
+  await sleep(60);
+  check('double-clicking the label still does', store.threshold === DEFAULTS.threshold);
+  type('threshold', '1');
+  field('threshold').blur();
+  await sleep(60);
+
+  // Typed values that clamp flash the row; in-range ones do not.
+  await sleep(600); // let earlier flashes finish
+  type('flowSpeed', '0.05');
+  await sleep(60);
+  const quietInRange = !row('flowSpeed').classList.contains('flash');
+  type('flowScale', '99');
+  await sleep(60);
+  check(
+    'a typed value that clamps flashes its row (and an in-range one does not)',
+    quietInRange && row('flowScale').classList.contains('flash') && store.flowScale === 12
+  );
+  press(field('flowScale'), 'Enter');
+  await sleep(600);
+  check('the clamp flash clears itself', !row('flowScale').classList.contains('flash'));
+  fire(row('flowScale'), 'dblclick');
+  fire(row('flowSpeed'), 'dblclick');
+  await sleep(60);
 
   // -- presets --
   const btnOriginal = $('#preset-original');
@@ -717,8 +976,13 @@ async function tier2() {
   // -- migration: a legacy userDefaults becomes slot A and the base --
   {
     const legacy = { ...DEFAULTS, threshold: 0.33, passes: 12 };
-    const seed = { userDefaults: legacy, threshold: 0.6, presets: { A: null, B: { threshold: 0.21 }, C: null } };
-    const f = await bootFrame(`./panel-frame.html?seed=${encodeURIComponent(JSON.stringify(seed))}`);
+    const seed = {
+      userDefaults: legacy,
+      threshold: 0.6,
+      presets: { A: null, B: { threshold: 0.21 }, C: null },
+      engineOpen: { audio: true },
+    };
+    const f = await bootFrame(`./panel-frame.html?midi=1&seed=${encodeURIComponent(JSON.stringify(seed))}`);
     const w = f.contentWindow;
     const s2 = w.__store;
     check(
@@ -727,6 +991,23 @@ async function tier2() {
     );
     check('the legacy key is removed', !('userDefaults' in s2));
     check('the migration leaves other slots alone', s2.presets.B?.threshold === 0.21);
+    {
+      const wd = w.document;
+      for (let i = 0; i < 20 && !wd.body.classList.contains('midi-device'); i++) await sleep(50);
+      const vis = (el) => !!el && el.getClientRects().length > 0;
+      check(
+        'with a (stubbed) controller connected, the panel shows the ⊙ column and names the device',
+        wd.body.classList.contains('midi-device') &&
+          vis(wd.querySelector('.row[data-key="threshold"] .learn')) &&
+          vis(wd.querySelector('.ab-row .learn')) &&
+          wd.getElementById('midi-status').textContent === 'harness controller'
+      );
+    }
+    check(
+      'a stored engineOpen is honoured on boot (audio open, video still folded)',
+      w.document.querySelector('.group[data-section="audio"][data-group="engine"] .group-rows').hidden === false &&
+        w.document.querySelector('.group[data-section="video"][data-group="engine"] .group-rows').hidden === true
+    );
     check(
       'migration loads nothing: the live values stay as stored',
       s2.threshold === 0.6 &&
@@ -761,10 +1042,71 @@ async function tier2() {
       return r.left >= 0 && r.top >= 0 && r.right <= win.innerWidth + 1;
     })()
   );
+  check(
+    'the tip’s last line is the internal key, muted',
+    tip.lastElementChild?.classList.contains('key') && text(tip.lastElementChild) === 'key: threshold'
+  );
+  check(
+    'the tip is a full-width strip pinned to the panel’s bottom edge',
+    (() => {
+      const r = tip.getBoundingClientRect();
+      return Math.abs(r.bottom - win.innerHeight) <= 1 && r.left <= 0.5 && Math.abs(r.width - win.innerWidth) <= 1;
+    })()
+  );
+  check(
+    'the strip never overlaps a row: it sits below the clipping scroller, outside it',
+    (() => {
+      const sc = $('#scroll');
+      const cs = win.getComputedStyle(sc);
+      return (
+        !sc.contains(tip) &&
+        ['auto', 'scroll'].includes(cs.overflowY) &&
+        sc.getBoundingClientRect().bottom <= tip.getBoundingClientRect().top + 0.5
+      );
+    })()
+  );
+  {
+    // Hover the row lying lowest in the visible scroller: still uncovered.
+    const sc = $('#scroll').getBoundingClientRect();
+    const low = [...doc.querySelectorAll('.row')]
+      .filter((r) => shown(r) && r.getBoundingClientRect().bottom <= sc.bottom && r.getBoundingClientRect().top >= sc.top)
+      .sort((a, b) => b.getBoundingClientRect().bottom - a.getBoundingClientRect().bottom)[0];
+    fire(low, 'mouseover');
+    await sleep(420);
+    check(
+      `hovering the lowest visible row (${low?.dataset.key ?? low?.className}) leaves it uncovered`,
+      !!low && !tip.hidden && low.getBoundingClientRect().bottom <= tip.getBoundingClientRect().top + 0.5
+    );
+  }
+  {
+    // Every tip has to fit the fixed strip: render each one into it exactly
+    // as the panel does (tip, hint, key) and look for overflow.
+    const saved = [...tip.childNodes];
+    const overflow = [];
+    for (const host of doc.querySelectorAll('[data-tip]')) {
+      tip.textContent = '';
+      const body = doc.createElement('div');
+      body.textContent = host.dataset.tip;
+      tip.appendChild(body);
+      for (const [cls, t] of [['hint', host.dataset.hint], ['key', host.dataset.param && `key: ${host.dataset.param}`]]) {
+        if (!t) continue;
+        const p = doc.createElement('p');
+        p.className = cls;
+        p.textContent = t;
+        tip.appendChild(p);
+      }
+      if (tip.scrollHeight > tip.clientHeight + 1) overflow.push(host.dataset.param || host.className || host.tagName);
+    }
+    tip.replaceChildren(...saved);
+    check(`every tip fits the strip without clipping (${overflow.join(', ') || 'all fit'})`, overflow.length === 0);
+  }
 
   fire($('#controls'), 'mouseover');
   await sleep(60);
-  check('leaving the row hides it again', tip.hidden);
+  check(
+    'leaving the row returns the strip to its resting line (the two hidden gestures)',
+    !tip.hidden && tip.classList.contains('idle') && /double-click/i.test(tip.textContent) && /hover/i.test(tip.textContent)
+  );
 
   fire(field('passes'), 'mouseover');
   await sleep(420);
@@ -791,7 +1133,7 @@ async function tier2() {
   // -- everything explains itself --
   const bare = [];
   for (const el of doc.querySelectorAll(
-    'h1, .lede, .keys, .ab, .chip-name, .chip-toggle, #persist-note, .section, .row, .row input.value.num, .learn, .btn, .midi h2, #midi-status, .midi .hint'
+    'h1, .lede, .keys, .ab, .chip-name, .chip-toggle, #persist-note, .section, .row, .row input.value.num, .learn, .btn, .midi h2, #midi-status, .midi .hint, .group-head, #audio-status'
   )) {
     if (el.hidden) continue;
     if (!el.dataset.tip || el.dataset.tip.length < 20) bare.push(el.className || el.tagName);
@@ -816,6 +1158,62 @@ async function tier2() {
     'and hands them back',
     !row('audioSustain').classList.contains('inert') && !field('audioSustain').disabled
   );
+
+  // -- inert rows say why (finding 9) --
+  const gateOf = (k) => row(k).querySelector('.gate');
+  const gateSays = (k, words) => {
+    const g = gateOf(k);
+    return row(k).classList.contains('inert') && shown(g) && text(g) === words &&
+      win.getComputedStyle(row(k).querySelector('.knob')).visibility === 'hidden';
+  };
+  const setToggle = async (k, on) => {
+    const el = row(k).querySelector('input');
+    el.checked = on;
+    el.dispatchEvent(new win.Event('input', { bubbles: true }));
+    await sleep(60);
+  };
+  const setSelect = async (k, v) => {
+    const el = row(k).querySelector('select');
+    el.value = v;
+    el.dispatchEvent(new win.Event('input', { bubbles: true }));
+    await sleep(60);
+  };
+  check(
+    'at rest, comb damp says "comb only" and the clear timings say "needs clear"',
+    gateSays('audioCombDamp', 'comb only') && gateSays('audioFbClearS', 'needs clear') && gateSays('audioFbClearMaxS', 'needs clear')
+  );
+  check(
+    'a live row carries no caption',
+    !row('decay').classList.contains('inert') && !shown(gateOf('decay')) && text(gateOf('decay')) === ''
+  );
+  await setToggle('feedbackVideo', false);
+  check(
+    'feedback off: every feedback knob says "needs feedback", motion gate included',
+    ['motionGate', 'decay', 'driftX', 'driftY', 'resetMinS', 'resetMaxS'].every((k) => gateSays(k, 'needs feedback'))
+  );
+  await setToggle('feedbackVideo', true);
+  type('flowAmount', '0');
+  field('flowAmount').blur();
+  await sleep(60);
+  check('flow at 0: the flow shape knobs say "needs flow"', ['flowMode', 'flowScale', 'flowSpeed'].every((k) => gateSays(k, 'needs flow')));
+  fire(row('flowAmount'), 'dblclick');
+  await sleep(60);
+  await setToggle('audioFeedback', false);
+  check('smear off: tail, return, wobble and smear clear say "needs smear"', ['audioFbDecay', 'audioFbReturn', 'audioFbWobble', 'audioFbClear'].every((k) => gateSays(k, 'needs smear')));
+  await setToggle('audioFeedback', true);
+  await setSelect('audioBody', 'comb');
+  await setToggle('audioFbClear', true);
+  check('comb and smear clear on: those rows wake and lose their captions', !row('audioCombDamp').classList.contains('inert') && !shown(gateOf('audioFbClearS')));
+  await setToggle('audioEnabled', false);
+  check('audio off: the outermost switch is the one named ("needs audio")', gateSays('audioCombDamp', 'needs audio') && gateSays('audioFbClearS', 'needs audio') && gateSays('audioSustain', 'needs audio'));
+  await setToggle('audioEnabled', true);
+  await setToggle('audioFbClear', false);
+  await setSelect('audioBody', 'modal');
+  chip('textScramble').querySelector('.chip-toggle').click();
+  await sleep(60);
+  check('text off: text min says "needs text"', gateSays('textMin', 'needs text'));
+  chip('textScramble').querySelector('.chip-toggle').click();
+  await sleep(60);
 
   // -- the panel never invents parameters --
   const strays = Object.keys(store).filter(

@@ -105,3 +105,75 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   })();
   return true; // async response
 });
+
+// Audio status for the panel (design review finding 7). Every content
+// script frame posts its registry's audio counts — `{type:
+// 'deflection:stats', op: 'put', audio: {taps, engaged}}` — on change and
+// every ~2 s while it has taps. Kept per tab, per frame, in memory only: a
+// worker restart loses it and the next post refills it. The panel asks for
+// the active tab's sum (`op: 'get'`) and is pushed changes (`op: 'push'`).
+const STATS_TYPE = 'deflection:stats';
+const STATS_STALE_MS = 6000; // a frame with taps that stops posting is gone
+const tabStats = new Map(); // tabId → Map(frameId → { taps, engaged, at })
+
+function tabAudio(tabId) {
+  const frames = tabStats.get(tabId);
+  if (!frames) return null;
+  const now = Date.now();
+  let taps = 0;
+  let engaged = 0;
+  for (const [frameId, f] of frames) {
+    if (f.taps > 0 && now - f.at > STATS_STALE_MS) {
+      frames.delete(frameId);
+      continue;
+    }
+    taps += f.taps;
+    engaged += f.engaged;
+  }
+  return { taps, engaged };
+}
+
+async function activeTabId() {
+  // The panel is its own popup window, so "active" means the active tab of
+  // the last-focused normal window — the page the player is looking at.
+  const win = await chrome.windows.getLastFocused({ windowTypes: ['normal'] });
+  const [tab] = await chrome.tabs.query({ active: true, windowId: win.id });
+  return tab?.id ?? null;
+}
+
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (msg?.type !== STATS_TYPE) return;
+  if (msg.op === 'put') {
+    const tabId = sender.tab?.id;
+    if (tabId === undefined) return;
+    const a = msg.audio ?? {};
+    let frames = tabStats.get(tabId);
+    if (!frames) tabStats.set(tabId, (frames = new Map()));
+    frames.set(sender.frameId ?? 0, {
+      taps: Number(a.taps) || 0,
+      engaged: Number(a.engaged) || 0,
+      at: Date.now(),
+    });
+    chrome.runtime
+      .sendMessage({ type: STATS_TYPE, op: 'push', tabId, audio: tabAudio(tabId) })
+      .catch(() => {}); // no panel open: nobody to tell
+    return;
+  }
+  if (msg.op === 'get') {
+    (async () => {
+      let tabId = null;
+      try {
+        tabId = await activeTabId();
+      } catch {
+        // no normal window: nothing to report
+      }
+      sendResponse({ type: STATS_TYPE, tabId, audio: tabId === null ? null : tabAudio(tabId) });
+    })();
+    return true; // async response
+  }
+});
+
+chrome.tabs.onRemoved.addListener((tabId) => tabStats.delete(tabId));
+chrome.tabs.onUpdated.addListener((tabId, info) => {
+  if (info.status === 'loading' && info.url) tabStats.delete(tabId); // navigated away
+});

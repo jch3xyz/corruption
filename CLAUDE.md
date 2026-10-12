@@ -55,9 +55,13 @@ Quick facts:
 - The panel is an instrument, not a form (rebuilt 2026-08-20): three sections
   behind dividers, sort and feedback knobs filed under **Video** (John's
   call), typed values that clamp and snap, double-click a row to restore one
-  parameter, and a tooltip on everything. Rows and hover copy live in
-  `source/panel/defs.js`; **add a row there when you add a param** — the
-  panel harness fails if a stored param has no row, or a row has no tip.
+  parameter, and a tooltip on everything. **Video and Audio each have three
+  groups** (sort · feedback · engine; body · smear · engine — engines folded
+  by default). **Labels are synth vocabulary for the stranger; keys never
+  change** (storage, MIDI maps, docs), and every tip ends with its key.
+  Rows, groups and hover copy live in `source/panel/defs.js`; **add a row
+  there when you add a param, with its `group`** — the panel harness fails if
+  a stored param has no row, a row has no tip, or a row leaves its group.
 - How both pipelines actually work: [documentation/how-it-works.md](documentation/how-it-works.md).
   Per-knob documentation: [documentation/parameters.md](documentation/parameters.md).
   Site quirks: [documentation/site-notes.md](documentation/site-notes.md).

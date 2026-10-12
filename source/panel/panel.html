@@ -6,6 +6,9 @@
   <link rel="stylesheet" href="panel.css">
 </head>
 <body>
+  <!-- Everything scrolls inside #scroll; the help strip (#tooltip) is a
+       footer below it, so hover copy never lands on top of a row. -->
+  <main id="scroll">
   <!-- The global block, above the first divider (design review M1, M2, M3,
        M7): what the piece is, the A/B, the four mediums, the presets. -->
   <header class="masthead">
@@ -31,7 +34,8 @@
     <p class="hint" data-tip="Each row's ⊙ button is its MIDI learn control: click it to arm, then move a knob or fader on the controller to bind that CC. One CC per parameter; re-learn to change it.">Click a param's ⊙ then move a knob to map it.</p>
   </div>
   <div id="prefs"></div>
-  <div id="tooltip" role="tooltip" hidden></div>
+  </main>
+  <div id="tooltip" role="note"></div>
   <script type="module" src="panel.js"></script>
 </body>
 </html>

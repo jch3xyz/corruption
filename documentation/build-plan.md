@@ -177,6 +177,14 @@ balance are the open item below. The previous sound is exactly reachable at
   animation ticker and the two knobs only it read, the panel's Images
   section, and the visual suite's two ticker checks. Images are one-shot
   sorted stills; git history keeps the old path.
+  **M4 + M8 UI landed 2026-10-12:** Video regrouped into sort · feedback ·
+  engine and Audio into body · smear · engine (engines folded, `engineOpen`),
+  labels in synth vocabulary with keys unchanged, an audio status line fed
+  by `deflection:stats` messages, plus round-1 findings 6–10 (tips lead with
+  what you see/hear and end with the key, in a bottom strip; inert rows name
+  their gate; ⊙ hidden until a MIDI device; slider out of the double-click;
+  clamps flash). The effects questions (M4's distortion handle, M5, M8's
+  source-following apparatus) stay open.
 
 For a full technical description of both pipelines — the GL sort/composite
 path and the resonant-body audio path, with the reasoning behind each —

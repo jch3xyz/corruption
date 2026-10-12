@@ -22,6 +22,15 @@
     const data = seed ? JSON.parse(seed) : {};
     const listeners = [];
     window.__store = data;
+    // ?midi=1 stands in one fake controller for Web MIDI, so the harness
+    // can drive the "device present" path end to end (finding 10).
+    if (new URLSearchParams(location.search).get('midi') === '1') {
+      const inputs = new Map([['fake', { name: 'harness controller', onmidimessage: null }]]);
+      Object.defineProperty(navigator, 'requestMIDIAccess', {
+        configurable: true,
+        value: async () => ({ inputs, onstatechange: null }),
+      });
+    }
     window.chrome = {
       storage: {
         local: {
