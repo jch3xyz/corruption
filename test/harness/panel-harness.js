@@ -85,7 +85,7 @@ const LAYOUT = {
   audio: {
     loose: [],
     groups: [
-      ['body', ['audioMix', 'audioBodyMix', 'audioSustain', 'audioDrive']],
+      ['body', ['audioMix', 'audioBodyMix', 'audioFollow', 'audioSustain', 'audioDrive']],
       ['smear', ['audioFeedback', 'audioFbDecay', 'audioFbReturn', 'audioFbWobble']],
       [
         'engine',
@@ -104,7 +104,7 @@ const LABELS = {
   passes: 'sort passes', maxRes: 'max res', maxVideos: 'max videos',
   flowMode: 'flow mode', flowScale: 'flow scale', flowSpeed: 'flow speed',
   resetMinS: 'clear min s', resetMaxS: 'clear max s',
-  audioMix: 'mix', audioBodyMix: 'body amount', audioSustain: 'ring time', audioDrive: 'drive',
+  audioMix: 'mix', audioBodyMix: 'body amount', audioFollow: 'follow', audioSustain: 'ring time', audioDrive: 'drive',
   audioFeedback: 'smear', audioFbDecay: 'tail', audioFbReturn: 'level', audioFbWobble: 'wobble',
   audioBody: 'body type', audioDirect: 'dry', audioMaxTaps: 'max sources', audioExciter: 'exciter',
   audioCombDamp: 'comb damp', audioFbClear: 'smear clear', audioFbClearS: 'clear fade s',
@@ -232,6 +232,15 @@ function tier1() {
       byKey.feedbackMix.min === 0 && byKey.feedbackMix.max === 1 && byKey.feedbackMix.step === 0.01 &&
       byKey.feedbackBlend.tip.startsWith('How the trail meets the new frame.') &&
       byKey.feedbackMix.tip.startsWith('How much of the trail survives against the new frame.')
+  );
+  // The source-following body (design review M8): one 0–1 knob in the body
+  // column after body amount, resting at 0 so the fixed chord is unchanged.
+  check(
+    'the follow knob: 0–1 in steps of 0.01, 0 at rest, after body amount in the body group, tip leading with what you hear',
+    byKey.audioFollow?.min === 0 && byKey.audioFollow.max === 1 && byKey.audioFollow.step === 0.01 &&
+      DEFAULTS.audioFollow === 0 && byKey.audioFollow.group === 'body' &&
+      DEFS.indexOf(byKey.audioFollow) === DEFS.indexOf(byKey.audioBodyMix) + 1 &&
+      byKey.audioFollow.tip.startsWith('How much the body retunes toward the source’s own pitch. 0 = the fixed chord')
   );
   // What left the effect columns for the engines, in order: the engines
   // hold setup plus everything demoted, and nothing else.
@@ -1739,8 +1748,9 @@ async function tier2() {
   await setChip('audioEnabled', false);
   check(
     'audio off: the section hides every group and row, disables the fields, and says which chip brings it back',
-    !shown(row('audioSustain')) && !shown(row('audioMix')) && !shown(row('audioDirect')) &&
+    !shown(row('audioSustain')) && !shown(row('audioMix')) && !shown(row('audioDirect')) && !shown(row('audioFollow')) &&
       slider('audioSustain').disabled && field('audioSustain').disabled &&
+      slider('audioFollow').disabled && field('audioFollow').disabled &&
       ['body', 'smear', 'engine'].every((g) => !groupShown('audio', g)) &&
       shown(offNote('audio')) && text(offNote('audio')) === 'off — switch audio on above' &&
       shown($('#section-audio h2'))
@@ -1749,6 +1759,7 @@ async function tier2() {
   check(
     'audio on: the groups and rows return and the note goes',
     shown(row('audioSustain')) && !field('audioSustain').disabled &&
+      shown(row('audioFollow')) && !field('audioFollow').disabled &&
       ['body', 'smear'].every((g) => groupShown('audio', g)) && !shown(offNote('audio'))
   );
 

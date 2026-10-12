@@ -79,6 +79,7 @@ const AUDIO_ONLY = [
   'audioBody',
   'audioDirect',
   'audioBodyMix',
+  'audioFollow',
   'audioCombDamp',
   'audioFeedback',
   'audioFbDecay',

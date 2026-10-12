@@ -65,6 +65,7 @@ export function workletParams(p) {
     sustain: p.audioSustain ?? 12,
     drive: p.audioDrive ?? 1.0,
     exciter: p.audioExciter ?? 'continuous',
+    follow: p.audioFollow ?? 0, // the source-following body; 0 = the fixed chord
     // Smear layer: fully self-contained since 2026-08-12. The wobble and the
     // clear rhythm used to ride the visual driftY/resetMin/MaxS sliders (an
     // inheritance from the first audio phase); John asked for the detangle —

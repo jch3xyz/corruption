@@ -60,6 +60,9 @@ export const DEFAULTS = {
                      // synth-like behaviour, kept reachable for comparison
   audioBodyMix: 1,   // resonant part against the direct path — the identity
                      // dial: up for more fixed voice, down for more video
+  audioFollow: 0,    // the source-following body (design review M8): how far
+                     // the chord retunes toward the source's own pitch, 0–1.
+                     // 0 = the fixed chord, bit-identical; the follower idles
   audioCombDamp: 0.45, // comb only: loop lowpass, metallic ↔ woody
   audioFeedback: true,  // echo/smear layer on the engine output (either mode)
   audioFbDecay: 0.999,  // smear TAIL only; maps to loop gain 0.5–0.95

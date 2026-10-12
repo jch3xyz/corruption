@@ -340,6 +340,16 @@ export const DEFS = [
     tip: 'How much of the resonant body you hear against the source. 0 = source only, 2 = all body. The identity dial: up for more of the fixed voice, down for more of the video.',
   },
   {
+    key: 'audioFollow',
+    label: 'follow',
+    min: 0,
+    max: 1,
+    step: 0.01,
+    section: 'audio',
+    group: 'body',
+    tip: 'How much the body retunes toward the source’s own pitch. 0 = the fixed chord, every source rings the same metal; 1 = the chord follows what plays, so each video rings its own. Only the pitch moves, within an octave.',
+  },
+  {
     key: 'audioSustain',
     label: 'ring time',
     min: 2,
