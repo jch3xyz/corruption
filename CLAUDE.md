@@ -71,10 +71,16 @@ Quick facts:
   in `source/panel/defs.js`; **add a row there when you add a param, with
   its `group`** — the panel harness fails if a stored param has no row, a
   row has no tip, or a row leaves its group.
-- **The panel's home is the bottom strip** (John, 2026-10-11): a 28 px
-  rail (A/B, chips, presets) that unfolds to a 208 px mixer with the four
-  effect columns in view. Window and side panel remain as options. MIDI
-  is a feature, not the primary mode: its block hides until a device.
+- **The panel's layout follows its shape, in every home** (2026-10-12):
+  the **rail** (one transport line), the **mixer** (a cluster plus the
+  effect columns) or the **column**. The strip's frame is always the mixer,
+  or the rail when 40 px tall; the window and side panel are the mixer at
+  ≥ 900 px wide and 2:1, else the column (the layout value is `mixer`; the
+  strip is a home). The **strip** — a 40 px rail with the CORRUPTION tab,
+  a 240 px mixer — is the default in code; the **window** is responsive and
+  remembers its bounds (`panelBounds`); **which home is the default is
+  John's open call**, after both are judged on real use. MIDI is a
+  feature, not the primary mode: its block hides until a device.
 - How both pipelines actually work: [documentation/how-it-works.md](documentation/how-it-works.md).
   Per-knob documentation: [documentation/parameters.md](documentation/parameters.md).
   Site quirks: [documentation/site-notes.md](documentation/site-notes.md).

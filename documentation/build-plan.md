@@ -240,18 +240,41 @@ balance are the open item below. The previous sound is exactly reachable at
   mouse are the primary mode); the strip as above. Also a dependency-free
   headless runner for the pure-DOM suites (`node test/headless.mjs`).
 
-  **Open items John holds (2026-10-11):** (1) the in-page first-run mark,
-  the remaining half of the seam; (2) threshold shown inverted as an
-  *amount*; (3) an intensity macro; (4) headline knobs that ship at the
-  rail (ring time, drive, tail); (5) the effects queue in design-review.md
-  (feedback blend, direct sort handles, source-following audio body,
-  performance ramp); (6) the comb body / gated exciter A/B; **(7) the
-  controls themselves** — John's round-4 note that the groups were made
-  easier to navigate but the controls were neither simplified nor given
-  more hold over the effect: each effect wants two or three handles named
+  **Round 4b (2026-10-12) — John on the strip at his own width** (YouTube,
+  ~2000 px), four commits, logged in design-review.md: (1) **the layout
+  follows the shape** — the layout value renamed `strip` → `mixer`; the
+  strip's frame is always the mixer (or the rail), and every other home is
+  the mixer at ≥ 900 px wide and 2:1, else the column, re-laid live with
+  the engine disclosures moving between the title line and the group; (2)
+  **the window remembers its size and place** (`panelBounds`, validated,
+  saved when it settles in the normal state; `panelWindowId` also kept in
+  `chrome.storage.session`, so after the worker sleeps a drag still counts
+  and a second open focuses the window); (3) **the rail is a control
+  surface** — 40 px (was 28), targets ≥ 26 px, a click anywhere off a
+  control unfolds it, the `CORRUPTION ▴` tab back above its right end; (4)
+  **the mixer uses the width** — 240 px (was 208), 28 px rows, columns that
+  spread from 220 to 340 px, verified at 1280, 1440, 1512, 1728 and 1920;
+  the cluster 260 px with the prefs and MIDI lines wrapping (the *panel
+  lives in* / *flow scale* overlap fixed) and a guard that checks every
+  descendant of the cluster against the lane. John's calls: keep covering
+  the page (pushing it up was possible and declined); the default home
+  deferred until both homes are judged on real use (the strip stays the
+  default in code); the rail ~40 px with large targets. Suites (headless):
+  panel 299/299, strip 52/52, text 35/35, audio 34/34 unchanged.
+
+  **Open items John holds (2026-10-11; (2) reinstated 2026-10-12):** (1)
+  the in-page first-run mark, the remaining half of the seam; (2) which
+  home is the default — after both are judged on real use; (3) threshold
+  shown inverted as an *amount*; (4) an intensity macro; (5) headline knobs
+  that ship at the rail (ring time, drive, tail); (6) the effects queue in
+  design-review.md (feedback blend, direct sort handles, source-following
+  audio body, performance ramp); (7) the comb body / gated exciter A/B;
+  **(8) the controls themselves** — John's round-4 note that the groups
+  were made easier to navigate but the controls were neither simplified
+  nor given more hold over the effect: each effect wants two or three handles named
   for what they do (a first cut is in design-review.md round 4), the rest
   demoted to engine, and the question of *which* controls a player needs
-  *when* re-asked; (8) the outside-the-box forms — a keyboard-summoned
+  *when* re-asked; (9) the outside-the-box forms — a keyboard-summoned
   overlay that survives fullscreen, and handles on the media itself —
   logged, not scheduled.
 
@@ -265,7 +288,7 @@ see [how-it-works.md](how-it-works.md).
 source/
 ├── manifest.json                  # MV3; DNR ruleset ENABLED (browser-wide ACAO on image/media)
 ├── rules/cors-media.json
-├── background/service-worker.js   # opens the panel in its home (window / side panel / strip), image-fetch base64 fallback (route 3)
+├── background/service-worker.js   # opens the panel in its home (window / side panel / strip), remembers the window's bounds, image-fetch base64 fallback (route 3)
 ├── content/
 │   ├── bootstrap.js               # classic script → dynamic import (content scripts can't be modules)
 │   ├── main.js                    # boot, params flow, tiny-iframe early-exit
@@ -275,12 +298,12 @@ source/
 │   ├── image-job.js               # 3-route CORS; one-shot stills
 │   ├── audio-job.js               # playback-driven tap lifecycle; safety gate; bypass semantics
 │   ├── text-scramble.js           # optional text mode: letters rearranged inside words (off)
-│   ├── strip.js                   # M9 prototype: the panel as an in-page bottom strip (iframe of panel.html?layout=strip)
+│   ├── strip.js                   # the panel as an in-page bottom strip: 40 px rail + tab, 240 px mixer (iframe of panel.html?layout=strip)
 │   ├── overlay.js                 # sibling canvas; object-fit/position replication
 │   └── metrics.js                 # FrameGovernor (rVFC presentedFrames deltas)
 ├── gl/  context.js · pipeline.js · shaders/{common,passthrough,composite,sort}.js
 ├── audio/ graph.js · worklet.js · dsp.js · fft.js   # worklet = body engine + smear layer
-└── panel/ panel.html · panel.js · panel.css · midi.js  # extension page, popup window
+└── panel/ panel.html · panel.js · panel.css · midi.js  # one page for every home; layout follows its shape (rail / mixer / column)
     └── defs.js                    # the control table (sections, ranges, hover copy)
                                    # + the pure value helpers, shared with its harness
 ```
@@ -356,6 +379,7 @@ Design invariants that hold everywhere:
 python3 test/serve.py        # :8437, no-store + ACAO (mimics the DNR rule)
 python3 test/serve.py 8439   # second origin for the image CORS-route test
 node test/headless.mjs panel strip text   # the pure-DOM suites in headless Chrome
+HARNESS_SHOT_DIR=/tmp/shots HARNESS_VIEWPORT=1512x982 node test/headless.mjs strip
 ```
 
 `test/headless.mjs` (2026-10-11) drives Google Chrome headless over the
@@ -365,7 +389,11 @@ counts as visible, so the panel, strip, text and audio (tiers 1–2) suites
 run deterministically there — unlike a background tab in the app's browser
 pane, which throttles timers, skips transitions and reports `hidden`, and
 fails a dozen checks for nothing. The visual suite still needs a real,
-visible tab.
+visible tab. The runner also takes screenshots, for looking at a layout
+without a visible tab: with `HARNESS_SHOT_DIR` set it saves `<page>.png`
+after each suite, at `HARNESS_VIEWPORT` (default 1400x900); for a page that
+is not a suite (`panel-frame.html` at 1000x320, say) `HARNESS_NO_SUITE=1`
+waits `HARNESS_WAIT_MS` (default 1500) and shoots.
 
 - Visual/lifecycle suite: `http://localhost:8437/test/harness/index.html`
   (32 checks; +2 more with the :8439 server up for the cross-origin image
@@ -411,27 +439,41 @@ visible tab.
 
 ## John's manual checklist (needs real Chrome; not yet all exercised)
 
-- **The strip, first (the default since 2026-10-11).** Load unpacked from
-  `source/` at the branch head; if `panelHome` is stored from earlier
-  testing, set it to `bottom strip` and reload the page. On YouTube: the
-  rail sits along the bottom; the A/B latches on a click and compares while
-  held past 600 ms; the four chips drop their medium; ▴ unfolds the mixer
-  and ▾ folds it; Ctrl+Shift+P does the same; sort · feedback · body ·
-  smear are all in view at your width with no sideways scroll; `engine ▸`
-  on a title line unfolds a captioned column; hovering a row shows a
-  bubble beside it (none on the rail); switching feedback or smear off
-  folds its knobs away under the switch; the audio status line under
+- **The strip on YouTube at your width (the default in code).** Load
+  unpacked from `source/` at the branch head; if `panelHome` is stored from
+  earlier testing, set it to `bottom strip` and reload the page. **The
+  rail:** 40 px along the bottom with the `CORRUPTION ▴` tab standing above
+  its right end; a click on the title or a gap unfolds it, a click on a
+  chip or a preset does only that; the tab folds and unfolds without taking
+  focus from the player; the A/B, chips, presets and ▴ easy to hit; the A/B
+  latches on a click and compares while held past 600 ms; the four chips
+  drop their medium; Ctrl+Shift+P folds and unfolds; fullscreen hides the
+  strip and the tab. **The mixer:** sort · feedback · body · smear spread
+  across your width with no sideways scroll; the prefs line (*panel lives
+  in*, tooltips) wraps inside the cluster and never runs into *flow scale*;
+  `engine ▸` on a title line unfolds a captioned column; hovering a row
+  shows a bubble beside it (none on the rail); switching feedback or smear
+  off folds its knobs away under the switch; the audio status line under
   AUDIO names sources on a playing video (the stats plumbing content
   script → service worker → panel is untested outside the harness); the
   toolbar badge reads ON and clears on Ctrl+Shift+D; how badly the rail
-  and the mixer sit over the player's own controls; fullscreen hides the
-  strip. Then `window` and `side` once each: the column panel with the
-  bubble and no help strip.
-- **Side panel.** Set `panel lives in` to `side`, close, Ctrl+Shift+P:
-  does the side panel open, does a second icon click close it, does MIDI
-  work there without a new prompt?
+  and the mixer sit over the player's own controls.
+- **The window and the side panel.** Set `panel lives in` to `window`,
+  Ctrl+Shift+P: it opens as the column at 400 × 720. Drag it wide (≥ 900 px
+  and at least 2:1): it becomes the mixer, and tall again the column, the
+  `engine ▸` disclosures moving with it. Close it and reopen: the same place
+  and shape. Leave it a minute (the service worker sleeps) and click the
+  icon: it focuses the window rather than opening a second. Then `side`,
+  close, Ctrl+Shift+P: the column; does the side panel open, does a second
+  icon click close it, does MIDI work there without a new prompt?
+- **A strict-CSP site (github.com)** with the strip as home: if the page's
+  Content Security Policy refuses the extension's iframe, the strip should
+  remove itself within 8 s, leave the page as it was, and the icon and
+  shortcut then open the window.
 - **MIDI** in every home: the ⊙ column must appear only when a controller
-  is present; learn and bind one knob per home.
+  is present; learn and bind one knob per home. In the mixer at 1280 wide,
+  judge the known squeeze (the ⊙ column narrows the lane's sliders to
+  ~30 px and truncates the selects).
 - Visual suite re-run in real Chrome (the embedded pane starves rVFC and
   can't adjudicate it — verified identical at baseline).
 - Audio plumbing: page mute/volume through the chain; a cross-origin-audio

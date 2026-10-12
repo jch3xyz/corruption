@@ -651,3 +651,111 @@ Headless Chrome via `node test/headless.mjs` (new this round; a background
 tab in the app's pane reports hidden and fails a dozen checks for
 nothing): panel 218/218, strip 41/41, text 35/35, audio tiers 34/34. Real
 Chrome: John's checklist in build-plan.md, rewritten for the strip.
+
+## Round 4b: John's notes on the strip (2026-10-12)
+
+John played the strip on YouTube at ~2000 px wide and sent notes. Each
+landed the same day as its own verified commit (four in all; build-plan.md
+round 4b). His direction for the round: a detached window that answers to
+its own shape, so the player sizes and places it.
+
+### What he reported, and what landed
+
+- **The rail is too small, and so are its targets.** The rail is 40 px (was
+  28): the A/B 30 px tall with 13 px state, chip pills 28 px, preset
+  buttons ~26 px, the fold button 26 × 26, gaps of 16 px. The harness holds
+  every rail target at 26 px or more, at five widths.
+- **A click anywhere on the rail should unfold it.** A click on the rail
+  that is not on a control unfolds it, the title included; a chip, the
+  A/B, a preset or ▴ does only its own job; while the preset row is in save
+  mode the click only cancels the save, so one press never does two things.
+- **The old CORRUPTION tab helped the strip stand out.** It is back,
+  standing on the rail's top edge at its right end: *CORRUPTION ▴* folded,
+  *▾* open; a click toggles, it never takes focus, it hides with the rest
+  in fullscreen.
+- **The mixer leaves most of the width empty; the controls could spread
+  out and grow.** The mixer is 240 px (was 208): rows of 28 px, 12 px type,
+  a 6 px slider track with a 16 px thumb, 58 px value fields. The effect
+  columns spread with the width, `minmax(220px, 340px)`: the sort column
+  measures 224.5 px at 1280, 264.5 at 1440, 282.5 at 1512, 336.5 at 1728
+  and 340 at 1920, the cap.
+- **Bug: *panel lives in* overlaps *flow scale*.** The prefs line
+  overflowed the 228 px cluster into the lane. The cluster is 260 px and
+  the prefs and MIDI lines wrap inside it. The guard that let it through
+  measured only the four containers, whose own boxes never crossed; the
+  new one checks that no descendant of the cluster crosses the lane's left
+  edge, and with the old rules put back it fails at every width.
+- **1280 is not a typical laptop; test wider.** The mixer and rail checks
+  loop 1280, 1440, 1512, 1728 and 1920. Not anticipated: at 1280 the
+  columns are ~225 px, and with 58 px value fields the threshold slider was
+  no wider than its thumb once its *more · less* end captions were in. Each
+  lane row is a size container now; under 250 px the end captions step
+  aside and selects drop to 11 px (the row's tip still says which way is
+  more). From 1440 up the captions are back. A small design call for John
+  to review.
+- **A window responsive to its own shape.** Built. The layout follows the
+  shape in every home: the strip's frame is the mixer, or the rail at
+  40 px; the window and the side panel are the mixer at 900 px wide and
+  2:1 or more, else the column, re-laid live as the window is dragged, the
+  engine disclosures moving with it. The window remembers its size and
+  place (`panelBounds`), and a second open focuses it, even after the
+  service worker has slept.
+
+### John's questions, answered (2026-10-12)
+
+- **Could the strip push the page up instead of covering it?** Possible:
+  bottom padding on the page root, undone when the strip is removed. It
+  fails on apps with their own scroll container, where padding the root
+  moves nothing. Declined; the strip keeps covering.
+- **Fullscreen hides the strip.** It only matters for the performer, and
+  the performer's home is the window on a second screen, as in the lecture
+  performance.
+- **What is CSP?** Content Security Policy: a header a site sends listing
+  what its page may load, including which origins may be iframed. A strict
+  one could refuse the extension's iframe. The strip's 8 s failure path
+  then removes it, leaves the page as it was, and the icon and shortcut
+  open the window instead. Untested on a strict site; github.com is on the
+  checklist.
+- **Can a page detect the extension?** Yes, because `panel.html` is
+  web-accessible — but that is fingerprinting only, not a concern for an
+  art piece, and it was already true before the strip: the content
+  scripts are web-accessible for their dynamic import.
+- **A responsive window.** Built as above: tall is the column, wide is the
+  mixer, and it remembers its bounds.
+
+### Trade-offs, stated
+
+- The bigger rail covers 12 px more of the page (minimalism) for targets a
+  stranger can hit (user control, error prevention).
+- Click-anywhere on the rail is the flexible path; the tab and ▴ stay as
+  explicit affordances (recognition over recall).
+- Covering, not pushing: the page loses its bottom 40 px at rest and
+  240 px open, in exchange for never restyling a page and never breaking
+  an app that scrolls its own container.
+- In the narrowest mixer columns (1280) the threshold's end captions give
+  way to a slider wider than its thumb; which way is *more* is then only in
+  the tip. John to review.
+
+### Open visual notes
+
+- With a MIDI device at 1280 the ⊙ column squeezes the lane's sliders to
+  ~30 px and truncates the selects: too little width for MIDI rows at
+  1280. Not addressed.
+- *CORRUPTION* reads twice at rest: the rail's title and the tab.
+- At 1920 the rail's controls end around x = 840 and the rest of the line
+  is empty; the mixer's columns stop at the 340 px cap and leave ~230 px
+  empty at the right.
+
+### Decisions
+
+Cover, do not push. The default home is deferred until both homes — the
+strip and the responsive window — are judged on real use; the strip stays
+the default in code meanwhile. The rail is ~40 px with large targets.
+
+### Verification
+
+Headless Chrome, `node test/headless.mjs panel strip text`: panel 299/299,
+strip 52/52, text 35/35; audio 34/34 unchanged. Mixer and rail at 1280,
+1440, 1512, 1728 and 1920; the window's shapes at 1000 × 320 (mixer) and
+700 × 700 (column), with a live resize each way. The remembered bounds and
+a strict-CSP site need a real Chrome: John's checklist in build-plan.md.
