@@ -48,8 +48,10 @@ import {
 
 // Keys the panel may store that are NOT parameters: panel furniture and the
 // preset store. Excluded from "every stored key has a row". `panelHome` is
-// where the panel opens (M9); `stripOpen` is written by the in-page strip.
-const PANEL_ONLY = ['tooltips', 'midiMap', 'presets', 'presetBase', 'engineOpen', 'panelHome', 'stripOpen'];
+// where the panel opens (M9); `stripOpen` is written by the in-page strip;
+// `panelBounds` (the window's remembered size and place, round 4b) by the
+// service worker, which no suite here can run — it is only listed.
+const PANEL_ONLY = ['tooltips', 'midiMap', 'presets', 'presetBase', 'engineOpen', 'panelHome', 'stripOpen', 'panelBounds'];
 // Sectionless keys: the global block's own controls — the A/B and the four
 // chips, which since 2026-10-11 are the only face of all four mediums.
 const GLOBAL_KEYS = ['enabled', 'video', 'images', 'textScramble', 'audioEnabled'];

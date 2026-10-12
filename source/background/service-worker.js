@@ -8,7 +8,8 @@
 //   'strip'  — a horizontal strip the content script puts along the bottom
 //              of the page (source/content/strip.js): a one-line rail at
 //              rest, the mixer when unfolded. The default.
-//   'window' — its own popup window (every fallback);
+//   'window' — its own popup window (every fallback), reopened at the size
+//              and place it was last left (panelBounds, below);
 //   'side'   — Chrome's side panel, docked in the browser window (Chrome
 //              114+; same extension origin, so the MIDI grant should carry).
 // A change applies on the next open. Every side-panel and strip call is
@@ -119,28 +120,92 @@ async function openPanel(tab, sideAttempt = null) {
 
 const startSide = (tab) => (homeKnown && panelHome === 'side' ? openSide(tab) : null);
 
+// The panel window's size and place are remembered (round 4b): the panel's
+// layout follows its shape (panel.js: at least 900 px wide and 2:1 is the
+// mixer, anything else the column), so the player drags the window wide for
+// the mixer or tall for the column, puts it where it belongs (a second
+// screen, for the performer), and it comes back the same on the next open.
+// `panelBounds` = {width, height, left, top} in chrome.storage.local, panel
+// furniture outside DEFAULTS. A missing or bad value opens the old 400 × 720.
+const WINDOW_DEFAULT = { width: 400, height: 720 };
+const BOUNDS_SAVE_MS = 400;
+
+function validBounds(b) {
+  if (!b || typeof b !== 'object') return null;
+  const { width, height, left, top } = b;
+  if (![width, height, left, top].every(Number.isInteger)) return null;
+  if (width < 320 || height < 200) return null;
+  return { width, height, left, top };
+}
+
+// The worker sleeps after ~30 s idle and forgets this id; the session
+// store (cleared when the browser closes, like the window) keeps it, so a
+// drag long after the open is still recognised as the panel's, and a
+// second open focuses the window instead of making another.
 let panelWindowId = null;
+const rememberWindow = (id) => {
+  panelWindowId = id;
+  try {
+    chrome.storage.session?.set?.({ panelWindowId: id })?.catch?.(() => {});
+  } catch {
+    // no session storage: the id lives as long as this worker
+  }
+};
+const windowKnown = (async () => {
+  try {
+    const got = await chrome.storage.session?.get?.('panelWindowId');
+    if (panelWindowId === null && Number.isInteger(got?.panelWindowId)) panelWindowId = got.panelWindowId;
+  } catch {
+    // unknown: the next open makes a window
+  }
+})();
 
 async function openWindow() {
+  await windowKnown;
   if (panelWindowId !== null) {
     try {
       await chrome.windows.update(panelWindowId, { focused: true });
       return;
     } catch {
-      panelWindowId = null; // window is gone; fall through and create
+      rememberWindow(null); // window is gone; fall through and create
     }
   }
-  const win = await chrome.windows.create({
-    url: chrome.runtime.getURL('panel/panel.html'),
-    type: 'popup',
-    width: 400,
-    height: 720,
-  });
-  panelWindowId = win.id;
+  const base = { url: chrome.runtime.getURL('panel/panel.html'), type: 'popup' };
+  let bounds = null;
+  try {
+    bounds = validBounds((await chrome.storage.local.get('panelBounds')).panelBounds);
+  } catch {
+    // unreadable: open at the default size
+  }
+  let win;
+  try {
+    win = await chrome.windows.create({ ...base, ...(bounds ?? WINDOW_DEFAULT) });
+  } catch (err) {
+    // A remembered place Chrome refuses (a screen since unplugged, say)
+    // must never cost the panel: open at the default size instead.
+    if (!bounds) throw err;
+    console.warn('[DEFLECTION] remembered panel bounds refused', err);
+    win = await chrome.windows.create({ ...base, ...WINDOW_DEFAULT });
+  }
+  rememberWindow(win.id);
 }
 
 chrome.windows.onRemoved.addListener((id) => {
-  if (id === panelWindowId) panelWindowId = null;
+  if (id === panelWindowId) rememberWindow(null);
+});
+
+// Debounced: a drag fires this many times; only where it settles is kept.
+// Maximised, minimised and fullscreen are not shapes to come back to.
+let boundsTimer = null;
+chrome.windows.onBoundsChanged?.addListener(async (win) => {
+  await windowKnown;
+  if (win.id !== panelWindowId || (win.state && win.state !== 'normal')) return;
+  const bounds = validBounds(win);
+  if (!bounds) return;
+  clearTimeout(boundsTimer);
+  boundsTimer = setTimeout(() => {
+    chrome.storage.local.set({ panelBounds: bounds }).catch(() => {});
+  }, BOUNDS_SAVE_MS);
 });
 
 async function toggleEnabled() {

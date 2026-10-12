@@ -3,14 +3,16 @@
 // Outside the extension (dev preview, panel harness) a local shim stands in
 // for storage so the UI is testable in a plain tab.
 //
-// Seven storage keys live OUTSIDE params.js DEFAULTS on purpose, so the
+// Eight storage keys live OUTSIDE params.js DEFAULTS on purpose, so the
 // content scripts (which filter on `key in DEFAULTS`) never see them:
 // `midiMap`, `presets` (slots A/B/C), `presetBase` (the last-loaded or
 // last-saved preset, which a row double-click returns to), `tooltips`,
 // `engineOpen` ({video, audio}: whether each section's engine group is
 // unfolded), `panelHome` ('window' | 'side' | 'strip': where the panel
-// opens, design review M9) and `stripOpen` (whether the bottom strip is
-// expanded; written by the strip in the page, never by this file). A legacy
+// opens, design review M9), `stripOpen` (whether the bottom strip is
+// expanded; written by the strip in the page, never by this file) and
+// `panelBounds` ({width, height, left, top}: where the panel window was
+// last left; written by the service worker, never by this file). A legacy
 // `userDefaults` (the old "set defaults" snapshot) migrates into slot A on
 // boot and is removed.
 
