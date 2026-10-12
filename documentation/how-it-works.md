@@ -254,8 +254,8 @@ Three properties define the look:
    confined inside bright spans and dark material holds the image together. At
    strides > 1 the span midpoint is also checked, so a long stride can't
    teleport a pixel across a dark gap.
-2. **The higher key rises toward smaller *y***, i.e. the video's top. Fixed
-   direction. The key is **luma** at rest — bright rises — and `sortKey`
+2. **The higher key rises toward smaller *y***, i.e. the video's top — at
+   `angle` 0, the resting state (the direction turns it; below). The key is **luma** at rest — bright rises — and `sortKey`
    (*sort by*, round 8 part 2) swaps it for hue, saturation or one channel:
    `float key(vec3 c)` on `uKey`, plain if-chains on the int. Only the
    *ordering* reads the key (`lUpper < lLower` compares keys); the barrier
@@ -302,6 +302,24 @@ its own way; the pipeline itself stays a pure function (the seed is an
 input), which is what keeps the harness byte-reproducible. At `flowAmount 0` the sort is bit-identical to the
 vertical grammar — harness-pinned, along with global pixel conservation
 at full flow.
+
+**The direction** (`angle`, round 8 part 2) turns the whole sort.
+`uAngle` (radians) is applied *after* the field: `fieldDir` quantizes
+`atan(d.y, d.x) + uAngle`, so with flow on the entire streamline pattern
+turns at any flow amount, and both members of a pair still compute the
+same turned direction, so the partner check is unchanged. With flow off
+every pixel shares one direction, `quantizeDir(π/2 + uAngle)`, through the
+same quantizer the mode uses: **facets** has 8 fixed sectors, so the sort
+turns in 45° steps; **paths** has 16 sectors under the per-pass jitter, so
+the single direction dithers between neighbouring sectors from pass to pass
+and the average climb follows the true angle — the paths grammar applied to
+the whole frame (measured on a white square: 29° for 30, 58° for 60). One
+shared `v` per pass needs no partner check: the brick pairing is symmetric
+for any common `v`. At 0 with flow off `v` stays exactly (0, 1), so the
+resting picture is bit-identical. The sense: the higher key seeks the
+smaller projection along `v`, and texel *y* grows toward the video's
+bottom, so a growing angle turns the climb clockwise on screen — 0 up, 90
+right, 180 down, 270 left, pinned by the harness.
 
 Two per-pair gates extend the grammar (John, 2026-08-12), both exactly inert
 at 0 and both preserving the symmetric-swap/permutation property:

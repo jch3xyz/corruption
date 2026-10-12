@@ -399,6 +399,22 @@ balance are the open item below. The previous sound is exactly reachable at
   running the real `bootstrap.js` against stand-ins for both conditions.
   Visual 68/68 (+6).
 
+  **Round 8, part 2 — sort by and direction (John: "visually impactful").**
+  Two new sort handles, logged in design-review.md: (1) `97e9bca` **sort
+  by** (`sortKey`: luma · hue · saturation · red · green · blue; John's
+  name) — `uKey` and `key()` in the sort shader decide the ORDER, the
+  barrier stays on luma, key 0 is the same expression (bit-identical); a
+  select after amount; (2) **direction** (`angle`, 0–359° clockwise from
+  up, wrapping) — `uAngle` added to the field's angle before it is
+  quantized (flow on: the whole pattern turns), or one shared direction
+  through the mode's quantizer (flow off: facets 45° steps, paths glides);
+  0 bit-identical; played on the panel's first **knob** (`type: 'knob'`,
+  `wrap: true`, `settle` in defs.js; a dial over a hidden range holder).
+  The sort column is now exactly eight cells. `flowMode` stays in reach
+  with flow at 0 once the direction is off 0 (it is the direction's
+  quantizer). Suites (headless): visual 84/84 (68 before), panel 392/392
+  (365 before), strip 52/52, text 35/35.
+
   **Open items John holds (2026-10-11; (2) reinstated 2026-10-12; revised
   after round 5):** (1) the in-page first-run mark, the remaining half of
   the seam; (2) ~~which home is the default~~ — decided 2026-10-12: the
@@ -633,6 +649,15 @@ waits `HARNESS_WAIT_MS` (default 1500) and shoots.
   should still be empty: no *Unsafe attempt to load URL … content/main.js*
   or *… strip.js*. (Reloading the extension under an open tab and then
   using that tab is the other case; it should stay quiet too.)
+- **Sort by and direction** on real footage. Sort by: hue on a colourful
+  video (colour bands stratify), saturation on a talking head (the vivid
+  rises over a grey set), red/green/blue on the same frame; then amount
+  low — the dark barrier should hold alike under every key. Direction:
+  flow at 0, turn the knob slowly — facets jumps in 45° steps, paths
+  glides; 90 sends the bright to the right edge, 180 hangs it from the
+  bottom. Flow back to 0.5: the swirls' whole pattern turns. In the mixer,
+  is the 24 px knob readable, is drag-up = clockwise right, and is 2 px per
+  degree the right rate? A MIDI knob on it should sweep once round.
 - **Clear buffer** on a playing video with feedback on: unfold the Video
   engine, click **clear** — the trail wipes to a clean frame at once on
   every video on the page, and builds again; bind a MIDI button to it and

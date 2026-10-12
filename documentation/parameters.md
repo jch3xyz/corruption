@@ -29,6 +29,7 @@ rather than steers.
 | **Video · sort** | | | | |
 | `threshold` | amount (shown inverted) | **0.05** | 0–1 | Luma above this is eligible for sorting (and feedback). Near-zero corrupts almost everything while true black holds as a barrier; 1 = untouched. The single most expressive knob. **Shown inverted, as amount = 1 − threshold** (the handles round, 2026-10-12): the slider, the typed value, the arrow keys and a MIDI sweep all speak amount, so up is more of the picture sorted (0.95 at rest). Storage, presets, MIDI maps and `DEFAULTS` keep `threshold` in the stored sense, unchanged. |
 | `sortKey` | sort by | **luma** | luma · hue · saturation · red · green · blue | What decides which pixel climbs (round 8 part 2; John: "visually impactful", and the name is his — *sort by* over *sort mode*). **luma** = the bright rises, the classic and the resting state, bit for bit. **hue** = colours stratify into bands (red 0 → green ⅓ → blue ⅔ → back toward red; grey counts as 0). **saturation** = the vivid rises over the drab (`(max − min) / max`; black is 0). **red / green / blue** = one channel leads. **The ordering only**: the barrier stays on luma, so `threshold` (amount) means the same under every key and dark material always holds the picture together — a dark but vivid blue still walls the sort off under hue. Every key is a permutation (harness-pinned); equal keys never trade. Shapes images too. |
+| `angle` | direction (a knob) | **0** | 0–359°, wraps | Which way the sort climbs, in degrees **clockwise on screen from up**: **0 = up** (the classic: the higher key climbs to the top, bit for bit), **90 = right**, **180 = down**, **270 = left** (round 8 part 2). Applied *after* the flow field: added to the field's own angle before it is quantized, so with flow on the whole streamline pattern turns, at any flow amount. With flow off every pixel shares one direction through the same quantizer the flow mode uses — **facets** turns the sort in 45° steps (30 and 44 are the same picture), **paths** glides (16 sectors under the per-pass jitter, so the one direction dithers between neighbours and the average climb follows the true angle — measured 29° and 58° for 30 and 60). So `flowMode` matters with flow at 0 once the direction is off 0, and its row stays in reach then. Played on the panel's first **knob** (below); a typed value wraps rather than clamps (450 → 90, −30 → 330), and a MIDI CC sweeps once round (127 → 359). Every angle is a permutation (harness-pinned). Shapes images too. |
 | `flowAmount` | flow | **0.5** | 0–1 | **The resting state flows** (John's sweet spot, 2026-08-12). 0 = the classic vertical grammar, bit-identical. Up = sorting follows a slowly morphing **curl-noise flow field**: ribbons meander and curl along streamlines instead of climbing columns. Directions quantize to 16 sectors with a per-pass dithered boundary, so material rounds curves instead of pooling at fixed seams. Still a permutation — nothing added, nothing lost, harness-pinned. **Every element draws its own seed, rerolled when its content changes** (a new video in YouTube's reused player is new content): pattern, phase, morph rate, swirl size, and handedness all differ per medium — no two screens show the same corruption, and no knob controls this (it is identity, not a parameter). |
 | `temperature` | jitter | **0** | 0–0.5 | Fraction of pair-verdicts inverted per pass. The sort simmers at its equilibrium instead of settling into it: ribbons boil at their edges and the picture never comes to rest. Applies in straight sort and feedback alike; barriers still hold (the boil stays inside bright spans). 0.5 = a pure random walk, no net sorting. |
 | `streak` | ribbons | **256** | 1–256 | Longest compare-exchange stride (rounded down to a power of two). Directly sets how far pixels can travel per frame — the ribbon-length knob, promoted from the engine to the sort column in the handles round (2026-10-12). 1 = classic single-step odd-even. |
@@ -45,7 +46,7 @@ rather than steers.
 | `passes` | sort passes | **64** | 0–64 | Sort passes per frame. A full 256→1 stride ladder is 18 passes, so 64 runs ~3.5 settling cycles. |
 | `maxRes` | max res | 1920 | 480–1920 | Processing resolution cap, long axis. Lower it on weak GPUs; output upscales through the overlay. |
 | `maxVideos` | max videos | **12** | 1–16 | Concurrent video jobs, biggest visible first. Paused videos count too — they get a one-shot sorted still (rVFC never fires for them). Raised from 8 for grid feeds (Instagram explore) where a dozen previews are on screen at once. |
-| `flowMode` | flow mode | **facets** | paths / facets | *Flow only.* Two quantizers, both kept (John liked both; facets is his resting pick). **facets**: 8 fixed sectors, no dither — straight runs inside each patch, pooling at anchored seams where the field bends. **paths**: 16 sectors, boundary dithered per pass — seams wander, material rounds curves, ribbons meander. |
+| `flowMode` | flow mode | **facets** | paths / facets | *Flow — or a direction off 0.* Two quantizers, both kept (John liked both; facets is his resting pick). **facets**: 8 fixed sectors, no dither — straight runs inside each patch, pooling at anchored seams where the field bends. **paths**: 16 sectors, boundary dithered per pass — seams wander, material rounds curves, ribbons meander. |
 | `flowScale` | flow scale | **2.5** | 1–12 | *Flow only.* Noise cells across the frame: higher = tighter, busier swirls; lower = broad sweeping currents. |
 | `flowSpeed` | flow speed | **0.045** | 0–0.2 | *Flow only.* How fast the field morphs (streamlines re-carve in place rather than marching). 0 = frozen geometry — flow without evolution. |
 | `resetMinS` / `resetMaxS` | clear min s / clear max s | **30 / 60** | 1–30 / 2–60 | *Video feedback only.* Keyframe rhythm: the accumulator resets to a clean frame at a random interval in this window. Slow by default — damage accumulates for half a minute or more before clearing. |
@@ -255,7 +256,14 @@ recovers automatically when real content returns.
   the threshold tests (both members, the span midpoint) still read
   `luma()`. Key 0 is the very same expression as before, so the default is
   bit-identical.
-- Sort direction is fixed: the higher key rises toward the video's top.
+- `angle` → `uAngle`, in radians (the jobs convert: `angleRadians` in
+  params.js). With flow on it is added to the field's angle in
+  `fieldDir`, before `quantizeDir`; with flow off and `uAngle` ≠ 0 the one
+  shared direction is `quantizeDir(π/2 + uAngle)` — facets' 8 fixed
+  sectors or paths' 16 jittered ones. At 0 with flow off `v` stays exactly
+  (0, 1). The higher key seeks the smaller projection along `v` and texel
+  *y* grows toward the video's bottom, so a growing angle turns the climb
+  clockwise on screen: 0 up, 90 right, 180 down, 270 left.
 
 ## Adaptive governor (metrics.js)
 
@@ -321,7 +329,7 @@ you can see or hear comes first and the setup folds away. Since the
 handles — three or four controls named for what they do — and whatever
 shapes rather than steers is filed in the engine:
 
-- **Video** — **sort** (amount, sort by, flow, jitter, ribbons), **feedback** (its
+- **Video** — **sort** (amount, sort by, direction, flow, jitter, ribbons), **feedback** (its
   own switch, then trail, the drift pad, follow motion — which reads the
   feedback trail — then blend and blend amount, how the trail meets the
   new frame), **engine** (clear buffer, a button that wipes the trail
@@ -337,7 +345,8 @@ shapes rather than steers is filed in the engine:
   chosen once, not played. The `audio` master is the chip above.
 - **Text** has no section: it is the chip and nothing else.
 
-In the mixer the effect columns fit their eight lane cells (sort 7,
+In the mixer the effect columns fit their eight lane cells (sort 8 —
+exactly full since direction,
 feedback 8 — exactly full since the blend, body 8 — exactly full since
 follow, smear 5); the engines are 9 rows each (the Video engine since
 clear buffer), so an unfolded engine spills into a second column and the
@@ -349,8 +358,8 @@ reach them exactly as before; they are only out of sight. The open state is
 remembered per section in the storage key `engineOpen` (`{video, audio}`),
 panel furniture outside `DEFAULTS` like `tooltips`.
 
-**Two control forms beyond the slider, both driven by the control table**
-(the handles round, 2026-10-12):
+**Three control forms beyond the slider, all driven by the control table**
+(the handles round, 2026-10-12; the knob, round 8 part 2):
 
 - **amount** — an inverted view. `threshold` ran against "more" (lower
   sorted more), so its def carries `invert: true` and the row is played
@@ -374,6 +383,20 @@ panel furniture outside `DEFAULTS` like `tooltips`.
   Each key keeps its def, storage, preset slot and tip. In the column it
   is a 72 px square; in the mixer it spans two lane rows (56 px, a 50 px
   square), the two cells its two rows used to take.
+- **the knob** (`type: 'knob'`) — one value as a rotary; so far one,
+  `angle`, *direction*, because an angle is a direction to point rather
+  than an amount to push. The knob cell is a dial: a ring, a small tick at
+  0 (the top) and a pointer at the value, turning clockwise (0 up, 90
+  right — the way the sort climbs). **Drag up to turn it clockwise**, down
+  to turn it back: 1° per 2 px, shift ×0.25 for fine. Focused, the arrows
+  turn it ±1 (shift ±10); the typed value cell takes degrees; double-click
+  the name or the dial to restore it. A def with `wrap: true` comes round
+  instead of stopping — past 359 to 0, below 0 to 359, a typed 450 to 90
+  (the row flashes, as a clamp does) — through `settle` in `defs.js`
+  (`quantize` everywhere else). Like the pad, the state lives in a hidden
+  range input, so presets, MIDI (a CC sweeps 0–359, 127 → 359), the
+  gates and the storage subscriber treat it exactly as a slider. 40 px in
+  the column, 24 px in a mixer row.
 
 **Trigger rows** (round 8). A def with `type: 'trigger'` is a button that
 fires rather than a value that is set — so far one, `keyframe`, *clear
@@ -743,9 +766,12 @@ right.
    64: bind a pad or a button and tap it in rhythm; holding it, or parking
    a knob high, fires once.
 
+A knob (`angle`, *direction*) sweeps once round: CC 0 is 0°, CC 127 is
+359°.
+
 Any class-compliant controller works. Suggested performance set (panel
 labels in brackets): `threshold` (amount — the CC sweeps amount, so up is
-more), `decay` (trail), `driftY` (the drift pad's y axis), `passes` (sort
+more), `angle` (direction, on an endless encoder or a knob), `decay` (trail), `driftY` (the drift pad's y axis), `passes` (sort
 passes), and `keyframe` (clear buffer) on a button. For audio: `audioMix` (mix), `audioSustain` (ring time),
 `audioBodyMix` (body amount) and `audioFbReturn` (level) — the two that
 move the balance between the apparatus and the video — `audioFbDecay`

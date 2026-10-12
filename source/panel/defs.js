@@ -42,7 +42,7 @@ export const GROUPS = [
     id: 'sort',
     section: 'video',
     title: 'sort',
-    tip: 'The visible effect: runs of the picture rearranged into ribbons. How much sorts and by what, how far the ribbons wander, how much they boil and how far they run — and every image takes these too.',
+    tip: 'The visible effect: runs of the picture rearranged into ribbons. How much sorts and by what, which way it climbs, how far the ribbons wander, how much they boil and how far they run — and every image takes these too.',
   },
   {
     id: 'feedback',
@@ -136,6 +136,24 @@ export const DEFS = [
     section: 'video',
     group: 'sort',
     tip: 'What decides which pixel climbs. luma = the bright rises; hue = colours stratify into bands; saturation = the vivid rises over the drab; red/green/blue = one channel leads. The dark barrier still holds. Shapes images too.',
+  },
+  // The direction (round 8 part 2): the panel's first KNOB — a rotary, since
+  // an angle is a direction to point, not an amount to push (John's pick;
+  // other knobs deferred). `wrap: true`: past 359 it comes round to 0, and a
+  // typed value wraps rather than clamps (450 → 90). 0–359 rather than
+  // 0–360, so every direction has exactly one value and a full MIDI sweep
+  // (CC 0 → 0, CC 127 → 359) goes once round.
+  {
+    key: 'angle',
+    label: 'direction',
+    type: 'knob',
+    wrap: true,
+    min: 0,
+    max: 359,
+    step: 1,
+    section: 'video',
+    group: 'sort',
+    tip: 'Which way the sort climbs: 0 = up, 90 = right, 180 = down, 270 = left. Turns the flow’s whole pattern too. In facets mode it moves in 45° steps, in paths it glides. Shapes images too.',
   },
   {
     key: 'flowAmount',
@@ -567,6 +585,20 @@ export function quantize(def, n) {
 }
 
 export const fmtNumber = (def, v) => Number(v).toFixed(decimals(def.step));
+
+// Where a value lands on its row's grid. A def with `wrap: true` (the
+// direction knob) is a circle: the number snaps to the step and then comes
+// round — the span is max − min + step, so 360 is 0 again and −1 is 359 —
+// instead of clamping at the ends. Every other def clamps (quantize).
+export function settle(def, n) {
+  if (!def.wrap) return quantize(def, n);
+  const step = Number(def.step) || 1;
+  const min = Number(def.min);
+  const span = Number(def.max) - min + step;
+  const snapped = Math.round((Number(n) - min) / step) * step;
+  const v = min + (((snapped % span) + span) % span);
+  return quantize(def, v);
+}
 
 // The view a row shows and edits. A def with `invert: true` is played
 // upside down — the panel shows and takes `max − (v − min)` (for 0–1 that is

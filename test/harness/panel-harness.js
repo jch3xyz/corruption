@@ -45,6 +45,7 @@ import {
   SECTIONS,
   GROUPS,
   quantize,
+  settle,
   fmtValue,
   fmtNumber,
   toView,
@@ -77,7 +78,7 @@ const LAYOUT = {
   video: {
     loose: [],
     groups: [
-      ['sort', ['threshold', 'sortKey', 'flowAmount', 'temperature', 'streak']],
+      ['sort', ['threshold', 'sortKey', 'angle', 'flowAmount', 'temperature', 'streak']],
       ['feedback', ['feedbackVideo', 'decay', 'driftX', 'driftY', 'motionGate', 'feedbackBlend', 'feedbackMix']],
       ['engine', ['keyframe', 'passes', 'maxRes', 'maxVideos', 'flowMode', 'flowScale', 'flowSpeed', 'resetMinS', 'resetMaxS']],
     ],
@@ -98,7 +99,7 @@ const LAYOUT = {
   },
 };
 const LABELS = {
-  threshold: 'amount', sortKey: 'sort by', flowAmount: 'flow', temperature: 'jitter', streak: 'ribbons',
+  threshold: 'amount', sortKey: 'sort by', angle: 'direction', flowAmount: 'flow', temperature: 'jitter', streak: 'ribbons',
   feedbackVideo: 'feedback', decay: 'trail', driftX: 'drift', driftY: 'drift', motionGate: 'follow motion',
   feedbackBlend: 'blend', feedbackMix: 'blend amount',
   keyframe: 'clear buffer', passes: 'sort passes', maxRes: 'max res', maxVideos: 'max videos',
@@ -199,7 +200,7 @@ function tier1() {
   }
   check(
     'the labels are the stranger’s, not the machine’s (no fb, taps, direct, temperature, sustain)',
-    DEFS.every((d) => !/\bfb\b|taps|direct|temperature|sustain|body mix|audio mix/.test(d.label))
+    DEFS.every((d) => !/\bfb\b|taps|\bdirect\b|temperature|sustain|body mix|audio mix/.test(d.label))
   );
   {
     const dated = DEFS.filter((d) => CHANGELOG.test(d.tip)).map((d) => d.key);
@@ -243,6 +244,27 @@ function tier1() {
       DEFS.indexOf(byKey.sortKey) === DEFS.indexOf(byKey.threshold) + 1 &&
       byKey.sortKey.tip.startsWith('What decides which pixel climbs. luma = the bright rises; hue = colours stratify into bands;') &&
       /dark barrier still holds/.test(byKey.sortKey.tip) && /Shapes images too/.test(byKey.sortKey.tip)
+  );
+  // Direction (round 8 part 2): the panel's first knob — an angle in whole
+  // degrees that wraps (0–359), 0 at rest, after sort by and before flow.
+  check(
+    'direction: a wrapping knob, 0–359 in whole degrees, 0 at rest, between sort by and flow, tip naming the four quarters',
+    byKey.angle?.type === 'knob' && byKey.angle.wrap === true && byKey.angle.label === 'direction' &&
+      byKey.angle.min === 0 && byKey.angle.max === 359 && byKey.angle.step === 1 && DEFAULTS.angle === 0 &&
+      byKey.angle.group === 'sort' && numeric.includes(byKey.angle) &&
+      DEFS.indexOf(byKey.angle) === DEFS.indexOf(byKey.sortKey) + 1 &&
+      DEFS.indexOf(byKey.flowAmount) === DEFS.indexOf(byKey.angle) + 1 &&
+      byKey.angle.tip.startsWith('Which way the sort climbs: 0 = up, 90 = right, 180 = down, 270 = left.') &&
+      /45° steps/.test(byKey.angle.tip) && /Shapes images too/.test(byKey.angle.tip)
+  );
+  check(
+    'settle wraps a wrapping def round the circle (360 → 0, −1 → 359, 450 → 90, 359.6 → 0, 719 → 359, −30 → 330) and is quantize for every other def',
+    settle(byKey.angle, 360) === 0 && settle(byKey.angle, -1) === 359 && settle(byKey.angle, 450) === 90 &&
+      settle(byKey.angle, 359.6) === 0 && settle(byKey.angle, 719) === 359 && settle(byKey.angle, -30) === 330 &&
+      settle(byKey.angle, 137.4) === 137 &&
+      numeric.filter((d) => !d.wrap).every((d) =>
+        [d.min - 1, d.min, (d.min + d.max) / 3, d.max, d.max + 1].every((n) => settle(d, n) === quantize(d, n))
+      )
   );
   // The source-following body (design review M8): one 0–1 knob in the body
   // column after body amount, resting at 0 so the fixed chord is unchanged.
@@ -577,14 +599,15 @@ async function tier2() {
       !!$('.ab-row .learn')
   );
   check(
-    'the A/B dominates: taller than any other one-line control in the panel, and bigger than the drift pad',
+    'the A/B dominates: taller than any other one-line control in the panel, and bigger than the drift pad and the direction dial',
     (() => {
       const r = ab.getBoundingClientRect();
       const p = $('.pad').getBoundingClientRect();
+      const k = $('.dial').getBoundingClientRect();
       return (
-        [...doc.querySelectorAll('.btn, .chip-toggle, .row:not(.pad-row)')].every(
+        [...doc.querySelectorAll('.btn, .chip-toggle, .row:not(.pad-row):not(.knob-row)')].every(
           (el) => el.getBoundingClientRect().height * 1.6 < r.height
-        ) && r.width * r.height > 3 * p.width * p.height
+        ) && r.width * r.height > 3 * p.width * p.height && r.width * r.height > 3 * k.width * k.height
       );
     })()
   );
@@ -1439,6 +1462,125 @@ async function tier2() {
     await sleep(60);
   }
 
+  // -- direction (round 8 part 2): the knob, a rotary over a hidden holder --
+  {
+    const r = row('angle');
+    const dial = r.querySelector('.dial');
+    const holder = r.querySelector('input[type=range]');
+    const turn = () => dial.querySelector('.dial-pointer').getAttribute('transform');
+    const learns = r.querySelectorAll('.learn');
+    check(
+      'the direction row is a knob between sort by and flow: a focusable dial (role slider) over a hidden range holder, one typed field, one ⊙',
+      r.classList.contains('knob-row') && text(r.querySelector('label')) === 'direction' &&
+        r.previousElementSibling === row('sortKey') && r.nextElementSibling === row('flowAmount') &&
+        dial?.getAttribute('role') === 'slider' && dial.tabIndex === 0 && shown(dial) &&
+        holder?.hidden && holder.dataset.for === 'angle' && slider('angle') === holder &&
+        !!field('angle') && learns.length === 1 && r.children.length === 4 &&
+        !!dial.querySelector('.dial-zero') && !!dial.querySelector('.dial-ring')
+    );
+    const dr = dial.getBoundingClientRect();
+    const rr = r.getBoundingClientRect();
+    check(
+      `in the column the dial is a ~40 px circle inside its row (${Math.round(dr.width)} × ${Math.round(dr.height)} px)`,
+      Math.abs(dr.width - 40) < 1 && Math.abs(dr.height - 40) < 1 && dr.top >= rr.top - 0.5 && dr.bottom <= rr.bottom + 0.5
+    );
+    check(
+      'at rest it reads 0: the field shows 0, the pointer stands at the top, nothing stored',
+      field('angle').value === '0' && /^rotate\(0 20 20\)$/.test(turn()) && dial.getAttribute('aria-valuenow') === '0' &&
+        !('angle' in store)
+    );
+    // A drag: vertical travel, up = clockwise, 1° per 2 px.
+    const drag = async (dy, opts = {}) => {
+      const b = dial.getBoundingClientRect();
+      const x = b.left + b.width / 2;
+      const y = b.top + b.height / 2;
+      pointer(dial, 'pointerdown', { clientX: x, clientY: y, ...opts });
+      for (let i = 1; i <= 4; i++) pointer(dial, 'pointermove', { clientX: x, clientY: y - (dy * i) / 4, ...opts });
+      pointer(dial, 'pointerup', { clientX: x, clientY: y - dy, ...opts });
+      await sleep(60);
+    };
+    await drag(100);
+    check(
+      `dragging 100 px up turns it 50° clockwise: stored, shown and drawn (${store.angle})`,
+      store.angle === 50 && field('angle').value === '50' && /^rotate\(50 20 20\)$/.test(turn())
+    );
+    await drag(40, { shiftKey: true });
+    check(`shift is fine: 40 px up with shift adds 5° (${store.angle})`, store.angle === 55);
+    await drag(-120);
+    check(`dragging down turns it back, and past 0 it comes round: 55 − 60 → 355 (${store.angle})`, store.angle === 355);
+    type('angle', '359');
+    field('angle').blur();
+    await sleep(60);
+    await drag(4);
+    check(`and past 359 it comes round the other way: 359 + 2 → 1 (${store.angle})`, store.angle === 1);
+    const typed = type('angle', '450');
+    press(typed, 'Enter');
+    await sleep(60);
+    check(
+      `a typed 450 wraps to 90 rather than clamping, and the row flashes (${store.angle})`,
+      store.angle === 90 && field('angle').value === '90' && r.classList.contains('flash') && /^rotate\(90 20 20\)$/.test(turn())
+    );
+    press(type('angle', '-30'), 'Enter');
+    await sleep(60);
+    check(`a typed −30 wraps to 330 (${store.angle})`, store.angle === 330 && field('angle').value === '330');
+    press(type('angle', '359'), 'Enter');
+    await sleep(60);
+    dial.focus();
+    press(dial, 'ArrowUp');
+    await sleep(60);
+    const upWrap = store.angle === 0;
+    press(dial, 'ArrowDown');
+    await sleep(60);
+    const downWrap = store.angle === 359;
+    press(dial, 'ArrowRight', { shiftKey: true });
+    await sleep(60);
+    const shifted = store.angle === 9;
+    dial.blur();
+    check(
+      'on the focused dial the arrows turn it and wrap: ↑ from 359 → 0, ↓ from 0 → 359, shift+→ from 359 → 9',
+      upWrap && downWrap && shifted
+    );
+    press(type('angle', '359'), 'ArrowUp');
+    await sleep(60);
+    check(`the typed field’s ↑ wraps too: 359 → 0 (${store.angle})`, store.angle === 0 && field('angle').value === '0');
+    field('angle').blur();
+    press(type('angle', '200'), 'Enter');
+    await sleep(60);
+    fire(r.querySelector('label'), 'dblclick');
+    await sleep(60);
+    const byName = store.angle === 0 && r.classList.contains('flash');
+    press(type('angle', '200'), 'Enter');
+    await sleep(60);
+    fire(dial, 'dblclick');
+    await sleep(60);
+    check('double-clicking the name, or the dial, puts it back to 0', byName && store.angle === 0 && field('angle').value === '0');
+    win.chrome.storage.local.set({ angle: 270 });
+    await sleep(60);
+    check('an angle written elsewhere is followed: field and pointer', field('angle').value === '270' && /^rotate\(270 20 20\)$/.test(turn()));
+
+    // Flow mode is also the direction's quantizer, so it stays in reach
+    // while the direction is off 0 even with flow at 0; the rest of the
+    // flow's shape still waits for flow.
+    const flowWas = store.flowAmount ?? DEFAULTS.flowAmount;
+    press(type('flowAmount', '0'), 'Enter');
+    await sleep(60);
+    const turnedOpen = !row('flowMode').dataset.gate && row('flowScale').dataset.gate === 'flow';
+    press(type('angle', '0'), 'Enter');
+    await sleep(60);
+    const restClosed = row('flowMode').dataset.gate === 'flow' && row('flowScale').dataset.gate === 'flow';
+    check(
+      'with flow at 0, flow mode stays live while the direction is turned (it picks 45° steps or the glide) and gates again at 0; flow scale waits for flow',
+      turnedOpen && restClosed
+    );
+    press(type('flowAmount', String(flowWas)), 'Enter');
+    await sleep(60);
+    field('flowAmount').blur();
+    // Leave 135 for the presets below to capture.
+    press(type('angle', '135'), 'Enter');
+    field('angle').blur();
+    await sleep(60);
+  }
+
   // -- presets --
   const btnDefault = $('#preset-default');
   const slot = (x) => $(`#presets .slot[data-slot="${x}"]`);
@@ -1509,6 +1651,7 @@ async function tier2() {
       store.presets.A.driftX === -0.0075 &&
       store.presets.A.driftY === 0.0025 &&
       store.presets.A.sortKey === 'hue' &&
+      store.presets.A.angle === 135 &&
       Object.keys(store.presets.A).length === DEFS.length - PRESET_EXCLUDED.length &&
       store.presets.B === null
   );
@@ -1785,6 +1928,24 @@ async function tier2() {
         'MIDI on the clear button counts from the stored counter (7): 127 fires once, 127 again and 100 do not, 0 then 127 fires again',
         kBound && first && held && low && s2.keyframe === 9 && kRow.querySelector('.learn').textContent === '23'
       );
+      // The direction knob: a CC sweeps 0–359 once round, 127 → 359.
+      const aRow = wd.querySelector('.row[data-key="angle"]');
+      aRow.querySelector('.learn').click();
+      cc(24, 0);
+      await sleep(60);
+      const aZero = s2.midiMap[24] === 'angle';
+      cc(24, 127);
+      await sleep(90);
+      const aTop = s2.angle === 359 && aRow.querySelector('input.value.num').value === '359';
+      cc(24, 64);
+      await sleep(90);
+      const aMid = s2.angle === 181;
+      cc(24, 0);
+      await sleep(90);
+      check(
+        `MIDI on the direction knob sweeps once round: CC 127 → 359, 64 → 181, 0 → 0 (${s2.angle})`,
+        aZero && aTop && aMid && s2.angle === 0 && aRow.querySelector('.learn').textContent === '24'
+      );
     }
     f.remove();
   }
@@ -1973,7 +2134,7 @@ async function tier2() {
 
   // Round 3, item 7: the Video rows name the medium switch that would wake them.
   // The handles in their columns, and the keys of theirs filed in the engine.
-  const SORT = ['threshold', 'sortKey', 'flowAmount', 'temperature', 'streak'];
+  const SORT = ['threshold', 'sortKey', 'angle', 'flowAmount', 'temperature', 'streak'];
   const SORT_ENGINE = ['flowMode', 'flowScale', 'flowSpeed'];
   const FEEDBACK = ['feedbackVideo', 'decay', 'driftX', 'driftY', 'motionGate', 'feedbackBlend', 'feedbackMix'];
   const FEEDBACK_ENGINE = ['resetMinS', 'resetMaxS'];
@@ -2167,6 +2328,26 @@ async function tier3() {
       check(
         `at ${width} px each effect column fits its eight lane cells: no row spills into the next column (${spilled.join(', ') || 'none spill'})`,
         spilled.length === 0
+      );
+    }
+    {
+      // The sort column since round 8 part 2: the Video header, the sort
+      // caption and six rows — amount · sort by · direction · flow · jitter ·
+      // ribbons — exactly the eight lane cells, top to bottom in one column,
+      // with the direction's dial a 24 px circle inside its 28 px row.
+      const sortRows = ['threshold', 'sortKey', 'angle', 'flowAmount', 'temperature', 'streak'].map((k) => q(`.row[data-key="${k}"]`));
+      const cap = groupHead('video', 'sort');
+      const vh = rect(q('#section-video'));
+      const tops = sortRows.map((el) => rect(el).top);
+      const dial = rect(q('.row[data-key="angle"] .dial'));
+      const ar = rect(q('.row[data-key="angle"]'));
+      check(
+        `at ${width} px the sort column is the Video header, the caption and six rows (amount · sort by · direction · flow · jitter · ribbons) in eight cells, the dial ${Math.round(dial.width)} px inside its ${Math.round(ar.height)} px row`,
+        sortRows.every(vis) && sortRows.every((el) => Math.abs(rect(el).left + 4 - rect(cap).left) <= 6) &&
+          Math.abs(vh.left - rect(cap).left + 8) <= 10 && vh.top < rect(cap).top &&
+          tops.every((t, i) => i === 0 || t > tops[i - 1]) && rect(cap).bottom <= tops[0] + 1 &&
+          rect(sortRows[5]).bottom <= cr.bottom + 1 &&
+          Math.abs(dial.width - 24) < 1 && Math.abs(dial.height - 24) < 1 && dial.top >= ar.top - 0.5 && dial.bottom <= ar.bottom + 0.5
       );
     }
     {

@@ -55,6 +55,7 @@ export function createPipeline(gl) {
     'uMotionGate',
     'uSeed',
     'uKey',
+    'uAngle',
   ]);
   const field = buildProgram(gl, VERT_FULLSCREEN, FRAG_FIELD, [
     'uProcSize',
@@ -195,6 +196,9 @@ export function createPipeline(gl) {
       gl.uniform1f(sort.uniforms.uFacets, opts.facets ? 1 : 0);
       // The ordering key (SORT_BY order in params.js); absent = 0 = luma.
       gl.uniform1i(sort.uniforms.uKey, opts.key | 0);
+      // The direction, radians, clockwise on screen from "up"; 0 = the
+      // classic columns (flow off) or the field untouched (flow on).
+      gl.uniform1f(sort.uniforms.uAngle, opts.angle || 0);
       gl.uniform1i(sort.uniforms.uTex, 0);
       // Always bound (every bundle owns one) so samplers stay complete;
       // never sampled unless uUseFlow is on.

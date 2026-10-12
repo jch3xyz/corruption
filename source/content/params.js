@@ -19,6 +19,10 @@ export const DEFAULTS = {
   sortKey: 'luma',   // what decides which pixel climbs ("sort by", round 8):
                      // the ordering key only — the barrier stays on luma.
                      // See SORT_BY; 'luma' is the classic, bit for bit
+  angle: 0,          // which way the sort climbs ("direction", round 8),
+                     // degrees clockwise from up: 0 = the classic (bright
+                     // to the top), 90 = right, 180 = down. Turns the flow's
+                     // whole pattern too. 0–359, wrapping (the panel's knob)
   passes: 64,        // sort passes per frame (~3.5 cycles of a 256→1 ladder)
   streak: 256,       // max compare-exchange stride: longer = longer ribbons
   temperature: 0,    // fraction of pair-verdicts inverted per pass: the sort
@@ -98,6 +102,9 @@ export const FEEDBACK_BLENDS = ['brighter', 'mix', 'screen', 'add'];
 export const SORT_BY = ['luma', 'hue', 'saturation', 'red', 'green', 'blue'];
 // A name onto the shader's int; anything unknown sorts by luma.
 export const sortKeyIndex = (name) => Math.max(0, SORT_BY.indexOf(name));
+
+// The stored direction (degrees) onto the shader's radians.
+export const angleRadians = (deg) => ((Number(deg) || 0) * Math.PI) / 180;
 
 export async function loadParams() {
   const stored = await chrome.storage.local.get(DEFAULTS);

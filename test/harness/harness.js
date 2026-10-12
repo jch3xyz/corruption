@@ -664,6 +664,104 @@ function tier0() {
     `sort by: the dark barrier is luma's under every key — a deep-blue band (dark, but high in hue, saturation and blue) stays put and nothing crosses it (${bandHolds.join(', ') || 'all hold'})`,
     bandHolds.length === 0
   );
+
+  // --- Direction (round 8 part 2): the angle, applied after the field ------
+  // Degrees clockwise on screen from "up"; the pipeline takes radians.
+  const rad = (deg) => (deg * Math.PI) / 180;
+  const angSteps = (deg, { facets = false, flow = 0, src: img = noisy, threshold = 0, streak = 64 } = {}) => (p, b) => {
+    p.uploadFrame(b, img);
+    p.runReset(b);
+    if (flow > 0) p.runFieldPass(b, { amount: flow, scale: 4, speed: 0.05, time: 12.5, seed: 7 });
+    p.runSortPasses(b, 200, threshold, streak, { flow: flow > 0, facets, angle: rad(deg) });
+  };
+  check(
+    'direction: angle 0 is bit-identical — flow off (paths and facets), and flowing in paths and facets',
+    same(run(angSteps(0)), s1) && same(run(angSteps(0, { facets: true })), s1) &&
+      same(run(angSteps(0, { flow: 1 })), flowed) && same(run(angSteps(0, { flow: 1, facets: true })), faceted)
+  );
+  // A white 8×8 square on mid-grey: where its pixels end up says which way
+  // the sort climbs. Centroid in the video's own coordinates (x right, y
+  // down), from the V-flipped readback.
+  const square = src((x) => {
+    x.fillStyle = 'rgb(128,128,128)';
+    x.fillRect(0, 0, W, H);
+    x.fillStyle = '#fff';
+    x.fillRect(28, 28, 8, 8);
+  });
+  const centroid = (px) => {
+    let n = 0;
+    let cx = 0;
+    let cy = 0;
+    for (let y = 0; y < H; y++) {
+      for (let x2 = 0; x2 < W; x2++) {
+        const i = (y * W + x2) * 4;
+        if (px[i] > 250 && px[i + 1] > 250 && px[i + 2] > 250) {
+          n++;
+          cx += x2;
+          cy += H - 1 - y;
+        }
+      }
+    }
+    return { n, x: cx / n, y: cy / n };
+  };
+  const fmtC = (c) => `(${c.x.toFixed(1)}, ${c.y.toFixed(1)})`;
+  const climbTo = {};
+  for (const deg of [0, 90, 180, 270]) climbTo[deg] = centroid(run(angSteps(deg, { facets: true, src: square })));
+  const at45 = centroid(run(angSteps(45, { facets: true, src: square })));
+  check(
+    `direction: 0 = up, 90 = right, 180 = down, 270 = left — the white square climbs that way (centroids ${[0, 90, 180, 270].map((d) => `${d}° ${fmtC(climbTo[d])}`).join(', ')})`,
+    [0, 90, 180, 270].every((d) => climbTo[d].n === 64) &&
+      climbTo[0].y < 4 && Math.abs(climbTo[0].x - 31.5) < 0.01 &&
+      climbTo[90].x > 59 && Math.abs(climbTo[90].y - 31.5) < 0.01 &&
+      climbTo[180].y > 59 && Math.abs(climbTo[180].x - 31.5) < 0.01 &&
+      climbTo[270].x < 4 && Math.abs(climbTo[270].y - 31.5) < 0.01
+  );
+  check(
+    `direction: 45 in facets climbs up and to the right (centroid ${fmtC(at45)})`,
+    at45.n === 64 && at45.x > 40 && at45.y < 23
+  );
+  const angles = [0, 30, 45, 90, 137, 180, 225, 270, 333];
+  const lost = [];
+  for (const facets of [false, true]) {
+    for (const deg of angles) {
+      if (globalKey(run(angSteps(deg, { facets }))) !== globalKey(unsorted)) lost.push(`${facets ? 'facets' : 'paths'} ${deg}`);
+    }
+    if (globalKey(run(angSteps(90, { facets, flow: 1 }))) !== globalKey(unsorted)) lost.push(`${facets ? 'facets' : 'paths'} 90 + flow`);
+  }
+  check(
+    `direction: every angle is a permutation, flow off in both modes and flowing at 90 (${lost.join(', ') || 'every pixel kept'})`,
+    lost.length === 0
+  );
+  check(
+    'direction: deterministic (paths at 30, facets at 137, paths at 90 with flow)',
+    same(run(angSteps(30)), run(angSteps(30))) &&
+      same(run(angSteps(137, { facets: true })), run(angSteps(137, { facets: true }))) &&
+      same(run(angSteps(90, { flow: 1 })), run(angSteps(90, { flow: 1 })))
+  );
+  const f30 = run(angSteps(30, { facets: true }));
+  check(
+    'direction: facets turns in 45° steps — 30 and 44 land in the same sector (bit-identical), and differ from 0',
+    same(f30, run(angSteps(44, { facets: true }))) && !same(f30, s1)
+  );
+  const p30 = run(angSteps(30));
+  // The square under paths at 30 and 60 (short ribbons, so it travels rather
+  // than piling into a corner): the climb leans right of up, more at 60.
+  const lean = (deg) => {
+    const c = centroid(run(angSteps(deg, { src: square, streak: 4 })));
+    return { ...c, dx: c.x - 31.5, dy: 31.5 - c.y };
+  };
+  const l30 = lean(30);
+  const l60 = lean(60);
+  check(
+    `direction: paths glides — 30 differs from 0 and from facets at 30, and the square leans right of up, more at 60 (30°: dx ${l30.dx.toFixed(1)} dy ${l30.dy.toFixed(1)}; 60°: dx ${l60.dx.toFixed(1)} dy ${l60.dy.toFixed(1)})`,
+    !same(p30, s1) && !same(p30, f30) && l30.n === 64 && l60.n === 64 &&
+      l30.dx > 0 && l30.dy > l30.dx && l60.dx > 0 && l60.dx / l60.dy > l30.dx / l30.dy
+  );
+  check(
+    'direction: with flow on the whole pattern turns — 90 differs from 0 at the same field',
+    !same(run(angSteps(90, { flow: 1 })), flowed) && !same(run(angSteps(90, { flow: 1, facets: true })), faceted)
+  );
+
 }
 
 // --- The boot guard (round 8) ------------------------------------------------

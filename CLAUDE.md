@@ -69,7 +69,8 @@ Quick facts:
   at rest). **Video and Audio each have three groups, and each effect
   group holds only its handles** (John's handles round, 2026-10-12): sort
   = amount · sort by (`sortKey`, round 8: the ordering key; the barrier
-  stays on luma) · flow · jitter · ribbons; feedback = the switch · trail · drift
+  stays on luma) · direction (`angle`, degrees clockwise from up, a
+  **knob**) · flow · jitter · ribbons — exactly the mixer's eight cells; feedback = the switch · trail · drift
   pad · follow motion · blend · blend amount (`feedbackBlend`/`feedbackMix`);
   body = mix · body amount · follow · ring time · drive; smear = the switch · tail ·
   level · wobble. Everything that shapes rather than
@@ -78,11 +79,12 @@ Quick facts:
   never in a preset — then sort passes, max res, max videos, the flow's
   shape, the clear rhythm; Audio: body type,
   dry, max sources, exciter, comb damp, the smear clears). Gates are keyed,
-  not grouped. **Two control forms the table drives:** **amount** is
+  not grouped. **Three control forms the table drives:** **amount** is
   `threshold` shown inverted (`invert: true`, `toView`/`fromView`; the
   stored key, presets and MIDI maps stay `threshold`), and **the drift
   pad** plays `driftX`/`driftY` as one 2-D surface (`pad: 'drift'`,
-  `PADS`). **The four chips are the four masters** (video, images, text,
+  `PADS`), and **the knob** plays `angle` as a rotary (`type: 'knob'`,
+  `wrap: true`: 0–359, wrapping; `settle` in defs.js). **The four chips are the four masters** (video, images, text,
   audio — text has no knobs). **Gated rows hide**, they do not grey.
   **Labels are the stranger's words, named for the result; keys never
   change** (storage, MIDI maps, docs), and every tip ends with its key.

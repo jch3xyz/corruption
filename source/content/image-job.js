@@ -12,7 +12,7 @@
 import { Overlay, objectFitRect } from './overlay.js';
 import { acquireGL } from '../gl/context.js';
 import { createBundle, destroyBundle } from '../gl/pipeline.js';
-import { sortKeyIndex } from './params.js';
+import { sortKeyIndex, angleRadians } from './params.js';
 
 export class ImageJob {
   constructor(img, params, routeStats) {
@@ -147,6 +147,7 @@ export class ImageJob {
       flow: flowAmount > 0,
       facets: params.flowMode === 'facets',
       key: sortKeyIndex(params.sortKey),
+      angle: angleRadians(params.angle),
     });
     glc.ensureSize(w, h);
     p.present(b);

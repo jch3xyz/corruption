@@ -8,7 +8,7 @@ import { Overlay, objectFitRect } from './overlay.js';
 import { acquireGL } from '../gl/context.js';
 import { createBundle, destroyBundle } from '../gl/pipeline.js';
 import { FrameGovernor } from './metrics.js';
-import { FEEDBACK_BLENDS, sortKeyIndex } from './params.js';
+import { FEEDBACK_BLENDS, sortKeyIndex, angleRadians } from './params.js';
 
 // Detached CORS mirror for tainted sources — the video sibling of image
 // route 2. A cross-origin src without `crossorigin` fetches in no-cors mode
@@ -354,6 +354,7 @@ export class VideoJob {
         flow: flowAmount > 0,
         facets: params.flowMode === 'facets',
         key: sortKeyIndex(params.sortKey),
+        angle: angleRadians(params.angle),
       }
     );
 

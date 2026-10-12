@@ -53,6 +53,21 @@
 // amount keeps its meaning under every key (dark material always holds the
 // picture together) and the permutation argument is untouched: both
 // members still compute the same key pair and the same refusals.
+//
+// uAngle — the direction (`angle`, round 8 part 2), radians, applied AFTER
+// the field: the angle is added to the field's own angle before it is
+// quantized, so with flow on the whole streamline pattern turns at any
+// flow amount. With flow off every pixel shares one direction, π/2 +
+// uAngle, through the SAME quantizer the mode uses — facets: 8 fixed
+// sectors, so the sort turns in 45° steps; paths: 16 sectors under the
+// per-pass jitter, so the single direction dithers pass to pass and the
+// average motion follows the true angle (the paths grammar, applied to the
+// whole frame). At 0 with flow off v stays exactly (0,1): bit-identical.
+// One shared v per pass needs no partner check; with flow on the check is
+// unchanged, and both members' fieldDir now includes the same angle.
+// Sense: v points AWAY from where the higher key goes (it seeks the smaller
+// projection), and texel y grows toward the video's bottom, so a growing
+// angle turns the climb clockwise on screen: 0 up, 90 right, 180 down.
 import { GLSL_LUMA } from './common.js';
 
 export const FRAG_SORT = `#version 300 es
@@ -69,6 +84,7 @@ uniform float uTemp;
 uniform float uMotionGate;
 uniform int uSeed;
 uniform int uKey;
+uniform float uAngle;
 in vec2 vUV;
 out vec4 outColor;
 ${GLSL_LUMA}
@@ -115,15 +131,18 @@ const ivec2 DIRS8[8] = ivec2[8](
 // facets (uFacets 1): 8 fixed sectors, no dither — the first cut's
 // grammar, where sector edges are anchored seams and ribbons run
 // straight inside each patch and pool where the field bends.
-ivec2 fieldDir(ivec2 cell) {
-  vec2 d = texelFetch(uField, cell, 0).rg * 2.0 - 1.0;
-  float a = atan(d.y, d.x);
+ivec2 quantizeDir(float a) {
   if (uFacets > 0.5) {
     int k = int(round(a / SECTOR8));
     return DIRS8[((k % 8) + 8) % 8];
   }
   int k = int(round(a / SECTOR + uSectorJitter));
   return DIRS[((k % 16) + 16) % 16];
+}
+// The field's direction, turned by the angle before it is quantized.
+ivec2 fieldDir(ivec2 cell) {
+  vec2 d = texelFetch(uField, cell, 0).rg * 2.0 - 1.0;
+  return quantizeDir(atan(d.y, d.x) + uAngle);
 }
 void main() {
   ivec2 size = textureSize(uTex, 0);
@@ -133,6 +152,7 @@ void main() {
   int s = int(uStride);
   ivec2 v = ivec2(0, 1);
   if (uUseFlow > 0.5) v = fieldDir(p >> 2);
+  else if (uAngle != 0.0) v = quantizeDir(1.5707963267948966 + uAngle);
 
   // Brick pairing along v. floor division (not truncation) keeps blocks
   // consistent when the projection goes negative under leftward/upward v.

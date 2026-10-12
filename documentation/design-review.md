@@ -1155,3 +1155,93 @@ exactly once and the random clock reschedules); strip 52/52, text 35/35,
 audio 55/55 unchanged. Not verified without a real Chrome: the MIDI…
 request inside a real page's frame (allowed or refused), and the clear on
 real footage — both on the manual checklist in build-plan.md.
+
+# Round 8 part 2: sort by and direction (2026-10-12)
+
+John asked for something visually impactful in the sort column, and chose
+the forms himself: the comparison key as a dropdown named **sort by** (his
+pick over *sort mode*), and the direction as a **knob** — the panel's first
+rotary. Other knobs (a rotary for any other row) are deferred: this round
+adds the form for the one value that is genuinely circular. Two commits
+(`97e9bca` sort by, then direction with these notes).
+
+## What landed
+
+1. **Sort by** (`sortKey`: luma · hue · saturation · red · green · blue).
+   What decides which pixel climbs: luma (the classic, bit for bit), hue
+   (colours stratify into bands), saturation (the vivid rises over the
+   drab), or one channel. **Only the ordering reads the key; the barrier
+   stays on luma**, so amount means the same thing under every key and
+   dark material still holds the picture together — a deep, vivid blue is
+   still a wall under hue. A select right after amount.
+2. **Direction** (`angle`, 0–359°, wrapping). Which way the sort climbs,
+   clockwise on screen from up: 0 up, 90 right, 180 down, 270 left. Applied
+   after the field, so with flow on the whole streamline pattern turns.
+   With flow off the one shared direction goes through the flow mode's own
+   quantizer: in **facets** it turns in 45° steps (30 and 44 are the same
+   picture); in **paths** it glides — the direction dithers between
+   neighbouring sectors pass to pass and the average climb follows the
+   true angle. Played on a **knob**: drag up to turn clockwise (1° per
+   2 px, shift fine), arrows step it, the field takes degrees and wraps (a
+   typed 450 lands on 90), double-click restores 0.
+
+The sort column is now amount · sort by · direction · flow · jitter ·
+ribbons: with the Video header and the caption, exactly the mixer's eight
+cells.
+
+## What to look for
+
+- **Sort by on real footage**: hue on a colourful music video (bands of
+  colour stratify, the picture's light no longer decides); saturation on a
+  talking head (skin and clothes rise over a grey set); red/green/blue on
+  the same frame (one channel leads, the others drag). Then amount low:
+  the dark barrier should hold the same way under every key.
+- **Direction with flow off** (flow 0): turn the knob slowly. In facets it
+  should jump at 45° steps; in paths it should glide, the ribbons leaning
+  at the knob's angle. 180 hangs the picture's bright from the bottom
+  edge.
+- **Direction with flow on** (the resting 0.5): the swirls' whole pattern
+  turns; does a turned current read as a different instrument, or the
+  same one tilted?
+- **The knob itself** in the mixer at 24 px: readable at a glance? Is up =
+  clockwise the right drag, and is 2 px per degree the right rate (a full
+  turn is 720 px of travel; shift is fine)?
+
+## Trade-offs, stated
+
+- **The barrier stays on luma under every key.** A key-driven barrier
+  would let hue sort straight through dark material and read more
+  violently, but amount would then mean something different per key, and
+  the one rule the piece keeps — true black holds — would break. Kept.
+- **0–359, wrapping, rather than 0–360.** Every direction has exactly one
+  value, so presets and double-click compare cleanly, and a MIDI sweep goes
+  once round (CC 127 → 359) instead of ending where it began. A typed
+  value wraps (450 → 90, −30 → 330) and the row flashes, as a clamp does.
+- **flow mode is no longer flow-only.** With flow at 0 and the direction
+  off 0, the flow mode picks the direction's quantizer (45° steps or the
+  glide), so its row stays in reach then; flow scale and flow speed still
+  wait for flow.
+- **The A/B check makes room for the dial.** The column's 40 px dial makes
+  its row taller than a slider row; the harness's "A/B dominates" check
+  now compares the A/B's area with the dial (as with the pad) instead of
+  holding the dial's row to the one-line height.
+
+## Verification
+
+Headless Chrome, `node test/headless.mjs index panel strip text`: visual
+**84/84** (76 before direction, 68 before sort by): angle 0 bit-identical
+flow off (paths and facets) and flowing (paths and facets); a white square
+climbs to the top at 0, the right at 90, the bottom at 180, the left at
+270, up-right at 45; every angle a permutation (nine angles in both modes,
+and 90 with flow); deterministic; facets 30 = facets 44 ≠ 0; paths 30 ≠ 0
+≠ facets 30, leaning 29° at 30 and 58° at 60; flow on, 90 turns the
+pattern. Panel **392/392** (370 before): the def and `settle`; the knob
+row's structure and its 40 px dial; a 100 px drag → 50°, shift fine,
+wrapping both ways, a typed 450 → 90 and −30 → 330, arrows on the dial and
+in the field wrapping, double-click on the name or the dial, a value from
+elsewhere followed, flow mode live while turned, presets capturing it,
+gated with both mediums off, a MIDI sweep 127 → 359; and at every strip
+width the sort column is the header, the caption and six rows in eight
+cells with the 24 px dial inside its 28 px row. Strip 52/52, text 35/35.
+Not verified without real Chrome and real footage: everything under *What
+to look for*.

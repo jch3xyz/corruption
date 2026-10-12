@@ -26,6 +26,7 @@ import {
   TRIGGER_HINT,
   NUM_HINT,
   quantize,
+  settle,
   fmtValue,
   fmtNumber,
   toView,
@@ -119,14 +120,18 @@ const AUDIO_TRIGGERS = ['audioEnabled', 'audioFeedback', 'audioFbClear', 'audioB
 // answers to the medium (and the flow shape to flow, FLOW_ONLY). The other
 // engine rows (passes, max res, max videos) are not gated row by row; the
 // engine group hides with the mediums.
-const SORT_KEYS = ['threshold', 'sortKey', 'flowAmount', 'temperature', 'streak', 'flowMode', 'flowScale', 'flowSpeed'];
+const SORT_KEYS = ['threshold', 'sortKey', 'angle', 'flowAmount', 'temperature', 'streak', 'flowMode', 'flowScale', 'flowSpeed'];
 const FEEDBACK_KEYS = ['feedbackVideo', ...FEEDBACK_SHARED];
-const MEDIUM_TRIGGERS = ['video', 'images', 'feedbackVideo', 'flowAmount'];
+const MEDIUM_TRIGGERS = ['video', 'images', 'feedbackVideo', 'flowAmount', 'angle'];
 
 // The flow shape knobs only mean anything while flow amount is above zero.
 // They live in the folded engine, so with flow at 0 they are hidden twice:
-// by the fold and by this gate (data-gate="flow").
+// by the fold and by this gate (data-gate="flow"). One exception: flow
+// mode is also the direction's quantizer (round 8 part 2: facets turns the
+// sort in 45° steps, paths glides), so it stays in reach whenever the
+// direction is off 0, flow or no flow.
 const FLOW_ONLY = ['flowMode', 'flowScale', 'flowSpeed'];
+const ANGLE_TOO = ['flowMode'];
 
 // A gated row is HIDDEN, not greyed (John, 2026-10-11: "if controls are
 // greyed out contingent on a different toggle being on, then those controls
@@ -213,6 +218,7 @@ const onRender = (key, fn) => (renderers[key] ??= []).push(fn);
 
 function buildRow(def) {
   if (def.type === 'trigger') return buildTriggerRow(def);
+  if (def.type === 'knob') return buildKnobRow(def);
   const row = document.createElement('div');
   row.className = 'row';
   row.dataset.key = def.key;
@@ -354,6 +360,166 @@ function fireTrigger(key) {
   queueWrite(key, n);
   setUI(key, n);
   flashRow(key); // the only sign it fired: the trail itself is on the page
+}
+
+// --- Knobs (round 8 part 2): one value played as a rotary ---
+// The direction (`angle`) is an angle to point, not an amount to push, so
+// its knob cell is a dial: a ring with a tick at 0 (the top) and a pointer
+// at the value, clockwise. Like the pad, the state lives in a hidden range
+// input (inputs[key]), so setUI, currentValues, presets, MIDI, resetParam,
+// setGated and attachNumberField treat it exactly as a slider; the value
+// cell is the usual typed field (degrees) and the learn cell one ⊙. A drag
+// turns it — vertical travel, up = clockwise, 1° per 2 px, shift ×0.25 —
+// and a def with `wrap: true` comes round past 359/0 (settle in defs.js)
+// rather than stopping. Focused, the arrows turn it ±1 (shift ±10).
+const KNOB_HINT =
+  'Drag up or down to turn it (up = clockwise, shift = fine); arrows step it (shift ×10). Double-click to put it back to the marked preset.';
+const KNOB_PX_PER_STEP = 2;
+const KNOB_FINE = 0.25;
+const SVG_NS = 'http://www.w3.org/2000/svg';
+
+function buildKnobRow(def) {
+  const row = document.createElement('div');
+  row.className = 'row knob-row';
+  row.dataset.key = def.key;
+  row.dataset.tip = def.tip;
+  row.dataset.hint = ROW_HINT;
+  row.dataset.param = def.key;
+
+  const label = document.createElement('label');
+  label.textContent = def.label;
+
+  const dial = document.createElement('div');
+  dial.className = 'dial knob';
+  dial.tabIndex = 0;
+  dial.setAttribute('role', 'slider');
+  dial.setAttribute('aria-label', def.label);
+  dial.setAttribute('aria-valuemin', String(def.min));
+  dial.setAttribute('aria-valuemax', String(def.max));
+  dial.dataset.tip = def.tip;
+  dial.dataset.hint = KNOB_HINT;
+  dial.dataset.param = def.key;
+
+  // Drawn in a 40-unit box and scaled by CSS (40 px in the column, 24 px
+  // in a mixer row): the ring, the zero tick above it, the pointer.
+  const svg = document.createElementNS(SVG_NS, 'svg');
+  svg.setAttribute('viewBox', '0 0 40 40');
+  svg.setAttribute('class', 'dial-face');
+  svg.setAttribute('aria-hidden', 'true');
+  const el = (name, attrs) => {
+    const n = document.createElementNS(SVG_NS, name);
+    for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, v);
+    return n;
+  };
+  svg.append(
+    el('circle', { class: 'dial-ring', cx: 20, cy: 20, r: 15 }),
+    el('line', { class: 'dial-zero', x1: 20, y1: 0.5, x2: 20, y2: 4 })
+  );
+  const pointer = el('g', { class: 'dial-pointer' });
+  pointer.append(
+    el('line', { x1: 20, y1: 20, x2: 20, y2: 8 }),
+    el('circle', { cx: 20, cy: 20, r: 2.5 })
+  );
+  svg.appendChild(pointer);
+
+  const holder = document.createElement('input');
+  holder.type = 'range';
+  holder.hidden = true;
+  holder.tabIndex = -1;
+  holder.min = def.min;
+  holder.max = def.max;
+  holder.step = def.step;
+  holder.dataset.for = def.key;
+  dial.append(svg, holder);
+  inputs[def.key] = holder;
+
+  const value = document.createElement('input');
+  value.type = 'text';
+  value.className = 'value num';
+  value.inputMode = 'decimal';
+  value.spellcheck = false;
+  value.dataset.tip = def.tip;
+  value.dataset.hint = NUM_HINT;
+  value.dataset.param = def.key;
+  attachNumberField(def, value, holder);
+
+  const learn = document.createElement('button');
+  learn.className = 'learn';
+  learn.textContent = '⊙';
+  learn.addEventListener('click', () => armLearn(def.key));
+
+  // The pointer turns clockwise from the top: 0 up, 90 right — the way the
+  // sort climbs on the picture.
+  const turnOf = (v) => ((v - def.min) / (def.max - def.min + (Number(def.step) || 1))) * 360;
+  const paint = () => {
+    const v = Number(holder.value);
+    pointer.setAttribute('transform', `rotate(${turnOf(v)} 20 20)`);
+    dial.setAttribute('aria-valuenow', String(v));
+  };
+  onRender(def.key, paint);
+
+  const put = (n) => {
+    const v = settle(def, n);
+    queueWrite(def.key, v);
+    setUI(def.key, v);
+  };
+
+  // A drag is relative: each move turns by its own vertical travel, so a
+  // shift pressed or released mid-drag changes the rate from there on.
+  // `pos` keeps the unrounded position, so a fine drag still accumulates.
+  let drag = null;
+  dial.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0 || drag !== null) return;
+    drag = { id: e.pointerId, y: e.clientY, pos: Number(holder.value) };
+    try {
+      dial.setPointerCapture(e.pointerId);
+    } catch {
+      // a synthetic or already-gone pointer: the moves still reach the dial
+    }
+    dial.focus({ preventScroll: true });
+  });
+  dial.addEventListener('pointermove', (e) => {
+    if (!drag || e.pointerId !== drag.id) return;
+    const dy = drag.y - e.clientY;
+    if (dy === 0) return;
+    drag.y = e.clientY;
+    drag.pos += (dy / KNOB_PX_PER_STEP) * (Number(def.step) || 1) * (e.shiftKey ? KNOB_FINE : 1);
+    put(drag.pos);
+  });
+  const release = (e) => {
+    if (!drag || e.pointerId !== drag.id) return;
+    drag = null;
+    try {
+      dial.releasePointerCapture(e.pointerId);
+    } catch {
+      // never captured
+    }
+  };
+  dial.addEventListener('pointerup', release);
+  dial.addEventListener('pointercancel', release);
+
+  const TURN = { ArrowUp: 1, ArrowRight: 1, ArrowDown: -1, ArrowLeft: -1 };
+  dial.addEventListener('keydown', (e) => {
+    const sign = TURN[e.key];
+    if (!sign) return;
+    e.preventDefault();
+    const step = (Number(def.step) || 1) * (e.shiftKey ? 10 : 1);
+    put(Number(holder.value) + sign * step);
+  });
+
+  // Double-click the name or the dial: back to the marked preset. The typed
+  // field keeps double-click for selecting its text.
+  row.addEventListener('dblclick', (e) => {
+    if (e.target.closest('input.value.num, .learn')) return;
+    resetParam(def.key);
+  });
+
+  row.append(label, dial, value, learn);
+  row.addEventListener('animationend', () => row.classList.remove('flash'));
+  valueEls[def.key] = value;
+  learnEls[def.key] = learn;
+  rowEls[def.key] = row;
+  return row;
 }
 
 // --- Pads (handles round, 2026-10-12): two keys played as one 2-D surface ---
@@ -1034,7 +1200,7 @@ function writeValueCell(def, v) {
   // is stored; the field holds the view, so the typed text is compared in
   // the stored sense.
   const typed = parseFloat(el.value);
-  const mine = Number.isFinite(typed) && quantize(def, fromView(def, typed)) === v;
+  const mine = Number.isFinite(typed) && settle(def, fromView(def, typed)) === v;
   if (document.activeElement === el && mine) return;
   el.value = fmtNumber(def, toView(def, v));
 }
@@ -1045,9 +1211,10 @@ function writeValueCell(def, v) {
 // it settled on.
 function attachNumberField(def, el, slider) {
   const commit = (n) => {
-    const v = quantize(def, fromView(def, n));
-    // A value that had to clamp says so (finding 8): the row flashes. The
-    // view spans the same min..max as the stored sense.
+    const v = settle(def, fromView(def, n));
+    // A value that had to clamp — or, on a wrapping knob, come round — says
+    // so (finding 8): the row flashes. The view spans the same min..max as
+    // the stored sense.
     if (n < Number(def.min) || n > Number(def.max)) flashRow(def.key);
     slider.value = toView(def, v);
     queueWrite(def.key, v);
@@ -1149,8 +1316,10 @@ function syncVideoUI() {
   const anyMedium = video || inputs.images.checked;
   const fbOn = inputs.feedbackVideo.checked;
   const flowOn = storedOf('flowAmount') > 0;
+  const turned = storedOf('angle') !== 0;
   for (const key of SORT_KEYS) {
-    setGated(key, !anyMedium ? GATE.medium : FLOW_ONLY.includes(key) && !flowOn ? GATE.flow : null);
+    const shaped = flowOn || (turned && ANGLE_TOO.includes(key));
+    setGated(key, !anyMedium ? GATE.medium : FLOW_ONLY.includes(key) && !shaped ? GATE.flow : null);
   }
   for (const key of FEEDBACK_KEYS) {
     setGated(key, !video ? GATE.video : key !== 'feedbackVideo' && !fbOn ? GATE.feedback : null);
