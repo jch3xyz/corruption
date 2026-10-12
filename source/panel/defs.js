@@ -533,3 +533,23 @@ export const PRESET_SLOTS = ['A', 'B', 'C'];
 // page is switched off must not switch it back on, and a save made mid-hold
 // must not capture the bypass.
 export const PRESET_EXCLUDED = ['enabled'];
+
+// Where the panel lives (design review M9): a panel preference, not a
+// parameter — stored as `panelHome` beside `tooltips`, outside DEFAULTS, so
+// no content script's param filter ever sees it. The service worker reads it
+// to decide what the toolbar icon and Ctrl+Shift+P open; the content script
+// reads it to decide whether to put the strip on the page. A change applies
+// on the next open: a live panel is never moved out from under the player.
+export const PANEL_HOME = {
+  key: 'panelHome',
+  label: 'panel lives in',
+  default: 'window',
+  options: [
+    ['window', 'window'],
+    ['side', 'side panel'],
+    ['strip', 'bottom strip'],
+  ],
+  tip: 'Where this panel opens: its own window, docked in Chrome’s side panel, or a mixer strip along the bottom of every page (collapse it to a tab with a click or Ctrl+Shift+P). Takes effect the next time the panel opens.',
+  hint: 'A panel preference, not a parameter of the piece — the panel you are using stays where it is.',
+};
+export const PANEL_HOMES = PANEL_HOME.options.map(([value]) => value);

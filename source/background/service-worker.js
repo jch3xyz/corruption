@@ -1,15 +1,125 @@
 // Module service worker. Opens the control panel (toolbar icon or
 // Ctrl+Shift+P) and toggles the effect (Ctrl+Shift+D). The panel is an
-// extension page in a popup window — Web MIDI permission is per-origin, so
-// granting it once there persists in the kiosk profile.
+// extension page — Web MIDI permission is per-origin, so granting it once
+// there persists in the kiosk profile.
+//
+// Where the panel opens is the stored preference `panelHome` (design review
+// M9, two prototypes pending John's choice):
+//   'window' — its own popup window (the default, and every fallback);
+//   'side'   — Chrome's side panel, docked in the browser window (Chrome
+//              114+; same extension origin, so the MIDI grant should carry);
+//   'strip'  — a horizontal strip the content script puts along the bottom
+//              of the page (source/content/strip.js).
+// A change applies on the next open. Every side-panel and strip call is
+// guarded: a Chrome without the API, a page with no content script
+// (chrome://, the Web Store), or a strip that failed to mount all fall
+// through to the window, so the panel is always reachable.
 
 chrome.runtime.onInstalled.addListener(({ reason }) => {
   console.log('[DEFLECTION] installed', reason);
 });
 
+const HOMES = ['window', 'side', 'strip'];
+let panelHome = 'window';
+let homeKnown = false;
+
+function setHome(value) {
+  panelHome = HOMES.includes(value) ? value : 'window';
+  homeKnown = true;
+  // With the side panel chosen, Chrome itself opens it on a toolbar click
+  // (and action.onClicked stops firing); otherwise the click comes to us.
+  // Chrome keeps this behaviour across worker restarts.
+  try {
+    chrome.sidePanel?.setPanelBehavior?.({ openPanelOnActionClick: panelHome === 'side' })?.catch?.(() => {});
+  } catch {
+    // no side panel API: the click handler below covers every home
+  }
+}
+
+const homeLoaded = chrome.storage.local
+  .get({ panelHome: 'window' })
+  .then(({ panelHome: h }) => setHome(h))
+  .catch(() => setHome('window'));
+
+try {
+  chrome.sidePanel?.setOptions?.({ path: 'panel/panel.html', enabled: true })?.catch?.(() => {});
+} catch {
+  // Chrome before 114: no side panel, the window serves
+}
+
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === 'local' && 'panelHome' in changes) setHome(changes.panelHome.newValue);
+});
+
+// sidePanel.open() only works inside the user gesture, so callers start it
+// synchronously from the event — no await before it. Resolves true when the
+// side panel opened.
+function openSide(tab) {
+  try {
+    if (!chrome.sidePanel?.open || tab?.windowId === undefined) return Promise.resolve(false);
+    return chrome.sidePanel.open({ windowId: tab.windowId }).then(
+      () => true,
+      (err) => {
+        console.warn('[DEFLECTION] side panel', err);
+        return false;
+      }
+    );
+  } catch (err) {
+    console.warn('[DEFLECTION] side panel', err);
+    return Promise.resolve(false);
+  }
+}
+
+// Ask the tab's top-frame content script to fold/unfold its strip. True only
+// if the strip answered that it is on the page.
+async function toggleStrip(tab) {
+  if (tab?.id === undefined) return false;
+  try {
+    const reply = await chrome.tabs.sendMessage(
+      tab.id,
+      { type: 'deflection:strip', op: 'toggle' },
+      { frameId: 0 }
+    );
+    return reply?.ok === true;
+  } catch {
+    return false; // no content script on this page
+  }
+}
+
+async function activeTab() {
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+    return tab ?? null;
+  } catch {
+    return null;
+  }
+}
+
+// The one way in. `sideAttempt` is the side-panel promise the event handler
+// already started inside the gesture, when the home was known to be 'side'.
+async function openPanel(tab, sideAttempt = null) {
+  try {
+    if (sideAttempt) {
+      if (await sideAttempt) return;
+    } else {
+      if (!homeKnown) await homeLoaded;
+      tab = tab ?? (await activeTab());
+      // The worker woke on this very event: the gesture is probably spent,
+      // but the attempt costs nothing and the window catches a refusal.
+      if (panelHome === 'side' && (await openSide(tab))) return;
+      if (panelHome === 'strip' && (await toggleStrip(tab))) return;
+    }
+  } catch (err) {
+    console.warn('[DEFLECTION] panel home', err);
+  }
+  await openWindow();
+}
+
+const startSide = (tab) => (homeKnown && panelHome === 'side' ? openSide(tab) : null);
+
 let panelWindowId = null;
 
-async function openPanel() {
+async function openWindow() {
   if (panelWindowId !== null) {
     try {
       await chrome.windows.update(panelWindowId, { focused: true });
@@ -37,12 +147,14 @@ async function toggleEnabled() {
   console.log('[DEFLECTION] enabled →', !enabled);
 }
 
-chrome.commands.onCommand.addListener((command) => {
+chrome.commands.onCommand.addListener((command, tab) => {
   if (command === 'toggle-effect') toggleEnabled();
-  if (command === 'open-panel') openPanel();
+  if (command === 'open-panel') openPanel(tab, startSide(tab));
 });
 
-chrome.action.onClicked.addListener(() => openPanel());
+// Fires for 'window' and 'strip' — and for 'side' only when Chrome could not
+// take the click itself (no side panel API, or the behaviour not yet set).
+chrome.action.onClicked.addListener((tab) => openPanel(tab, startSide(tab)));
 
 // The seam outside the panel (design review finding 1 / M1): the toolbar
 // icon says whether the piece is on. Badge "ON" in the A/B's yellow, blank

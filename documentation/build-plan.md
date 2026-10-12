@@ -195,6 +195,13 @@ balance are the open item below. The previous sound is exactly reachable at
   flash where they land (images → SORT); Video rows read *needs video* /
   *needs video or images*; the MIDI learn line hides with no device.
 
+  **M9 prototypes built, pending John's choice:** the panel can open in its
+  window (default), Chrome's side panel, or an in-page bottom strip, chosen
+  by the panel preference `panelHome` (row "panel lives in"); see
+  [parameters.md](parameters.md#where-the-panel-lives-panelhome-prototypes-pending-johns-choice)
+  for what is verified and what needs a real Chrome. Strip suite:
+  `test/harness/strip.html`.
+
 For a full technical description of both pipelines — the GL sort/composite
 path and the resonant-body audio path, with the reasoning behind each —
 see [how-it-works.md](how-it-works.md).
@@ -205,7 +212,7 @@ see [how-it-works.md](how-it-works.md).
 source/
 ├── manifest.json                  # MV3; DNR ruleset ENABLED (browser-wide ACAO on image/media)
 ├── rules/cors-media.json
-├── background/service-worker.js   # panel window mgmt, image-fetch base64 fallback (route 3)
+├── background/service-worker.js   # opens the panel in its home (window / side panel / strip), image-fetch base64 fallback (route 3)
 ├── content/
 │   ├── bootstrap.js               # classic script → dynamic import (content scripts can't be modules)
 │   ├── main.js                    # boot, params flow, tiny-iframe early-exit
@@ -215,6 +222,7 @@ source/
 │   ├── image-job.js               # 3-route CORS; one-shot stills
 │   ├── audio-job.js               # playback-driven tap lifecycle; safety gate; bypass semantics
 │   ├── text-scramble.js           # optional text mode: letters rearranged inside words (off)
+│   ├── strip.js                   # M9 prototype: the panel as an in-page bottom strip (iframe of panel.html?layout=strip)
 │   ├── overlay.js                 # sibling canvas; object-fit/position replication
 │   └── metrics.js                 # FrameGovernor (rVFC presentedFrames deltas)
 ├── gl/  context.js · pipeline.js · shaders/{common,passthrough,composite,sort}.js

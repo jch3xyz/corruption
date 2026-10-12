@@ -42,11 +42,14 @@ import {
   defaultFor,
   PRESET_SLOTS,
   PRESET_EXCLUDED,
+  PANEL_HOME,
+  PANEL_HOMES,
 } from '../../source/panel/defs.js';
 
 // Keys the panel may store that are NOT parameters: panel furniture and the
-// preset store. Excluded from "every stored key has a row".
-const PANEL_ONLY = ['tooltips', 'midiMap', 'presets', 'presetBase', 'engineOpen'];
+// preset store. Excluded from "every stored key has a row". `panelHome` is
+// where the panel opens (M9); `stripOpen` is written by the in-page strip.
+const PANEL_ONLY = ['tooltips', 'midiMap', 'presets', 'presetBase', 'engineOpen', 'panelHome', 'stripOpen'];
 // Sectionless rows: the global block's own controls.
 const GLOBAL_KEYS = ['enabled', 'video', 'images'];
 // The chips, in order, and the key each one drives.
@@ -286,6 +289,21 @@ function tier1() {
     !('userDefaults' in DEFAULTS) && PANEL_ONLY.every((k) => !(k in DEFAULTS))
   );
   check(
+    'panelHome is a panel preference: not a parameter, no row in the table, excluded from the row check',
+    !('panelHome' in DEFAULTS) &&
+      !('stripOpen' in DEFAULTS) &&
+      PANEL_ONLY.includes('panelHome') &&
+      !DEFS.some((d) => d.key === 'panelHome' || d.key === 'stripOpen')
+  );
+  check(
+    'panelHome offers window · side · strip, defaults to the window, and its tip says when a change applies',
+    PANEL_HOME.key === 'panelHome' &&
+      PANEL_HOMES.join() === 'window,side,strip' &&
+      PANEL_HOME.default === 'window' &&
+      PANEL_HOME.tip.length > 20 &&
+      /next time/i.test(PANEL_HOME.tip)
+  );
+  check(
     '"every stored key has a row" ignores the preset store and panel prefs',
     Object.keys({ ...DEFAULTS, ...Object.fromEntries(PANEL_ONLY.map((k) => [k, 1])) })
       .filter((k) => !PANEL_ONLY.includes(k))
@@ -330,9 +348,10 @@ function pointer(el, type_, opts = {}) {
 const chip = (key) => doc.querySelector(`.chip[data-key="${key}"]`);
 const text = (el) => el.textContent.trim();
 
-async function bootFrame(src) {
+async function bootFrame(src, w = 400, h = 720) {
   const f = document.createElement('iframe');
-  f.style.cssText = 'width:400px;height:720px;border:1px solid #2e2e36;margin-left:8px';
+  // content-box: the panel inside gets exactly w × h.
+  f.style.cssText = `width:${w}px;height:${h}px;border:1px solid #2e2e36;margin-left:8px;box-sizing:content-box`;
   f.src = src;
   document.getElementById('stage').appendChild(f);
   const deadline = Date.now() + 8000;
@@ -502,6 +521,42 @@ async function tier2() {
     win.getComputedStyle(prefRow).gridTemplateColumns ===
       win.getComputedStyle(row('threshold')).gridTemplateColumns
   );
+  // -- where the panel lives (M9): the second pref, beside tooltips --
+  {
+    const homeRow = $('#prefs .row.pref[data-pref="panelHome"]');
+    const sel = homeRow?.querySelector('select');
+    check(
+      'the "panel lives in" row sits in the prefs block, right after tooltips',
+      !!homeRow && homeRow.previousElementSibling === prefRow && text(homeRow.querySelector('label')) === 'panel lives in'
+    );
+    check(
+      'it offers the three homes, window first and selected',
+      !!sel && [...sel.options].map((o) => o.value).join() === 'window,side,strip' && sel.value === 'window'
+    );
+    check(
+      'it carries a tip that says a change applies on the next open',
+      homeRow?.dataset.tip?.length > 20 && /next time/i.test(homeRow.dataset.tip)
+    );
+    check(
+      'it lines up with the tooltips switch and the parameter rows',
+      win.getComputedStyle(homeRow).gridTemplateColumns === win.getComputedStyle(row('threshold')).gridTemplateColumns
+    );
+    check('choosing nothing writes nothing', !('panelHome' in store));
+    sel.value = 'strip';
+    sel.dispatchEvent(new win.Event('change', { bubbles: true }));
+    await sleep(40);
+    check('choosing a home stores it as panelHome', store.panelHome === 'strip');
+    win.chrome.storage.local.set({ panelHome: 'side' });
+    await sleep(40);
+    check('a panelHome change from elsewhere is followed', sel.value === 'side');
+    win.chrome.storage.local.set({ panelHome: 'nonsense' });
+    await sleep(40);
+    check('an unknown stored home reads as the window', sel.value === 'window');
+    sel.value = 'window';
+    sel.dispatchEvent(new win.Event('change', { bubbles: true }));
+    await sleep(40);
+    check('and the window can be chosen back', store.panelHome === 'window');
+  }
   check(
     'every section header is a jump target',
     SECTIONS.every((sec) => doc.getElementById(`section-${sec.id}`)?.classList.contains('section'))
@@ -1446,6 +1501,143 @@ async function tier2() {
   check(`the panel writes no key the content scripts do not know (${strays.join(', ') || 'none'})`, strays.length === 0);
 }
 
+// --- Tier 3: the other homes' layouts (design review M9) --------------------
+// The same shipped panel in the two shapes the new homes give it: the strip
+// (panel.html?layout=strip, 1280 × 150) and Chrome's side panel at its
+// narrowest (~320 px wide).
+
+// Render every tip into the help area exactly as the panel does and list
+// the ones that clip.
+function tipsThatClip(d) {
+  const tip = d.getElementById('tooltip');
+  const saved = [...tip.childNodes];
+  const overflow = [];
+  for (const host of d.querySelectorAll('[data-tip]')) {
+    tip.textContent = '';
+    const body = d.createElement('div');
+    body.textContent = host.dataset.tip;
+    tip.appendChild(body);
+    for (const [cls, t] of [['hint', host.dataset.hint], ['key', host.dataset.param && `key: ${host.dataset.param}`]]) {
+      if (!t) continue;
+      const p = d.createElement('p');
+      p.className = cls;
+      p.textContent = t;
+      tip.appendChild(p);
+    }
+    if (tip.scrollHeight > tip.clientHeight + 1) overflow.push(host.dataset.param || host.dataset.pref || host.className || host.tagName);
+  }
+  tip.replaceChildren(...saved);
+  return overflow;
+}
+
+async function tier3() {
+  tier('tier 3 — the strip and side-panel layouts (M9)');
+
+  // -- the strip: panel.html?layout=strip at 1280 × 150 --
+  {
+    const f = await bootFrame('./panel-frame.html?layout=strip', 1280, 150);
+    const w = f.contentWindow;
+    const d = w.document;
+    const q = (s) => d.querySelector(s);
+    const rect = (el) => el.getBoundingClientRect();
+    check('the frame really is 1280 × 150', w.innerWidth === 1280 && w.innerHeight === 150);
+    check('?layout=strip switches the panel to the strip layout', d.documentElement.dataset.layout === 'strip');
+    const heads = SECTIONS.map((s) => d.getElementById(`section-${s.id}`));
+    const hr = heads.map(rect);
+    check(
+      'the sections sit side by side: same top, each one right of the last',
+      hr.every((r, i) => i === 0 || (r.left >= hr[i - 1].right && Math.abs(r.top - hr[0].top) < 2))
+    );
+    check(
+      'nothing overflows the strip: the page neither scrolls nor clips',
+      d.documentElement.scrollWidth <= w.innerWidth &&
+        d.documentElement.scrollHeight <= w.innerHeight &&
+        q('#scroll').scrollWidth <= q('#scroll').clientWidth &&
+        q('#scroll').scrollHeight <= q('#scroll').clientHeight
+    );
+    const c = q('#controls');
+    check(
+      'the sections scroll sideways in their own lane, never vertically',
+      ['auto', 'scroll'].includes(w.getComputedStyle(c).overflowX) &&
+        c.scrollWidth > c.clientWidth &&
+        c.scrollHeight <= c.clientHeight + 1
+    );
+    const cr = rect(c);
+    const inLane = [...c.querySelectorAll('.section, .row, .group-head')].filter((el) => el.getClientRects().length);
+    check(
+      'every visible row fits the lane’s height (no row cut off at the bottom)',
+      inLane.every((el) => rect(el).top >= cr.top - 1 && rect(el).bottom <= cr.bottom + 1)
+    );
+    check(
+      'the global block is a cluster at the left: A/B, the mediums, the presets, all in view',
+      ['#ab', '.chips', '#presets'].every((s) => {
+        const r = rect(q(s));
+        return r.width > 0 && r.right <= cr.left && r.top >= 0 && r.bottom <= w.innerHeight;
+      })
+    );
+    check(
+      'MIDI and the panel prefs sit to the right of the lane, in view',
+      ['.midi', '#prefs'].every((s) => {
+        const r = rect(q(s));
+        return r.left >= cr.right && r.bottom <= w.innerHeight;
+      }) && !!q('#panelHome') && rect(q('#panelHome')).width > 0
+    );
+    const tr = rect(q('#tooltip'));
+    check(
+      'the help copy is a full-height column at the right edge',
+      Math.abs(tr.right - w.innerWidth) <= 1 && tr.top <= 0.5 && Math.abs(tr.bottom - w.innerHeight) <= 1
+    );
+    const clip = tipsThatClip(d);
+    check(`every tip fits the strip’s help column (${clip.join(', ') || 'all fit'})`, clip.length === 0);
+    // The chip captions still jump: in the strip that is a sideways scroll.
+    d.querySelector('.chip[data-key="audioEnabled"] .chip-name').click();
+    await sleep(700);
+    const ar = rect(d.getElementById('section-audio'));
+    check('the audio chip’s caption scrolls the lane sideways to Audio', c.scrollLeft > 0 && ar.left >= cr.left - 2 && ar.left < cr.right);
+    d.querySelector('.group[data-section="video"][data-group="engine"] .group-head').click();
+    await sleep(60);
+    check(
+      'an unfolded engine adds columns, not height',
+      c.scrollHeight <= c.clientHeight + 1 &&
+        d.documentElement.scrollHeight <= w.innerHeight &&
+        ['passes', 'maxVideos'].every((k) => {
+          const r = d.querySelector(`.row[data-key="${k}"]`).getBoundingClientRect();
+          return r.height > 0 && r.bottom <= cr.bottom + 1;
+        })
+    );
+    f.remove();
+  }
+
+  // -- the side panel at its narrowest: 320 px --
+  for (const width of [320, 360, 420]) {
+    const f = await bootFrame('./panel-frame.html', width, 720);
+    const w = f.contentWindow;
+    const d = w.document;
+    const sc = d.getElementById('scroll');
+    const fits = () =>
+      d.documentElement.scrollWidth <= w.innerWidth &&
+      sc.scrollWidth <= sc.clientWidth &&
+      [...sc.querySelectorAll('*')].every((el) => {
+        if (!el.getClientRects().length) return true;
+        const r = el.getBoundingClientRect();
+        return r.right <= sc.getBoundingClientRect().right + 0.5;
+      });
+    const atRest = fits();
+    d.getElementById('preset-original').click(); // brings out undo
+    await sleep(60);
+    d.getElementById('preset-save').click(); // save mode: the widest preset row
+    await sleep(60);
+    const saving = fits();
+    d.getElementById('preset-cancel').click();
+    await sleep(40);
+    const withUndo = fits() && !d.getElementById('preset-undo').hidden;
+    check(`at ${width} px nothing overflows: at rest, in save mode, with undo showing`, atRest && saving && withUndo);
+    const clip = tipsThatClip(d);
+    check(`at ${width} px every tip fits the help strip (${clip.join(', ') || 'all fit'})`, clip.length === 0);
+    f.remove();
+  }
+}
+
 // --- run --------------------------------------------------------------------
 
 (async () => {
@@ -1475,6 +1667,11 @@ async function tier2() {
     await tier2();
   } catch (e) {
     check(`tier 2 crashed (${e.message})`, false);
+  }
+  try {
+    await tier3();
+  } catch (e) {
+    check(`tier 3 crashed (${e.message})`, false);
   }
   const done = document.createElement('div');
   done.id = 'done';

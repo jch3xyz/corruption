@@ -377,6 +377,82 @@ no in-page mark; that is John's call.
 
 The panel has its own harness: `test/harness/panel.html`.
 
+### Where the panel lives (`panelHome`, prototypes pending John's choice)
+
+Design review M9: the room found a separate window odd, and a synth-literate
+player expects a horizontal strip under the picture, like a mixer. Two
+candidates are built beside the window, behind one stored preference, so
+John can play all three and choose. `panelHome` is a **panel preference, not
+a parameter**: it lives outside `DEFAULTS` beside `tooltips`, so no content
+script's param filter sees it, and the harness's "every stored key has a
+row" check excludes it. Its row is **panel lives in**, under `tooltips` at
+the bottom of the panel. **A change applies the next time the panel opens**;
+the panel you are using never moves out from under you.
+
+| value | home | how it opens |
+|---|---|---|
+| `window` (default) | its own 400 × 720 popup window, as before | toolbar icon, Ctrl+Shift+P |
+| `side` | Chrome's side panel, docked in the browser window (Chrome 114+) | toolbar icon (Chrome opens it itself), Ctrl+Shift+P |
+| `strip` | a strip about 150 px tall along the bottom of every page, folding down to a thin **CORRUPTION ▴** tab | the tab, Ctrl+Shift+P, toolbar icon (all toggle) |
+
+All three run the same `panel.html`, `panel.js` and `panel.css`; there is
+one source of truth for every control and tip.
+
+- **Side panel.** Uses the manifest's `side_panel.default_path` and the
+  `sidePanel` permission. With `side` chosen the service worker sets
+  `openPanelOnActionClick`, so the toolbar click is Chrome's own; the
+  shortcut calls `chrome.sidePanel.open()` inside the key's gesture. Below
+  380 px wide the panel tightens its gutters, lets the shortcuts line and
+  the preset row wrap, and grows the help strip to 188 px so every tip still
+  fits (the harness checks 320, 360 and 420 px for overflow and clipped
+  tips). The side panel stays listed in Chrome's side-panel menu in every
+  home; nothing is gained by hiding it.
+- **Strip.** `source/content/strip.js`, top frame only, independent of
+  `enabled`. A `<deflection-strip>` element on `<html>` with its geometry set
+  inline `!important` and a closed shadow root, so page CSS cannot move it or
+  reach inside. It hosts `panel.html?layout=strip` in an iframe:
+  `panel.css` lays that out as the A/B, chips and presets in a cluster at
+  the left, the sections as five-row columns in a lane that scrolls
+  sideways (each section starts a fresh column; an unfolded engine adds
+  columns, never height), MIDI and the panel prefs to the right, and the
+  help copy as a full-height column at the right edge. Folded, there is no
+  iframe at all, so nothing can take the page's keyboard focus; the tab is
+  out of the tab order and pressing it does not take focus. The fold state
+  is `stripOpen` (written by the strip, followed by every tab). The iframe
+  is dropped while the tab is hidden, so only the visible tab runs a panel.
+  The strip hides while anything is fullscreen (the panel keeps running, so
+  a MIDI controller still plays). If the panel inside does not report that
+  it booted within 8 s, the strip removes itself and the page is as it was;
+  the toolbar and shortcut then open the window instead.
+- **Fallbacks.** Every side-panel and strip call is guarded. A Chrome without
+  `chrome.sidePanel`, a page with no content script (chrome:// pages, the Web
+  Store), or a strip that failed all fall through to the window.
+
+**Verified** (headless Chromium, harness): the prefs row, its three options
+and its storage; the strip layout at 1280 × 150 (sections side by side, no
+overflow, every tip fits); the side-panel widths 320–420 px; the strip's
+housing on a mock page with hostile CSS (`test/harness/strip.html`: geometry,
+isolation, fold by tab / keyboard / message, focus kept, fullscreen, tab
+visibility, the failure path leaving the page untouched).
+
+**Not verified without a real Chrome** (the extension cannot load in
+headless Playwright): that `sidePanel.open()` from the shortcut is accepted
+as a gesture, including when the shortcut is what woke the service worker
+(the code falls back to the window if it is refused); whether a second
+toolbar click closes the side panel; that the MIDI grant from the window
+carries to the side panel (same origin, so it should); MIDI inside the
+strip at all (the iframe carries `allow="midi"`, but the permission prompt
+in a cross-origin frame and a page's own Permissions-Policy may refuse it);
+that Chrome's command takes Ctrl+Shift+P before a page that binds it;
+that page CSP never blocks the extension iframe on real sites (the 8 s
+failure path covers it if it does).
+
+**Known costs of the strip.** Expanded, it covers the bottom ~150 px of the
+page, fixed footers and players' own controls included; it does not push
+the page up, because that means restyling the page. `panel.html` is
+web-accessible so pages can host it, which also means any page can detect
+that the extension is installed.
+
 ## MIDI
 
 1. Open the panel on the kiosk once and grant the MIDI permission (it

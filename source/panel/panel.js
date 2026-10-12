@@ -3,11 +3,14 @@
 // Outside the extension (dev preview, panel harness) a local shim stands in
 // for storage so the UI is testable in a plain tab.
 //
-// Five storage keys live OUTSIDE params.js DEFAULTS on purpose, so the
+// Seven storage keys live OUTSIDE params.js DEFAULTS on purpose, so the
 // content scripts (which filter on `key in DEFAULTS`) never see them:
 // `midiMap`, `presets` (slots A/B/C), `presetBase` (the last-loaded or
-// last-saved preset, which a row double-click returns to), `tooltips`, and `engineOpen`
-// ({video, audio}: whether each section's engine group is unfolded). A legacy
+// last-saved preset, which a row double-click returns to), `tooltips`,
+// `engineOpen` ({video, audio}: whether each section's engine group is
+// unfolded), `panelHome` ('window' | 'side' | 'strip': where the panel
+// opens, design review M9) and `stripOpen` (whether the bottom strip is
+// expanded; written by the strip in the page, never by this file). A legacy
 // `userDefaults` (the old "set defaults" snapshot) migrates into slot A on
 // boot and is removed.
 
@@ -24,8 +27,19 @@ import {
   defaultFor,
   PRESET_SLOTS,
   PRESET_EXCLUDED,
+  PANEL_HOME,
+  PANEL_HOMES,
 } from './defs.js';
 import { initMIDI } from './midi.js';
+
+// Layout (design review M9). The same markup serves three homes: the popup
+// window and Chrome's side panel use the default column (the side panel can
+// be as narrow as ~320 px; panel.css tolerates that), and the in-page strip
+// loads `panel.html?layout=strip`, which panel.css lays out horizontally —
+// the global block as a left cluster, the sections as columns that scroll
+// sideways, the hover copy in a column at the right.
+const LAYOUT = new URLSearchParams(location.search).get('layout') === 'strip' ? 'strip' : 'column';
+if (LAYOUT === 'strip') document.documentElement.dataset.layout = 'strip';
 
 const defByKey = Object.fromEntries(DEFS.map((d) => [d.key, d]));
 const isNumeric = (def) => def.type !== 'toggle' && def.type !== 'select';
@@ -368,6 +382,35 @@ function buildTooltipRow() {
   return row;
 }
 
+// Where the panel lives (M9): the second panel preference, beside tooltips.
+// It writes `panelHome` and nothing else; the service worker and the content
+// script act on it the next time the panel is opened.
+function buildPanelHomeRow() {
+  const row = document.createElement('div');
+  row.className = 'row pref';
+  row.dataset.pref = PANEL_HOME.key;
+  row.dataset.tip = PANEL_HOME.tip;
+  row.dataset.hint = PANEL_HOME.hint;
+
+  const label = document.createElement('label');
+  label.textContent = PANEL_HOME.label;
+  label.htmlFor = PANEL_HOME.key;
+
+  const input = document.createElement('select');
+  input.id = PANEL_HOME.key;
+  input.className = 'knob';
+  for (const [value, text] of PANEL_HOME.options) {
+    const o = document.createElement('option');
+    o.value = value;
+    o.textContent = text;
+    input.appendChild(o);
+  }
+  input.value = PANEL_HOME.default;
+
+  row.append(label, input, document.createElement('span'), document.createElement('span'));
+  return row;
+}
+
 // --- The A/B (M1): one large button bound to `enabled` ---
 // Round 3 (all three reviewers): a press shorter than LATCH_MS latches, so a
 // slow, deliberate click never ends where it started. Only a press held past
@@ -624,7 +667,7 @@ function flashEl(el) {
     }
   }
   globals.appendChild(buildChips()); // after the rows: text/audio chips read their defs
-  document.getElementById('prefs').appendChild(buildTooltipRow());
+  document.getElementById('prefs').append(buildTooltipRow(), buildPanelHomeRow());
 }
 
 function writeValueCell(def, v) {
@@ -1194,6 +1237,39 @@ function setEngineOpen(sectionId, open, persist) {
 engineOpen = normaliseEngineOpen((await store.get({ engineOpen: null })).engineOpen);
 for (const id of Object.keys(engineGroups)) paintEngine(id, engineOpen[id]);
 
+// --- Where the panel lives (M9) ---
+// Read and written here; acted on by the service worker (toolbar icon,
+// Ctrl+Shift+P) and the content script (the strip) on the next open.
+
+const homeSelect = document.getElementById(PANEL_HOME.key);
+const normaliseHome = (v) => (PANEL_HOMES.includes(v) ? v : PANEL_HOME.default);
+
+homeSelect.value = normaliseHome((await store.get({ [PANEL_HOME.key]: PANEL_HOME.default }))[PANEL_HOME.key]);
+homeSelect.addEventListener('change', () => {
+  store.set({ [PANEL_HOME.key]: normaliseHome(homeSelect.value) });
+});
+
+// In the strip the panel is an iframe inside the page. It tells the strip
+// when it has booted (so a strip whose iframe never loads can take itself
+// down and leave the page as it was), and passes Ctrl+Shift+P up when the
+// keystroke lands inside the panel and no Chrome command claimed it first.
+if (LAYOUT === 'strip' && window.parent !== window) {
+  const tell = (op) => {
+    try {
+      window.parent.postMessage({ type: 'deflection:strip', op }, '*');
+    } catch {
+      // no parent to tell: the strip's own timeout covers it
+    }
+  };
+  document.addEventListener('keydown', (e) => {
+    if (e.ctrlKey && e.shiftKey && !e.altKey && !e.metaKey && e.code === 'KeyP') {
+      e.preventDefault();
+      tell('toggle');
+    }
+  });
+  queueMicrotask(() => tell('ready'));
+}
+
 // --- Hydrate, subscribe ---
 
 const current = await store.get(DEFAULTS);
@@ -1211,6 +1287,8 @@ store.onChanged((changes) => {
       renderPresets();
     } else if (key === 'tooltips') {
       setTooltips(newValue !== false);
+    } else if (key === PANEL_HOME.key) {
+      homeSelect.value = normaliseHome(newValue);
     } else if (key === 'engineOpen') {
       engineOpen = normaliseEngineOpen(newValue);
       for (const id of Object.keys(engineGroups)) paintEngine(id, engineOpen[id]);

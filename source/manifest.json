@@ -3,7 +3,7 @@
   "name": "CORRUPTION",
   "version": "0.1.0",
   "description": "If the signal is corrupting us, we take back power by corrupting the signal. An installation piece by John Holmes.",
-  "permissions": ["storage", "declarativeNetRequest"],
+  "permissions": ["storage", "declarativeNetRequest", "sidePanel"],
   "host_permissions": ["<all_urls>"],
   "background": {
     "service_worker": "background/service-worker.js",
@@ -28,7 +28,7 @@
   },
   "web_accessible_resources": [
     {
-      "resources": ["content/*.js", "gl/*.js", "gl/shaders/*.js", "audio/*.js"],
+      "resources": ["content/*.js", "gl/*.js", "gl/shaders/*.js", "audio/*.js", "panel/panel.html"],
       "matches": ["<all_urls>"]
     }
   ],
