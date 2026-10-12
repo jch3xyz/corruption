@@ -506,11 +506,106 @@ function tier0() {
   );
 }
 
+// --- The boot guard (round 8) ------------------------------------------------
+// Neither condition can be produced in a test page — a prerendered document,
+// a content-script context invalidated by an extension reload — so the guard
+// is pinned twice: statically (the source says it), and by running the real
+// bootstrap.js source against stand-ins for window, document and chrome,
+// with getURL handing back a data: module that counts its own imports.
+async function bootGuard() {
+  const text = async (p) => (await fetch(p, { cache: 'no-store' })).text();
+  const boot = await text('../../source/content/bootstrap.js');
+  const main = await text('../../source/content/main.js');
+  const at = (src, s) => src.indexOf(s);
+  const importAt = at(boot, 'import(');
+  check(
+    'boot guard (static): bootstrap.js waits out document.prerendering on a one-shot prerenderingchange, and checks runtime.id, both before the import',
+    at(boot, 'document.prerendering') >= 0 && at(boot, "'prerenderingchange'") >= 0 && /once: true/.test(boot) &&
+      at(boot, 'runtime?.id') >= 0 && importAt > at(boot, 'prerenderingchange') && importAt > at(boot, 'runtime?.id') &&
+      at(boot, '__deflectionBooted') >= 0 && /catch \(err\)/.test(boot)
+  );
+  check(
+    'boot guard (static): main.js imports the strip only with a live runtime id',
+    /if \(isTopFrame && globalThis\.chrome\?\.runtime\?\.id\) \{\s*import\('\.\/strip\.js'\)/.test(main)
+  );
+
+  const runBoot = (doc, chromeStub) => {
+    const win = {};
+    const warned = [];
+    const con = { warn: (...a) => warned.push(a.join(' ')) };
+    // bootstrap.js reads window, document, chrome and globalThis.chrome.
+    new Function('window', 'document', 'chrome', 'globalThis', 'console', boot)(
+      win, doc, chromeStub, { chrome: chromeStub }, con
+    );
+    return { win, warned };
+  };
+  let nonce = 0;
+  const stub = (id) => {
+    const c = {
+      asked: 0,
+      runtime: {
+        id,
+        getURL: () => {
+          c.asked++;
+          const code = `globalThis.__bootProbe = (globalThis.__bootProbe || 0) + 1; // ${++nonce}`;
+          return `data:text/javascript,${encodeURIComponent(code)}`;
+        },
+      },
+    };
+    return c;
+  };
+  const probe = () => globalThis.__bootProbe || 0;
+  const doc = (prerendering) => {
+    const d = { prerendering, listeners: [] };
+    d.addEventListener = (type, fn, opts) => d.listeners.push({ type, fn, once: !!opts?.once });
+    return d;
+  };
+
+  const live = stub('abc');
+  const p0 = probe();
+  const ran = runBoot(doc(false), live);
+  await waitFor(() => probe() > p0, 2000, 20);
+  check(
+    `boot guard: a live, active document imports the entry point once (${live.asked} import)`,
+    live.asked === 1 && probe() === p0 + 1 && ran.win.__deflectionBooted === true && ran.warned.length === 0
+  );
+
+  const pre = stub('abc');
+  const preDoc = doc(true);
+  const p1 = probe();
+  runBoot(preDoc, pre);
+  await sleep(60);
+  const waited = pre.asked === 0 && probe() === p1;
+  const l = preDoc.listeners;
+  check(
+    `boot guard: a prerendered document imports nothing until it activates, through one one-shot prerenderingchange listener (${pre.asked} imports while prerendered)`,
+    waited && l.length === 1 && l[0].type === 'prerenderingchange' && l[0].once
+  );
+  preDoc.prerendering = false;
+  l[0]?.fn();
+  await waitFor(() => probe() > p1, 2000, 20);
+  check('boot guard: on activation the entry point is imported, once', pre.asked === 1 && probe() === p1 + 1);
+
+  const dead = stub(undefined);
+  const p2 = probe();
+  const gone = runBoot(doc(false), dead);
+  await sleep(60);
+  check(
+    'boot guard: an invalidated context (no runtime id) returns quietly — no import, no warning',
+    dead.asked === 0 && probe() === p2 && gone.warned.length === 0
+  );
+}
+
 async function run() {
   try {
     tier0();
   } catch (e) {
     check(`tier 0 crashed (${e.message})`, false);
+  }
+  try {
+    await bootGuard();
+  } catch (e) {
+    check(`boot guard crashed (${e.message})`, false);
   }
   // Boot the registry FIRST so all videos arrive via MutationObserver.
   // feedbackVideo:true (the default, pinned here anyway) so the trail test

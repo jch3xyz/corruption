@@ -23,6 +23,20 @@ nothing here is load-bearing — these are hints and known limitations.
   mutations (the character-data rule holds against Polymer) and the
   framework did not revert the write within 2 s. Grid feeds on a signed-in
   home page are still John's to confirm.
+- **Prerendering** (round 8). YouTube prerenders the navigations it thinks
+  likely, and Chrome runs content scripts in a prerendered document — but
+  such a document may not load extension resources. Before the boot guard,
+  the extension's Errors page collected *Unsafe attempt to load URL
+  chrome-extension://…/content/main.js from frame with URL
+  https://www.youtube.com/. Domains, protocols and ports must match*, at
+  `bootstrap.js` (the `import()` of `main.js`), and the same for `strip.js`
+  from `main.js`. Harmless — the import failed, the catch swallowed it,
+  and the page booted normally once it was shown — but it filled the list.
+  An extension reloaded under an open tab produces the same text from that
+  tab's now-invalidated context. Avoided since round 8: `bootstrap.js`
+  waits for `prerenderingchange` while `document.prerendering` is true, and
+  returns quietly when `chrome.runtime.id` is gone; `main.js` checks the id
+  again before importing the strip.
 
 ## Instagram
 

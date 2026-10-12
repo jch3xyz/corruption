@@ -365,12 +365,12 @@ balance are the open item below. The previous sound is exactly reachable at
   350/350, strip 52/52, text 35/35. **Next layer: the performance ramp.**
 
   **Round 8 — the visual round, part 1 (John's notes, 2026-10-12).** Three
-  decided changes, logged in design-review.md: (1) `44bb169` **the window
+  decided changes, logged in design-review.md: (1) `8549d0a` **the window
   is the default home** — `PANEL_HOME.default`, the service worker's
   `DEFAULT_HOME` and `initStrip`'s default all read `window` (window first
   in *panel lives in*), and the harness checks the three agree; the strip
   stays opt-in because of the two problems it showed on real pages; (2)
-  `94512e1` **the strip asks for MIDI only on demand** — hosted, the panel
+  `febc6c1` **the strip asks for MIDI only on demand** — hosted, the panel
   no longer calls `requestMIDIAccess()` on load (every site's permissions
   policy answered with a console violation or a prompt); a **MIDI…** button
   in the mixer's prefs line asks once, steps aside when granted, flashes
@@ -384,17 +384,27 @@ balance are the open item below. The previous sound is exactly reachable at
   larger counter by taking the keyframe branch on its next tick
   (`lastKeyframe` taken from the params it is built with, so a stored
   counter never fires on load; `resets` counts every keyframe for the
-  harness). Still open from John's notes: the strip's **frame error**, to
-  be diagnosed from the console text. Suites (headless): panel 365/365
+  harness). Suites (headless): panel 365/365
   (350 before), strip 52/52, text 35/35, visual 62/62 (60 before), audio
-  55/55.
+  55/55. (4) **the boot guard** — the "frame error" John reported was
+  *Unsafe attempt to load URL chrome-extension://…/content/main.js from
+  frame with URL https://www.youtube.com/* at `bootstrap.js`'s `import()`
+  (and `strip.js` from `main.js`): the import ran in a **prerendered**
+  document (YouTube prerenders likely navigations) or a context
+  **invalidated** by an extension reload, neither of which may load
+  extension resources. `bootstrap.js` is now an async IIFE that awaits a
+  one-shot `prerenderingchange` while `document.prerendering` is true and
+  returns quietly without `chrome.runtime.id`; `main.js` checks the id
+  before the strip's import. The visual suite pins it statically and by
+  running the real `bootstrap.js` against stand-ins for both conditions.
+  Visual 68/68 (+6).
 
   **Open items John holds (2026-10-11; (2) reinstated 2026-10-12; revised
   after round 5):** (1) the in-page first-run mark, the remaining half of
   the seam; (2) ~~which home is the default~~ — decided 2026-10-12: the
   window; the strip stayed opt-in because of the two problems it showed on
   real pages (the per-site MIDI request on load, now on demand, and a frame error
-  still to be read from the console); (3) ~~threshold shown inverted as an *amount*~~ — done, round 5;
+  since read and fixed — the boot guard, round 8); (3) ~~threshold shown inverted as an *amount*~~ — done, round 5;
   (4) an intensity macro; (5) headline knobs that ship at the rail (ring
   time, drive, tail); (6) **the next layers, in the order John accepted
   (2026-10-12): ~~the feedback blend (M5)~~ — done, round 6;
@@ -615,6 +625,14 @@ waits `HARNESS_WAIT_MS` (default 1500) and shoots.
 - Visual suite re-run in real Chrome (the embedded pane starves rVFC and
   can't adjudicate it — verified identical at baseline; headless Chrome
   runs it green since round 6, on SwiftShader rather than your GPU).
+- **The boot guard (Errors page stays empty).** At chrome://extensions,
+  open CORRUPTION's **Errors** and clear them. Then, without touching the
+  extensions page again, reload a YouTube tab, play a video, click through
+  to two or three suggested videos (the navigations YouTube prerenders) —
+  the piece should bend each as usual. Back on the Errors page the list
+  should still be empty: no *Unsafe attempt to load URL … content/main.js*
+  or *… strip.js*. (Reloading the extension under an open tab and then
+  using that tab is the other case; it should stay quiet too.)
 - **Clear buffer** on a playing video with feedback on: unfold the Video
   engine, click **clear** — the trail wipes to a clean frame at once on
   every video on the page, and builds again; bind a MIDI button to it and

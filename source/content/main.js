@@ -17,8 +17,10 @@ if (isTopFrame || (innerWidth >= MIN_FRAME_W && innerHeight >= MIN_FRAME_H)) {
 // The bottom strip (design review M9): the panel's in-page home, top frame
 // only, independent of `enabled` — the panel has to be there to switch the
 // piece back on. Loaded lazily and fenced off: any failure leaves the page
-// exactly as it was and the panel reachable through its window.
-if (isTopFrame) {
+// exactly as it was and the panel reachable through its window. An
+// extension reloaded under the page leaves this context without a runtime
+// id, and the import would only throw (bootstrap.js says why): skip it.
+if (isTopFrame && globalThis.chrome?.runtime?.id) {
   import('./strip.js')
     .then((m) => m.initStrip())
     .catch((err) => console.warn('[DEFLECTION] strip unavailable', err));

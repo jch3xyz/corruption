@@ -1056,21 +1056,22 @@ follow in the body column at every strip width), strip 52/52, text 35/35.
 # Round 8: the visual round — part 1 (2026-10-12)
 
 John's notes after living with both homes and the strip on real pages.
-Three changes he decided, each its own commit, and one item still open.
+Three changes he decided, each its own commit, and one item left open
+then, since resolved (the frame error, below).
 
 ## What landed
 
-1. **The window is the default home** (`44bb169`). Decided after both homes
+1. **The window is the default home** (`8549d0a`). Decided after both homes
    were built: the detached window lays itself out to its own shape (the
    column when tall, the mixer when dragged wide), remembers its bounds and
    sits apart from the page — on a second screen, out of reach of a page's
    fullscreen. The strip stays one choice away under *panel lives in*. It
    stayed opt-in because of the two problems it showed on real pages, the
-   next item and the open one below. The default lives in three places
+   next item and the frame error below. The default lives in three places
    (`PANEL_HOME.default`, the service worker's `DEFAULT_HOME`, the default
    `initStrip` reads); all three moved, and the panel harness now checks
    that they agree. A profile that already stored a home keeps it.
-2. **The strip asks for MIDI only on demand** (`94512e1`). The reason: John
+2. **The strip asks for MIDI only on demand** (`febc6c1`). The reason: John
    saw permission errors from site after site. The strip's iframe booted
    the panel, which called `requestMIDIAccess()` at once, and every host
    page's permissions policy answered — a console violation or a prompt,
@@ -1089,13 +1090,23 @@ Three changes he decided, each its own commit, and one item still open.
    up by one; every video job answers a larger value by taking the
    keyframe branch on its next tick, and the random clock keeps running.
 
-## Still open
+## Resolved after the round: the frame error
 
-- **The strip's frame error**, which John reported alongside the MIDI
-  errors. It is not yet diagnosed: the next step is the console text from
-  a page where it happens (the message, the frame it names, and whether it
-  arrives at load or when the strip unfolds). Nothing was changed for it
-  on a guess.
+- **The frame error**, which John reported alongside the MIDI errors, was
+  not the strip's. Read from the console text (round 8, the fourth
+  commit): *Unsafe attempt to load URL chrome-extension://…/content/main.js
+  from frame with URL https://www.youtube.com/. Domains, protocols and
+  ports must match*, at `bootstrap.js`'s `import()`, and the same for
+  `strip.js` from `main.js`. The import ran in a document that may not load
+  extension resources: a **prerendered** page (YouTube prerenders likely
+  navigations; content scripts run there) or a content-script context
+  **invalidated** by an extension reload. Harmless — the catch swallowed it
+  and the page booted once shown — but noise on the Errors page. Fixed at
+  the boot: `bootstrap.js` waits for a one-shot `prerenderingchange` while
+  `document.prerendering` is true and returns quietly when
+  `chrome.runtime.id` is gone; `main.js` checks the id again before the
+  strip's import. The visual suite runs the real `bootstrap.js` against
+  stand-ins for both conditions (see site-notes.md, YouTube).
 
 ## Trade-offs, stated
 
