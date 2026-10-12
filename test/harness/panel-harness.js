@@ -39,6 +39,8 @@ import {
   quantize,
   fmtValue,
   fmtNumber,
+  toView,
+  fromView,
   decimals,
   defaultFor,
   PRESET_SLOTS,
@@ -83,7 +85,7 @@ const LAYOUT = {
   },
 };
 const LABELS = {
-  threshold: 'threshold', flowAmount: 'flow', flowMode: 'flow mode', flowScale: 'flow scale',
+  threshold: 'amount', flowAmount: 'flow', flowMode: 'flow mode', flowScale: 'flow scale',
   flowSpeed: 'flow speed', temperature: 'jitter',
   feedbackVideo: 'feedback', motionGate: 'motion gate', decay: 'decay', driftX: 'drift x',
   driftY: 'drift y', resetMinS: 'clear min s', resetMaxS: 'clear max s',
@@ -192,7 +194,7 @@ function tier1() {
   }
   check(
     'the tips the review named lead with what you see or hear',
-    byKey.threshold.tip.startsWith('Lower = more of the picture is sorted. 0 tears everything but true black; 1 leaves it untouched. The most expressive knob.') &&
+    byKey.threshold.tip.startsWith('How much of the picture is sorted. 0 = untouched; 1 = everything but true black, which always holds as a barrier. The most expressive knob.') &&
       byKey.temperature.tip.startsWith('Random swaps on top of the sort. 0 = clean ribbons; up = grain and shimmer.') &&
       byKey.motionGate.tip.startsWith('Only moving parts get sorted. 0 = everything; 1 = only what moves. A wet/dry for motion.') &&
       byKey.audioBodyMix.tip.startsWith('How much of the resonant body you hear against the source. 0 = source only, 2 = all body.') &&
@@ -265,6 +267,39 @@ function tier1() {
       fmtValue(byKey.enabled, true) === 'on' &&
       fmtValue(byKey.flowMode, 'facets') === 'facets'
   );
+
+  // -- the view mapping (amount = 1 − threshold): a def flag, not a special case --
+  {
+    const inverted = numeric.filter((d) => d.invert);
+    check('threshold is the inverted row, shown as amount', inverted.map((d) => d.key).join() === 'threshold' && byKey.threshold.label === 'amount');
+    check(
+      'toView/fromView round-trip every numeric def across its grid (and are the identity unless inverted)',
+      numeric.every((d) => {
+        const n = Math.round((d.max - d.min) / d.step);
+        for (let i = 0; i <= n; i += Math.max(1, Math.floor(n / 50))) {
+          const v = quantize(d, d.min + i * d.step);
+          if (fromView(d, toView(d, v)) !== v || toView(d, fromView(d, v)) !== v) return false;
+          if (!d.invert && toView(d, v) !== v) return false;
+        }
+        return true;
+      })
+    );
+    check(
+      'toView(threshold, 0.05) is 0.95, the ends swap, and the view carries no float noise',
+      toView(byKey.threshold, 0.05) === 0.95 &&
+        toView(byKey.threshold, 0) === 1 &&
+        toView(byKey.threshold, 1) === 0 &&
+        fromView(byKey.threshold, 0.42) === 0.58 &&
+        fmtNumber(byKey.threshold, toView(byKey.threshold, DEFAULTS.threshold)) === '0.95'
+    );
+    check(
+      'an inverted def keeps its default on-grid in both senses',
+      inverted.every((d) => {
+        const view = toView(d, DEFAULTS[d.key]);
+        return quantize(d, DEFAULTS[d.key]) === DEFAULTS[d.key] && quantize(d, view) === view;
+      })
+    );
+  }
 
   check(
     'with "default" as the base, defaults come from the code',
@@ -873,20 +908,71 @@ async function tier2() {
   $('#scroll').scrollTo(0, 0);
   await sleep(60);
 
+  // -- the amount view: threshold is shown and played as 1 − threshold --
+  check(
+    'at rest the threshold row reads "amount", and slider and field show 0.95 while storage holds no amount',
+    text(row('threshold').querySelector('label')) === 'amount' &&
+      Number(slider('threshold').value) === 0.95 &&
+      field('threshold').value === '0.95' &&
+      (!('threshold' in store) || store.threshold === 0.05) &&
+      !('amount' in store)
+  );
+  type('threshold', '0.3');
+  await sleep(90);
+  check(
+    'typing 0.3 in the amount field stores threshold 0.7 and sets the slider to 0.3',
+    store.threshold === 0.7 && Number(slider('threshold').value) === 0.3
+  );
+  press(field('threshold'), 'ArrowUp');
+  await sleep(90);
+  check(
+    'ArrowUp on the amount field raises amount: the field reads 0.31, the stored threshold falls to 0.69',
+    field('threshold').value === '0.31' && store.threshold === 0.69 && Number(slider('threshold').value) === 0.31
+  );
+  field('threshold').blur();
+  win.chrome.storage.local.set({ threshold: 0.2 });
+  await sleep(60);
+  check(
+    'a threshold change from elsewhere shows as amount (0.2 → 0.80)',
+    field('threshold').value === '0.80' && Number(slider('threshold').value) === 0.8
+  );
+  slider('threshold').value = '0.9';
+  slider('threshold').dispatchEvent(new win.Event('input', { bubbles: true }));
+  await sleep(90);
+  check(
+    'dragging the amount slider up to 0.9 stores threshold 0.1 and the field follows',
+    store.threshold === 0.1 && field('threshold').value === '0.90'
+  );
+  fire(row('threshold').querySelector('label'), 'dblclick');
+  await sleep(90);
+  check(
+    'double-clicking amount restores the stored default (threshold 0.05) and shows 0.95',
+    store.threshold === DEFAULTS.threshold && field('threshold').value === '0.95' && Number(slider('threshold').value) === 0.95
+  );
+
   // -- typed values --
   type('threshold', '0.42');
   await sleep(90);
   check('typing a number moves the knob', Number(slider('threshold').value) === 0.42);
-  check('typing a number reaches storage', store.threshold === 0.42);
+  check('typing a number reaches storage (in the stored sense: amount 0.42 is threshold 0.58)', store.threshold === 0.58);
 
   type('threshold', '9');
   await sleep(90);
   check(
-    'typing above the range clamps to max in field, knob and storage',
-    Number(slider('threshold').value) === 1 && store.threshold === 1
+    'typing above the range clamps to max in field, knob and storage (amount 1 = threshold 0)',
+    Number(slider('threshold').value) === 1 && store.threshold === 0
   );
   press(field('threshold'), 'Enter');
   check('Enter settles the field text at the step precision', field('threshold').value === '1.00');
+  type('threshold', '-3');
+  await sleep(90);
+  check(
+    'typing below the range clamps to min (amount 0 = threshold 1, untouched)',
+    Number(slider('threshold').value) === 0 && store.threshold === 1 && row('threshold').classList.contains('flash')
+  );
+  type('threshold', '1');
+  press(field('threshold'), 'Enter');
+  await sleep(60);
 
   type('driftX', '-99');
   await sleep(90);
@@ -929,7 +1015,7 @@ async function tier2() {
   );
   check(
     'and only that parameter — its neighbours are untouched',
-    store.threshold === 1 && store.passes === 21
+    store.threshold === 0 && store.passes === 21
   );
   check('the restored row acknowledges the double-click', row('decay').classList.contains('flash'));
 
@@ -950,13 +1036,13 @@ async function tier2() {
   await sleep(60);
   check(
     'double-clicking inside a value field does not reset it (text stays selectable)',
-    field('threshold').value === before && store.threshold === 1
+    field('threshold').value === before && store.threshold === 0
   );
 
   // Finding 8: two quick clicks on a slider thumb are a nudge, not a reset.
   fire(slider('threshold'), 'dblclick');
   await sleep(60);
-  check('double-clicking on a slider does not reset the row', store.threshold === 1);
+  check('double-clicking on a slider does not reset the row', store.threshold === 0);
   fire(row('threshold').querySelector('label'), 'dblclick');
   await sleep(60);
   check('double-clicking the label still does', store.threshold === DEFAULTS.threshold);
@@ -999,7 +1085,7 @@ async function tier2() {
   await sleep(60);
   check(
     'clicking an empty slot does nothing but say so',
-    store.threshold === 0.42 && text(slot('A')) === 'empty' && btnUndo.hidden
+    store.threshold === 0.58 && text(slot('A')) === 'empty' && btnUndo.hidden
   );
   await sleep(900);
 
@@ -1045,11 +1131,15 @@ async function tier2() {
   check(
     'save mode then a slot writes presets.A with every parameter but the A/B',
     !!store.presets?.A &&
-      store.presets.A.threshold === 0.42 &&
+      store.presets.A.threshold === 0.58 &&
       store.presets.A.passes === 30 &&
       !('enabled' in store.presets.A) &&
       Object.keys(store.presets.A).length === DEFS.length - PRESET_EXCLUDED.length &&
       store.presets.B === null
+  );
+  check(
+    'a preset stores threshold in the stored sense, never an amount key',
+    !('amount' in store.presets.A) && store.presets.A.threshold === fromView(byKey.threshold, Number(slider('threshold').value))
   );
   check(
     'the slot flashes "saved to A" and the row is back in load mode',
@@ -1081,13 +1171,13 @@ async function tier2() {
   await sleep(60);
   check(
     'saving over A writes the new values and offers undo',
-    store.presets.A.threshold === 0.55 && !btnUndo.hidden && /before you saved over it/.test(btnUndo.dataset.tip)
+    store.presets.A.threshold === 0.45 && !btnUndo.hidden && /before you saved over it/.test(btnUndo.dataset.tip)
   );
   btnUndo.click();
   await sleep(90);
   check(
     'undo after a save-over puts A’s old contents back and leaves the knobs alone',
-    store.presets.A.threshold === 0.42 && store.presets.A.passes === 30 && store.threshold === 0.55 &&
+    store.presets.A.threshold === 0.58 && store.presets.A.passes === 30 && store.threshold === 0.45 &&
       Number(slider('threshold').value) === 0.55 && btnUndo.hidden && store.presetBase === 'A'
   );
   await sleep(900);
@@ -1105,7 +1195,7 @@ async function tier2() {
   check(
     `"default" restores every row to the compiled defaults (${notRestored.join(', ') || 'all'})`,
     notRestored.length === 0 &&
-      Number(slider('threshold').value) === DEFAULTS.threshold &&
+      Number(slider('threshold').value) === toView(byKey.threshold, DEFAULTS.threshold) &&
       field('passes').value === fmtNumber(byKey.passes, DEFAULTS.passes)
   );
   check('"default" leaves the A/B alone', store.enabled === false);
@@ -1128,7 +1218,7 @@ async function tier2() {
   await sleep(90);
   check(
     'undo after a restore reinstates the values and the base from before it',
-    store.threshold === 0.7 && store.passes === 30 && Number(slider('threshold').value) === 0.7 && btnUndo.hidden &&
+    store.threshold === 0.3 && store.passes === 30 && Number(slider('threshold').value) === 0.7 && btnUndo.hidden &&
       store.presetBase === 'A'
   );
 
@@ -1141,7 +1231,7 @@ async function tier2() {
   await sleep(90);
   check(
     'loading A restores its values, flashes "loaded", offers undo',
-    store.threshold === 0.42 && store.passes === 30 && text(slot('A')) === 'loaded' && !btnUndo.hidden
+    store.threshold === 0.58 && store.passes === 30 && text(slot('A')) === 'loaded' && !btnUndo.hidden
   );
   check(
     'the base follows the load, and A is marked as the base',
@@ -1152,7 +1242,7 @@ async function tier2() {
   await sleep(90);
   check(
     'undo after a load reinstates the previous values and the previous base',
-    store.threshold === 0.7 && store.presetBase === 'default' && btnDefault.classList.contains('base')
+    store.threshold === 0.3 && store.presetBase === 'default' && btnDefault.classList.contains('base')
   );
 
   slot('A').click();
@@ -1162,7 +1252,7 @@ async function tier2() {
   await sleep(90);
   fire(row('threshold'), 'dblclick');
   await sleep(90);
-  check('a row double-click returns to the base preset (A)', store.threshold === 0.42);
+  check('a row double-click returns to the base preset (A)', store.threshold === 0.58 && field('threshold').value === '0.42');
 
   btnDefault.click();
   await sleep(90);
@@ -1230,9 +1320,9 @@ async function tier2() {
         w.document.querySelector('.group[data-section="video"][data-group="engine"] .group-rows').hidden === true
     );
     check(
-      'migration loads nothing: the live values stay as stored',
+      'migration loads nothing: the live values stay as stored (threshold 0.6, shown as amount 0.4)',
       s2.threshold === 0.6 &&
-        w.document.querySelector('.row[data-key="threshold"] input[type=range]').value === '0.6'
+        w.document.querySelector('.row[data-key="threshold"] input[type=range]').value === '0.4'
     );
     const r2 = w.document.querySelector('.row[data-key="threshold"]');
     r2.dispatchEvent(new w.MouseEvent('dblclick', { bubbles: true }));
@@ -1241,6 +1331,25 @@ async function tier2() {
       'after migration a double-click returns to the old saved value',
       s2.threshold === 0.33 && w.document.querySelector('.slot[data-slot="A"]').classList.contains('base')
     );
+    // MIDI sweeps the view: CC 127 is amount 1, threshold 0.
+    {
+      const wd = w.document;
+      const fake = (await w.navigator.requestMIDIAccess()).inputs.get('fake');
+      const cc = (n, v) => fake.onmidimessage({ data: [0xb0, n, v] });
+      wd.querySelector('.row[data-key="threshold"] .learn').click();
+      cc(21, 64);
+      await sleep(60);
+      const bound = s2.midiMap?.[21] === 'threshold';
+      cc(21, 127);
+      await sleep(90);
+      const top = s2.threshold === 0 && wd.querySelector('.row[data-key="threshold"] input.value.num').value === '1.00';
+      cc(21, 0);
+      await sleep(90);
+      check(
+        'a MIDI CC sweeps the amount: 127 stores threshold 0 (amount 1), 0 stores threshold 1 (amount 0)',
+        bound && top && s2.threshold === 1 && wd.querySelector('.row[data-key="threshold"] input[type=range]').value === '0'
+      );
+    }
     f.remove();
   }
 

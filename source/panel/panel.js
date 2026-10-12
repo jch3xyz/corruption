@@ -26,6 +26,8 @@ import {
   quantize,
   fmtValue,
   fmtNumber,
+  toView,
+  fromView,
   defaultFor,
   PRESET_SLOTS,
   PRESET_EXCLUDED,
@@ -55,6 +57,9 @@ const RAIL = window.matchMedia('(max-height: 60px)');
 
 const defByKey = Object.fromEntries(DEFS.map((d) => [d.key, d]));
 const isNumeric = (def) => def.type !== 'toggle' && def.type !== 'select';
+// A numeric input holds the VIEW (defs.js toView: an inverted def shows
+// max − (v − min)); this reads it back in the stored sense.
+const storedOf = (key) => fromView(defByKey[key], Number(inputs[key].value));
 
 // The feedback shaping knobs are live only while video feedback is on
 // (images are one-shot stills; there is no image feedback).
@@ -232,7 +237,7 @@ function buildRow(def) {
         ? input.checked
         : def.type === 'select'
           ? input.value
-          : Number(input.value);
+          : quantize(def, fromView(def, Number(input.value)));
     queueWrite(def.key, v);
     writeValueCell(def, v);
     for (const fn of renderers[def.key] ?? []) fn(v); // e.g. the medium chip
@@ -736,22 +741,30 @@ function writeValueCell(def, v) {
   }
   // Don't reformat a half-typed number under the caret — but a value that
   // arrived from somewhere else (MIDI, restore, the other panel window) is
-  // news, and a focused field must not sit there showing the old one.
+  // news, and a focused field must not sit there showing the old one. `v`
+  // is stored; the field holds the view, so the typed text is compared in
+  // the stored sense.
   const typed = parseFloat(el.value);
-  const mine = Number.isFinite(typed) && quantize(def, typed) === v;
+  const mine = Number.isFinite(typed) && quantize(def, fromView(def, typed)) === v;
   if (document.activeElement === el && mine) return;
-  el.value = fmtNumber(def, v);
+  el.value = fmtNumber(def, toView(def, v));
 }
 
+// The field speaks the view (what the player reads); storage the stored
+// sense. `slider` is the input holding this key's view — the row's range,
+// or a pad's hidden one. commit takes a typed view number, returns the view
+// it settled on.
 function attachNumberField(def, el, slider) {
   const commit = (n) => {
-    const v = quantize(def, n);
-    // A value that had to clamp says so (finding 8): the row flashes.
+    const v = quantize(def, fromView(def, n));
+    // A value that had to clamp says so (finding 8): the row flashes. The
+    // view spans the same min..max as the stored sense.
     if (n < Number(def.min) || n > Number(def.max)) flashRow(def.key);
-    slider.value = v;
+    slider.value = toView(def, v);
     queueWrite(def.key, v);
+    for (const fn of renderers[def.key] ?? []) fn(v); // e.g. the drift pad's dot
     syncFor(def.key);
-    return v;
+    return toView(def, v);
   };
   const normalise = () => {
     const n = parseFloat(el.value);
@@ -788,9 +801,10 @@ function setUI(key, v) {
   } else if (def.type === 'select') {
     inputs[key].value = v;
   } else {
-    // Snap to the slider's own grid so field, knob and storage agree.
+    // Snap to the slider's own grid so field, knob and storage agree; the
+    // knob shows the view.
     v = quantize(def, Number(v));
-    inputs[key].value = v;
+    inputs[key].value = toView(def, v);
   }
   writeValueCell(def, v);
   for (const fn of renderers[key] ?? []) fn(def.type === 'toggle' ? !!v : v);
@@ -840,7 +854,7 @@ function syncVideoUI() {
   const video = inputs.video.checked;
   const anyMedium = video || inputs.images.checked;
   const fbOn = inputs.feedbackVideo.checked;
-  const flowOn = Number(inputs.flowAmount.value) > 0;
+  const flowOn = storedOf('flowAmount') > 0;
   for (const key of SORT_KEYS) {
     setGated(key, !anyMedium ? GATE.medium : FLOW_ONLY.includes(key) && !flowOn ? GATE.flow : null);
   }
@@ -966,7 +980,7 @@ function currentValues() {
   for (const def of DEFS) {
     const input = inputs[def.key];
     out[def.key] =
-      def.type === 'toggle' ? input.checked : def.type === 'select' ? input.value : Number(input.value);
+      def.type === 'toggle' ? input.checked : def.type === 'select' ? input.value : storedOf(def.key);
   }
   return out;
 }
@@ -1480,7 +1494,9 @@ initMIDI({
     } else if (def.type === 'select') {
       v = def.options[Math.round((value / 127) * (def.options.length - 1))];
     } else {
-      v = quantize(def, def.min + (value / 127) * (def.max - def.min));
+      // The CC sweeps the VIEW, so turning a controller up is more of what
+      // the row shows (amount up = threshold down).
+      v = quantize(def, fromView(def, def.min + (value / 127) * (def.max - def.min)));
     }
     queueWrite(key, v);
     setUI(key, v);

@@ -108,13 +108,16 @@ export const DEFS = [
   // --- Video · sort ---
   {
     key: 'threshold',
-    label: 'threshold',
+    label: 'amount',
     min: 0,
     max: 1,
     step: 0.01,
+    // Shown and played as amount = 1 − threshold, so more is up; stored,
+    // preset and mapped as threshold.
+    invert: true,
     section: 'video',
     group: 'sort',
-    tip: 'Lower = more of the picture is sorted. 0 tears everything but true black; 1 leaves it untouched. The most expressive knob. Brighter pixels may move; darker ones hold as barriers. Shapes images too.',
+    tip: 'How much of the picture is sorted. 0 = untouched; 1 = everything but true black, which always holds as a barrier. The most expressive knob. Stored inverted, as threshold (1 − amount). Shapes images too.',
   },
   {
     key: 'flowAmount',
@@ -486,6 +489,23 @@ export function quantize(def, n) {
 }
 
 export const fmtNumber = (def, v) => Number(v).toFixed(decimals(def.step));
+
+// The view a row shows and edits. A def with `invert: true` is played
+// upside down — the panel shows and takes `max − (v − min)` (for 0–1 that is
+// 1 − v) — so a knob whose stored sense runs against "more" still reads more
+// = up. Everything stored (the key, presets, MIDI maps, DEFAULTS) stays in
+// the stored sense; only what the player sees and types is the view. The
+// mapping is its own inverse. Results are rounded at the step's precision so
+// no float noise reaches a field; quantize and fmtNumber act on the stored
+// grid, which for a range that is a whole number of steps is the view grid
+// mirrored.
+export function toView(def, v) {
+  if (!def.invert) return v;
+  const n = Number(def.max) + Number(def.min) - Number(v);
+  return round(n, decimals(def.step));
+}
+
+export const fromView = toView;
 
 export const fmtValue = (def, v) => {
   if (def.type === 'toggle') return v ? 'on' : 'off';
