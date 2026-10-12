@@ -156,16 +156,52 @@ accumulates across frames rather than restarting each frame.
 vec4 incoming = texture(uFrame, vUV);
 vec4 history  = texture(uAccum, vUV + uDrift);
 vec3 prev     = texture(uPrev, vUV).rgb;
-vec3 kept     = max(history.rgb * uDecay, incoming.rgb);
+vec3 decayed  = history.rgb * uDecay;
+vec3 kept     = max(decayed, incoming.rgb);                 // brighter (uBlend 0)
+if (uBlend == 1) {
+  kept = mix(incoming.rgb, decayed, uMix);                  // mix: the crossfade
+} else {
+  if (uBlend == 2) kept = 1.0 - (1.0 - incoming.rgb) * (1.0 - decayed);  // screen
+  else if (uBlend == 3) kept = clamp(incoming.rgb + decayed, 0.0, 1.0);  // add
+  if (uMix < 1.0) kept = mix(incoming.rgb, kept, uMix);
+}
 float mask    = step(uThreshold, luma(kept));
 float motion  = clamp(distance(incoming.rgb, prev) * 3.0, 0.0, 1.0);
 outColor = vec4(mix(incoming.rgb, kept, mask), max(motion, history.a * 0.90));
 ```
 
-Four behaviors fall out of those five lines: history **drifts** (sampling the
+Four behaviors fall out of those lines: history **drifts** (sampling the
 accumulator at an offset UV), **decays** (multiplied by `uDecay` each frame),
-**wins where it is brighter** than the incoming frame, and **is confined** to
-regions clearing the luma threshold.
+**meets the incoming frame by a blend rule**, and **is confined** to regions
+clearing the luma threshold.
+
+**The blend** (`feedbackBlend` → `uBlend`, `feedbackMix` → `uMix`; design
+review M5) is how the decayed history meets the new frame:
+
+| Rule | `kept` | What you see |
+|---|---|---|
+| brighter (0, the resting state) | `max(decayed, incoming)` | the trail only where it outshines the frame — codec-faithful, hidden over bright motion |
+| mix (1) | `mix(incoming, decayed, amount)` | a straight crossfade with history, the video-feedback classic |
+| screen (2) | `1 − (1 − incoming)(1 − decayed)` | the trail lightens the frame, over light material too, without clipping |
+| add (3) | `clamp(incoming + decayed, 0, 1)` | the trail piles on and burns to white |
+
+For brighter, screen and add the amount then lerps from the incoming frame
+(0: every frame fresh) to the full rule (1); for mix the amount *is* the
+crossfade. **Brighter-wins stays the default for the reason it was built:**
+real codec corruption persists because a damaged reference frame keeps
+being referenced, and the damage shows where the new picture does not
+overwrite it — in the dark. That makes the trail subtle over bright moving
+footage, which is exactly what the room found (M5); the other rules trade
+that fidelity for a trail that shows everywhere. At brighter and amount 1
+the shader evaluates the original `max()` and skips the lerp, so the
+resting state is the pre-blend expression, unchanged (tier 0 checks it
+against `max(decayed, incoming)` on the read-back accumulator). The branch
+is `if/else` on a uniform `int` — uniform control flow, no `switch` — which
+compiles under ANGLE (verified on its SwiftShader backend headless). Two edges to know: **add burns** — on still
+footage at decay 0.81 any channel above ~0.19 converges to white, since
+`k = i + 0.81k` saturates; **mix at 1 is history alone**, so the frame
+enters only where the decayed trail falls under the barrier, and the
+picture freezes, fades and snaps back (~1/3 s at decay 0.81).
 
 The masking term is a deliberate deviation from the original proposal, and the
 reason is instructive. Masking on `luma(incoming)` discards history the instant
@@ -173,6 +209,8 @@ a bright object moves off a pixel, so no smear ever outlives its source —
 which defeats the entire point. Masking on `kept` lets smear persist over
 newly-dark regions, decay on its own schedule, and self-clear once it falls
 below threshold. The harness's trail test exists to catch a regression here.
+The mask reads `kept` after the blend, so true black stays a barrier in every
+rule.
 
 Because texture *v* grows toward the video's bottom, **positive `driftY` makes
 trails climb upward**.
@@ -182,7 +220,8 @@ The alpha channel carries a **motion trail** for the sort pass's motion gate:
 reference is `uPrev` — a clean RGBA8 copy of the last frame, snapshotted into
 the bundle after every composite/reset — never the accumulator, because the
 accumulator holds *sorted* material and diffing against it would measure our
-own damage and read the whole frame as motion. Alpha never reaches the screen
+own damage and read the whole frame as motion. The blend never touches alpha:
+the trail is the same in every rule at every amount. Alpha never reaches the screen
 (the shared context is `alpha: false`), and it swaps along with its pixel, so
 motion tags travel with their material.
 

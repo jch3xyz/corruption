@@ -45,7 +45,8 @@ Quick facts:
 - Load unpacked from `source/`. Vanilla JS, no build step, no dependencies.
 - Dev server for harnesses: `python3 test/serve.py` (no-store — plain
   http.server serves stale modules). Visual suite at
-  `/test/harness/index.html` (needs a visible tab), audio suite at
+  `/test/harness/index.html` (a visible tab, or headless:
+  `node test/headless.mjs index`), audio suite at
   `/test/harness/audio.html` (deterministic offline tiers + live-tap button),
   text suite at `/test/harness/text.html` (pure DOM, deterministic), panel
   suite at `/test/harness/panel.html` (pure DOM; drives the shipped panel in
@@ -65,8 +66,9 @@ Quick facts:
   at rest). **Video and Audio each have three groups, and each effect
   group holds only its handles** (John's handles round, 2026-10-12): sort
   = amount · flow · jitter · ribbons; feedback = the switch · trail · drift
-  pad · follow motion; body = mix · body amount · ring time · drive; smear
-  = the switch · tail · level · wobble. Everything that shapes rather than
+  pad · follow motion · blend · blend amount (`feedbackBlend`/`feedbackMix`);
+  body = mix · body amount · ring time · drive; smear = the switch · tail ·
+  level · wobble. Everything that shapes rather than
   steers is in the **engines**, folded by default (Video: sort passes, max
   res, max videos, the flow's shape, the clear rhythm; Audio: body type,
   dry, max sources, exciter, comb damp, the smear clears). Gates are keyed,

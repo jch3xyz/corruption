@@ -40,7 +40,9 @@ Video/Audio regrouped into effect / effect / engine; round-3 fixes), plus
 the two panel-placement prototypes behind `panelHome`. Suites at head:
 panel 211/211, strip 36/36, text 35/35, audio tiers 34/34; the visual
 suite's headless run fails the same 10 starvation checks as the untouched
-base and needs a visible tab. **Nothing on this branch has been exercised
+base and needs a visible tab (round 6 found those were no WebGL2 under
+`--disable-gpu` and a layout fault in the harness page; it now runs
+headless green). **Nothing on this branch has been exercised
 in a real Chrome yet**, so the first local step is the checklist below, then
 the two decisions John holds (seam on the page; placement default), then
 the effects queue in `design-review.md`. Read `design-review.md` before
@@ -298,15 +300,49 @@ balance are the open item below. The previous sound is exactly reachable at
   panel 348/348 (299 before the round: 312 after amount, 335 after the
   pad), strip 52/52, text 35/35.
 
+  **Round 6 — the feedback blend (M5, 2026-10-12).** The first of the
+  layers John accepted after the handles. Design review M5: feedback kept
+  history only where history × decay outshone the frame, so the trail was
+  invisible over bright moving footage. Two params — `feedbackBlend`
+  (*blend*: brighter · mix · screen · add, `FEEDBACK_BLENDS`, the shader's
+  `uBlend` order) and `feedbackMix` (*blend amount*, 0–1) — and a branch in
+  the composite: brighter = `max(decayed, incoming)` as before, mix = a
+  crossfade with history (the amount is the crossfade), screen, add
+  (clamped); for brighter/screen/add the amount lerps incoming → rule. The
+  mask still reads the kept value (the dark barrier holds in every rule)
+  and the alpha motion trail never reads the blend. Defaults brighter and
+  1: the shader evaluates the original `max()` and skips the lerp, so the
+  resting picture is unchanged. The rows sit after follow motion, filling
+  the feedback column's eight lane cells exactly; both hide with feedback
+  off; not in the registry's image `effectKeys` (video only). Trade-offs:
+  add burns to white (on still footage at trail 0.81 any channel above
+  ~0.19 saturates — blend amount is the leash); mix at 1 is history
+  alone, a freeze-fade-snap pulse rather than a crossfade; the feedback
+  column is now full. Three commits: `8d0ecc6` **the visual suite runs
+  headless** — SwiftShader flags in `test/headless.mjs` give headless
+  Chrome WebGL2, and `index.html` puts the video grid above the status
+  lines, which had pushed the videos out of the viewport as tier 0 grew
+  (the "starvation" failures were that layout fault plus no WebGL2 under
+  `--disable-gpu`): the untouched head goes from 48/52 (12/35 without
+  SwiftShader) to 54/54 headless in ~25 s; `a860383` **the blend**, with
+  six tier-0 checks on the read-back accumulator (rest = brighter at 1 =
+  `max()`, amount 0 a wire in every rule, add > screen > brighter > mix
+  on mid-grey, alpha identical across rules and amounts, determinism);
+  and these docs. Suites (headless): visual 60/60, panel 349/349, strip
+  52/52, text 35/35, audio 34/34. **Next layer: the source-following
+  audio body (M8).**
+
   **Open items John holds (2026-10-11; (2) reinstated 2026-10-12; revised
   after round 5):** (1) the in-page first-run mark, the remaining half of
   the seam; (2) which home is the default — after both are judged on real
   use; (3) ~~threshold shown inverted as an *amount*~~ — done, round 5;
   (4) an intensity macro; (5) headline knobs that ship at the rail (ring
   time, drive, tail); (6) **the next layers, in the order John accepted
-  (2026-10-12): the feedback blend (M5) next, then the source-following
-  audio body (M8), then the performance ramp, then the CSS-scramble toggle
-  (which needs its feasibility read first)**; (7) the comb body / gated
+  (2026-10-12): ~~the feedback blend (M5)~~ — done, round 6; the
+  source-following audio body (M8) next, then the performance ramp, then
+  the CSS-scramble toggle (which needs its feasibility read first)**;
+  whether brighter stays the resting blend is his to judge on real
+  footage; (7) the comb body / gated
   exciter A/B; (8) the controls themselves — the handles half answered by
   round 5; the question of *which* controls a player needs *when* rides
   with (4) and (5); (9) the outside-the-box forms — a keyboard-summoned
@@ -432,8 +468,10 @@ waits `HARNESS_WAIT_MS` (default 1500) and shoots.
 
 - Visual/lifecycle suite: `http://localhost:8437/test/harness/index.html`
   (32 checks; +2 more with the :8439 server up for the cross-origin image
-  route). **Must run in a visible tab** — hidden tabs starve frames and
-  produce false timeouts (documented in harness header). Last full run
+  route). Runs headless since round 6: `node test/headless.mjs index`
+  (SwiftShader WebGL2, ~25 s, 60/60 at round 6). A *hidden* tab still
+  starves frames and produces false timeouts (documented in harness
+  header), so in a browser it needs a visible tab. Last full run
   **50/50 (2026-08-20, embedded pane, visible)**; 32/32 at 2026-08-12
   before the tier-0 additions. Two latent test bugs fixed
   that day: the disable check iterated `j.video` over image jobs (TypeError
@@ -510,7 +548,13 @@ waits `HARNESS_WAIT_MS` (default 1500) and shoots.
   judge the known squeeze (the ⊙ column narrows the lane's sliders to
   ~30 px and truncates the selects).
 - Visual suite re-run in real Chrome (the embedded pane starves rVFC and
-  can't adjudicate it — verified identical at baseline).
+  can't adjudicate it — verified identical at baseline; headless Chrome
+  runs it green since round 6, on SwiftShader rather than your GPU).
+- **The feedback blend** on a bright moving video: feedback on, switch
+  blend to screen and then add, and ride blend amount — the trail should
+  read over light material where brighter hid it; add should burn toward
+  white with blend amount as the leash, and true black should still hold;
+  try mix below 1 (an echo) and at 1 (a freeze-fade pulse).
 - Audio plumbing: page mute/volume through the chain; a cross-origin-audio
   site stays untouched w/ console log; MIDI sweep.
 - Visual: fullscreen/theater tracking, 5× SPA navigation canvas-leak check,

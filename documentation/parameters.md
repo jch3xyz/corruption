@@ -37,6 +37,8 @@ rather than steers.
 | `driftX` | drift (pad), x | **−0.0025** | ±0.01 | *Video feedback only.* Horizontal smear, UV units per frame (negative = leftward). |
 | `driftY` | drift (pad), y | **0.0020** | ±0.01 | *Video feedback only.* Vertical smear; **positive = upward** — the resting state climbs gently. Purely visual — the audio wobble it used to drive is now `audioFbWobble`. |
 | `motionGate` | follow motion | **0** | 0–1 | *Video feedback only.* A pair may only trade when BOTH members' motion trail clears this, so damage stays strictly inside what the transmission itself is changing: action smears, stillness holds and heals. The trail decays ~1 s; each keyframe floods it hot, so a reset briefly sorts everywhere before confinement returns. 0 = sort regardless of motion. |
+| `feedbackBlend` | blend | **brighter** | brighter · mix · screen · add | *Video feedback only.* How the trail meets the new frame (design review M5). **brighter** = `max(history·decay, incoming)`, the codec-faithful rule and the resting state: the trail shows only where it outshines the frame, so it hides over bright moving footage. **mix** = a straight crossfade with history (blend amount *is* the crossfade; at 1 the picture freezes, fades and snaps back where the trail drops under the barrier). **screen** = the trail lightens the frame, visible over light material without clipping. **add** = the trail piles on and burns out: on still footage at trail 0.81 any channel above ~0.19 saturates to white. True black still holds as a barrier in every rule. |
+| `feedbackMix` | blend amount | **1** | 0–1 | *Video feedback only.* How much of the trail survives against the new frame: for brighter, screen and add, the composite lerps from the incoming frame (0, every frame fresh) to the full rule (1); for mix it is the crossfade itself. At brighter and 1 the composite is the pre-blend shader bit for bit. |
 | **Video · engine (folded)** | | | | |
 | `passes` | sort passes | **64** | 0–64 | Sort passes per frame. A full 256→1 stride ladder is 18 passes, so 64 runs ~3.5 settling cycles. |
 | `maxRes` | max res | 1920 | 480–1920 | Processing resolution cap, long axis. Lower it on weak GPUs; output upscales through the overlay. |
@@ -193,6 +195,11 @@ recovers automatically when real content returns.
   threshold — masking on the kept value (not incoming, as the proposal's
   sketch had it) is what lets smear persist past the frames that caused it
   and self-clear as it decays below threshold.
+- `feedbackBlend` → `uBlend` (0 brighter, 1 mix, 2 screen, 3 add; the
+  order of `FEEDBACK_BLENDS` in params.js), `feedbackMix` → `uMix`. The
+  blend replaces the `max` in `kept`; for brighter, screen and add the
+  result is then lerped from incoming by `uMix`, for mix `uMix` is the
+  crossfade. The mask still reads `luma(kept)`.
 - Sort direction is fixed: bright rises toward the video's top.
 
 ## Adaptive governor (metrics.js)
@@ -261,7 +268,8 @@ shapes rather than steers is filed in the engine:
 
 - **Video** — **sort** (amount, flow, jitter, ribbons), **feedback** (its
   own switch, then trail, the drift pad, follow motion — which reads the
-  feedback trail), **engine** (sort passes, max res, max videos; the
+  feedback trail — then blend and blend amount, how the trail meets the
+  new frame), **engine** (sort passes, max res, max videos; the
   flow's shape: flow mode, flow scale, flow speed, shown while flow is
   above 0; the clear rhythm: clear min s, clear max s).
 - **Audio** — **body** (mix, the whole-sound wet/dry, then body amount,
@@ -274,9 +282,9 @@ shapes rather than steers is filed in the engine:
 - **Text** has no section: it is the chip and nothing else.
 
 In the mixer the effect columns fit their eight lane cells (sort 6,
-feedback 6, body 7, smear 5); the engines are 8 and 9 rows, so an unfolded
-engine spills into a second column and the lane scrolls sideways only
-then.
+feedback 8 — exactly full since the blend, body 7, smear 5); the engines
+are 8 and 9 rows, so an unfolded engine spills into a second column and
+the lane scrolls sideways only then.
 
 Both **engine** groups start folded behind a disclosure (`engine ▸`; click
 for `engine ▾`). The folded rows still exist — presets, MIDI and storage

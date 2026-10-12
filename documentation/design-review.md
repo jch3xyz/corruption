@@ -875,3 +875,87 @@ feedback column at every strip width, no effect column spilling, and every
 lane label on one line. Screenshots checked by eye: the mixer at 1512 and
 at 1280 with a MIDI device, both engines unfolded at 1512 and 1920, and the
 400 px column.
+
+# Round 6: feedback blend (M5)
+
+## What landed
+
+The first of the layers John accepted after the handles: **the feedback
+blend**, answering M5 (the room reached for feedback expecting something
+drastic and saw little, because the trail survives only where it
+outshines the frame). Two params, two rows at the foot of the feedback
+column — `feedbackBlend` (**blend**, a select) and `feedbackMix` (**blend
+amount**, 0–1) — and a branch in the composite:
+
+| Rule | `kept` | What you see |
+|---|---|---|
+| brighter | `max(decayed, incoming)` | today's codec-faithful rule: the trail only over the dark |
+| mix | `mix(incoming, decayed, amount)` | a straight crossfade with history |
+| screen | `1 − (1 − incoming)(1 − decayed)` | the trail lightens the frame, over light material too |
+| add | `clamp(incoming + decayed, 0, 1)` | the trail piles on and burns out |
+
+For brighter, screen and add the amount lerps from the incoming frame (0,
+every frame fresh) to the full rule (1); for mix it is the crossfade. The
+mask still reads the kept value, so **the dark barrier holds in every
+rule**, and the motion trail in alpha never reads the blend. Commits
+`8d0ecc6` (the visual suite runs headless — see Verification), `a860383`
+(the blend) and these docs.
+
+**The defaults are unchanged.** John's resting state is brighter at amount
+1, and at those values the shader evaluates the original `max()` and
+skips the lerp: the resting picture is the pre-blend composite. The
+feedback column now reads feedback · trail · drift (pad) · follow motion
+· blend · blend amount — with the caption, exactly the eight lane cells a
+mixer column has.
+
+## What to look and listen for
+
+- **Screen and add over bright footage.** The point of the layer: put a
+  bright, moving video up with feedback on, switch blend from brighter to
+  screen and then add, and ride blend amount. Under brighter the trail
+  vanishes over light material; under screen it should read over light
+  material too, lifting the frame toward white without a hard clip (only
+  pure white hides it); under add it should pile up fast.
+- **Add burns to white.** That is the drastic end the room asked for, and
+  the trade-off: on still or slow footage at trail 0.81 any channel above
+  ~0.19 saturates, so add at amount 1 can whiten whole regions until the
+  next clear. Blend amount is the leash. True black still holds: the
+  barrier does not move with the blend.
+- **Mix at amount 1 is history alone.** The frame enters only where the
+  decayed trail sinks under the barrier, so the picture freezes, fades
+  and snaps back to a fresh frame (~1/3 s at trail 0.81) — a pulse, not a
+  crossfade. Below 1 it is the classic video-feedback echo. Whether the
+  pulse is a gift or a trap is John's call; the code does not argue it.
+- Whether brighter stays the resting rule now that the others exist — the
+  defaults are John's and did not move.
+
+## Trade-offs, stated
+
+- **Two rows more in the feedback column**, which is now full: the next
+  feedback handle has to displace one or go to the engine.
+- **A select in the lane.** At 1280 the blend select is narrow and
+  truncates its own label (the engine's flow mode does the same); the
+  value beside it reads in full.
+- **Fidelity is now a setting.** The codec-faithful rule is one of four,
+  so the piece can be pushed past what a corrupted stream would do —
+  which is what M5 asked for, and why brighter stays the default.
+
+## Verification
+
+Headless Chrome. Recording the visual suite's headless baseline turned up
+that its headless failures were never starvation: under `--disable-gpu`
+there is no WebGL2 at all (12 passed, 23 failed), and with SwiftShader GL
+(`--use-angle=swiftshader --enable-unsafe-swiftshader`, now in
+`test/headless.mjs`) the remaining four failures — and five more as soon
+as tier 0 grew — were the status lines above the grid pushing the videos
+out of the viewport. With the grid above the status block the untouched
+head passes 54/54 headless in ~25 s; with the blend, **60/60** — tier 0
+gains six checks on the read-back accumulator: rest bit-identical to
+brighter at 1 and on `max(decayed, incoming)` (max error 0.062/255);
+amount 0 a wire in all four rules; on mid-grey add 231.7 > screen 179.7
+> brighter 128.0 > mix at 0.5 115.9, each on its formula; the alpha trail
+identical in every rule at amounts 1, 0.35 and 0; determinism. Panel
+349/349 (+1: the blend's rows, order, defaults and tips; the gating and
+tier-3 checks extended — blend amount now ends the feedback column at
+every strip width), strip 52/52, text 35/35, audio 34/34. Screenshots of
+the mixer checked by eye at 1280 and 1920.
