@@ -4,12 +4,13 @@
 // there persists in the kiosk profile.
 //
 // Where the panel opens is the stored preference `panelHome` (design review
-// M9; John chose the strip 2026-10-11):
+// M9; John chose the strip 2026-10-11, then the window 2026-10-12 once the
+// window answered to its own shape):
+//   'window' — its own popup window (every fallback), reopened at the size
+//              and place it was last left (panelBounds, below). The default.
 //   'strip'  — a horizontal strip the content script puts along the bottom
 //              of the page (source/content/strip.js): a one-line rail at
-//              rest, the mixer when unfolded. The default.
-//   'window' — its own popup window (every fallback), reopened at the size
-//              and place it was last left (panelBounds, below);
+//              rest, the mixer when unfolded;
 //   'side'   — Chrome's side panel, docked in the browser window (Chrome
 //              114+; same extension origin, so the MIDI grant should carry).
 // A change applies on the next open. Every side-panel and strip call is
@@ -22,7 +23,7 @@ chrome.runtime.onInstalled.addListener(({ reason }) => {
 });
 
 const HOMES = ['window', 'side', 'strip'];
-const DEFAULT_HOME = 'strip';
+const DEFAULT_HOME = 'window';
 let panelHome = DEFAULT_HOME;
 let homeKnown = false;
 

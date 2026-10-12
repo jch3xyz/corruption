@@ -480,15 +480,19 @@ no in-page mark; that is John's call.
 
 The panel has its own harness: `test/harness/panel.html`.
 
-### Where the panel lives (`panelHome`; the strip, John's pick 2026-10-11)
+### Where the panel lives (`panelHome`; the window by default, John 2026-10-12)
 
 Design review M9: the room found a separate window odd, and a synth-literate
 player expects a horizontal strip under the picture, like a mixer. Three
 homes were built behind one stored preference; John played them and chose
-the strip, which is the default in code. **Which home ships as the default
-is open again** (John, 2026-10-12): testing the strip on YouTube he asked for
-a detached window that answers to its own shape, and the call waits until
-both the strip and that window have been judged on real use. `panelHome` is
+the strip (2026-10-11). Testing the strip on YouTube he then asked for a
+detached window that answers to its own shape, and once both were built
+**he made the window the default** (2026-10-12): it opens apart from the
+page, the column when tall and the mixer when dragged wide. The strip stays
+one choice away under *panel lives in*; it stayed opt-in because of two
+problems it showed on real pages — every site's permissions policy answered
+its MIDI request on load with a console violation or a prompt, and a frame
+error still to be diagnosed from the console text. `panelHome` is
 a **panel preference, not a parameter**: it lives outside `DEFAULTS` beside
 `tooltips`, so no content script's param filter sees it, and the harness's
 "every stored key has a row" check excludes it. Its row is **panel lives
@@ -497,12 +501,16 @@ the panel you are using never moves out from under you.
 
 | value | home | how it opens |
 |---|---|---|
-| `strip` (default in code) | a strip along the bottom of every page: a **40 px rail** at rest, a **240 px mixer** unfolded | always present; a click anywhere on the rail that is not a control, the `CORRUPTION ▴` tab above its right end, the ▴/▾ button, Ctrl+Shift+P and the toolbar icon unfold and fold it |
-| `window` | its own popup window, **responsive by shape**: 400 × 720 the first time (the column), the mixer once dragged wide; it reopens at the size and place it was last left | toolbar icon, Ctrl+Shift+P; a second open focuses the window already open |
+| `window` (the default) | its own popup window, **responsive by shape**: 400 × 720 the first time (the column), the mixer once dragged wide; it reopens at the size and place it was last left | toolbar icon, Ctrl+Shift+P; a second open focuses the window already open |
+| `strip` | a strip along the bottom of every page: a **40 px rail** at rest, a **240 px mixer** unfolded | always present; a click anywhere on the rail that is not a control, the `CORRUPTION ▴` tab above its right end, the ▴/▾ button, Ctrl+Shift+P and the toolbar icon unfold and fold it |
 | `side` | Chrome's side panel, docked in the browser window (Chrome 114+); always narrow, so always the column | toolbar icon (Chrome opens it itself), Ctrl+Shift+P |
 
 All three run the same `panel.html`, `panel.js` and `panel.css`; there is
-one source of truth for every control, tip and gesture.
+one source of truth for every control, tip and gesture. The default lives
+in three places that must agree — `PANEL_HOME.default` in `defs.js`,
+`DEFAULT_HOME` in the service worker and the `panelHome` default
+`initStrip` reads — and the panel harness checks that they do; an unknown
+stored value reads as the window everywhere.
 
 **The layout follows the shape** (2026-10-12). The panel has three layouts —
 the **column** (sections stacked in a narrow scroll), the **mixer** (the

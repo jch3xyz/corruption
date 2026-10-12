@@ -411,10 +411,10 @@ function tier1() {
       !DEFS.some((d) => d.key === 'panelHome' || d.key === 'stripOpen')
   );
   check(
-    'panelHome offers strip · window · side, defaults to the strip (John, 2026-10-11), and its tip says when a change applies',
+    'panelHome offers window · strip · side, defaults to the window (John, 2026-10-12), and its tip says when a change applies',
     PANEL_HOME.key === 'panelHome' &&
-      PANEL_HOMES.join() === 'strip,window,side' &&
-      PANEL_HOME.default === 'strip' &&
+      PANEL_HOMES.join() === 'window,strip,side' &&
+      PANEL_HOME.default === 'window' &&
       PANEL_HOME.tip.length > 20 &&
       /next time/i.test(PANEL_HOME.tip)
   );
@@ -652,8 +652,8 @@ async function tier2() {
       !!homeRow && homeRow.previousElementSibling === prefRow && text(homeRow.querySelector('label')) === 'panel lives in'
     );
     check(
-      'it offers the three homes, strip first and selected',
-      !!sel && [...sel.options].map((o) => o.value).join() === 'strip,window,side' && sel.value === 'strip'
+      'it offers the three homes, the window first and selected',
+      !!sel && [...sel.options].map((o) => o.value).join() === 'window,strip,side' && sel.value === 'window'
     );
     check(
       'it carries a tip that says a change applies on the next open',
@@ -664,20 +664,30 @@ async function tier2() {
       win.getComputedStyle(homeRow).gridTemplateColumns === win.getComputedStyle(row('threshold')).gridTemplateColumns
     );
     check('choosing nothing writes nothing', !('panelHome' in store));
-    sel.value = 'window';
+    sel.value = 'strip';
     sel.dispatchEvent(new win.Event('change', { bubbles: true }));
     await sleep(40);
-    check('choosing a home stores it as panelHome', store.panelHome === 'window');
+    check('choosing a home stores it as panelHome', store.panelHome === 'strip');
     win.chrome.storage.local.set({ panelHome: 'side' });
     await sleep(40);
     check('a panelHome change from elsewhere is followed', sel.value === 'side');
     win.chrome.storage.local.set({ panelHome: 'nonsense' });
     await sleep(40);
-    check('an unknown stored home reads as the strip', sel.value === 'strip');
-    sel.value = 'strip';
+    check('an unknown stored home reads as the window', sel.value === 'window');
+    sel.value = 'window';
     sel.dispatchEvent(new win.Event('change', { bubbles: true }));
     await sleep(40);
-    check('and the strip can be chosen back', store.panelHome === 'strip');
+    check('and the window can be chosen back', store.panelHome === 'window');
+    // One default in three places: the service worker opens it, the content
+    // script decides whether to mount the strip, the panel shows it.
+    const src = async (p) => (await fetch(p, { cache: 'no-store' })).text();
+    const sw = await src('../../source/background/service-worker.js');
+    const st = await src('../../source/content/strip.js');
+    check(
+      'the service worker and the strip default to the panel’s home, the window',
+      sw.includes(`const DEFAULT_HOME = '${PANEL_HOME.default}';`) &&
+        st.includes(`storage.get({ panelHome: '${PANEL_HOME.default}'`)
+    );
   }
   check(
     'every section header is a jump target',

@@ -92,11 +92,13 @@ Quick facts:
   effect columns) or the **column**. The strip's frame is always the mixer,
   or the rail when 40 px tall; the window and side panel are the mixer at
   ≥ 900 px wide and 2:1, else the column (the layout value is `mixer`; the
-  strip is a home). The **strip** — a 40 px rail with the CORRUPTION tab,
-  a 240 px mixer — is the default in code; the **window** is responsive and
-  remembers its bounds (`panelBounds`); **which home is the default is
-  John's open call**, after both are judged on real use. MIDI is a
-  feature, not the primary mode: its block hides until a device.
+  strip is a home). The **window** — responsive by shape, remembering its
+  bounds (`panelBounds`) — **is the default home** (John, 2026-10-12, after
+  both were built); the **strip** — a 40 px rail with the CORRUPTION tab, a
+  240 px mixer — is opt-in under *panel lives in*. The default lives in
+  `defs.js`, the service worker and `initStrip`; the harness checks they
+  agree. MIDI is a feature, not the primary mode: its block hides until a
+  device.
 - How both pipelines actually work: [documentation/how-it-works.md](documentation/how-it-works.md).
   Per-knob documentation: [documentation/parameters.md](documentation/parameters.md).
   Site quirks: [documentation/site-notes.md](documentation/site-notes.md).

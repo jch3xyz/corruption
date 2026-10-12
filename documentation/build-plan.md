@@ -224,7 +224,8 @@ balance are the open item below. The previous sound is exactly reachable at
 
   **M9 decided (John, testing the branch in real Chrome, 2026-10-11): the
   strip.** "I prefer the bottom strip to the separate webpage approach."
-  It is the default `panelHome`; window and side panel remain. The strip
+  It was the default `panelHome` until 2026-10-12, when John made the
+  responsive window the default (Round 8); strip and side panel remain. The strip
   rests as a **transport line** — a 28 px rail carrying the A/B, the four
   chips and the presets — and unfolds to a 208 px **mixer** with the four
   effect columns (sort · feedback · body · smear) in view at 1280 px with no
@@ -232,7 +233,7 @@ balance are the open item below. The previous sound is exactly reachable at
   away; video and audio controls at hand without horizontal scrolling; the
   strip free to grow taller). John's picks among the rest options: the
   transport line over fold-to-tab and over always-open-translucent. See
-  [parameters.md](parameters.md#where-the-panel-lives-panelhome-the-strip-johns-pick-2026-10-11)
+  [parameters.md](parameters.md#where-the-panel-lives-panelhome-the-window-by-default-john-2026-10-12)
   for the housing, what is verified and what still needs a real Chrome.
   Strip suite: `test/harness/strip.html` (41 checks).
 
@@ -365,8 +366,10 @@ balance are the open item below. The previous sound is exactly reachable at
 
   **Open items John holds (2026-10-11; (2) reinstated 2026-10-12; revised
   after round 5):** (1) the in-page first-run mark, the remaining half of
-  the seam; (2) which home is the default — after both are judged on real
-  use; (3) ~~threshold shown inverted as an *amount*~~ — done, round 5;
+  the seam; (2) ~~which home is the default~~ — decided 2026-10-12: the
+  window; the strip stayed opt-in because of the two problems it showed on
+  real pages (the per-site MIDI request on load, and a frame error
+  still to be read from the console); (3) ~~threshold shown inverted as an *amount*~~ — done, round 5;
   (4) an intensity macro; (5) headline knobs that ship at the rail (ring
   time, drive, tail); (6) **the next layers, in the order John accepted
   (2026-10-12): ~~the feedback blend (M5)~~ — done, round 6;
@@ -544,9 +547,9 @@ waits `HARNESS_WAIT_MS` (default 1500) and shoots.
 
 ## John's manual checklist (needs real Chrome; not yet all exercised)
 
-- **The strip on YouTube at your width (the default in code).** Load
-  unpacked from `source/` at the branch head; if `panelHome` is stored from
-  earlier testing, set it to `bottom strip` and reload the page. **The
+- **The strip on YouTube at your width (opt-in since the window became
+  the default).** Load unpacked from `source/` at the branch head, set
+  `panel lives in` to `bottom strip` and reload the page. **The
   rail:** 40 px along the bottom with the `CORRUPTION ▴` tab standing above
   its right end; a click on the title or a gap unfolds it, a click on a
   chip or a preset does only that; the tab folds and unfolds without taking
@@ -563,8 +566,9 @@ waits `HARNESS_WAIT_MS` (default 1500) and shoots.
   script → service worker → panel is untested outside the harness); the
   toolbar badge reads ON and clears on Ctrl+Shift+D; how badly the rail
   and the mixer sit over the player's own controls.
-- **The window and the side panel.** Set `panel lives in` to `window`,
-  Ctrl+Shift+P: it opens as the column at 400 × 720. Drag it wide (≥ 900 px
+- **The window (the default) and the side panel.** With nothing stored (or
+  `panel lives in` set back to `window`), Ctrl+Shift+P: it opens as the
+  column at 400 × 720. Drag it wide (≥ 900 px
   and at least 2:1): it becomes the mixer, and tall again the column, the
   `engine ▸` disclosures moving with it. Close it and reopen: the same place
   and shape. Leave it a minute (the service worker sleeps) and click the

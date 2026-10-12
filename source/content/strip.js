@@ -302,7 +302,7 @@ export async function initStrip() {
 
   let state;
   try {
-    state = await storage.get({ panelHome: 'strip', stripOpen: false });
+    state = await storage.get({ panelHome: 'window', stripOpen: false }); // the window is the default home
   } catch {
     return;
   }

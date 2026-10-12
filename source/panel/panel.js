@@ -8,8 +8,8 @@
 // `midiMap`, `presets` (slots A/B/C), `presetBase` (the last-loaded or
 // last-saved preset, which a row double-click returns to), `tooltips`,
 // `engineOpen` ({video, audio}: whether each section's engine group is
-// unfolded), `panelHome` ('window' | 'side' | 'strip': where the panel
-// opens, design review M9), `stripOpen` (whether the bottom strip is
+// unfolded), `panelHome` ('window' | 'strip' | 'side': where the panel
+// opens, design review M9; the window by default), `stripOpen` (whether the bottom strip is
 // expanded; written by the strip in the page, never by this file) and
 // `panelBounds` ({width, height, left, top}: where the panel window was
 // last left; written by the service worker, never by this file). A legacy
