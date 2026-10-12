@@ -119,7 +119,7 @@ const AUDIO_TRIGGERS = ['audioEnabled', 'audioFeedback', 'audioFbClear', 'audioB
 // answers to the medium (and the flow shape to flow, FLOW_ONLY). The other
 // engine rows (passes, max res, max videos) are not gated row by row; the
 // engine group hides with the mediums.
-const SORT_KEYS = ['threshold', 'flowAmount', 'temperature', 'streak', 'flowMode', 'flowScale', 'flowSpeed'];
+const SORT_KEYS = ['threshold', 'sortKey', 'flowAmount', 'temperature', 'streak', 'flowMode', 'flowScale', 'flowSpeed'];
 const FEEDBACK_KEYS = ['feedbackVideo', ...FEEDBACK_SHARED];
 const MEDIUM_TRIGGERS = ['video', 'images', 'feedbackVideo', 'flowAmount'];
 

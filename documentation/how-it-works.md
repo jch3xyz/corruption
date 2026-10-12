@@ -254,7 +254,17 @@ Three properties define the look:
    confined inside bright spans and dark material holds the image together. At
    strides > 1 the span midpoint is also checked, so a long stride can't
    teleport a pixel across a dark gap.
-2. **Bright rises toward smaller *y***, i.e. the video's top. Fixed direction.
+2. **The higher key rises toward smaller *y***, i.e. the video's top. Fixed
+   direction. The key is **luma** at rest — bright rises — and `sortKey`
+   (*sort by*, round 8 part 2) swaps it for hue, saturation or one channel:
+   `float key(vec3 c)` on `uKey`, plain if-chains on the int. Only the
+   *ordering* reads the key (`lUpper < lLower` compares keys); the barrier
+   tests — both members and the span midpoint — still read `luma()`, so
+   amount means the same under every key and a dark but vivid pixel still
+   walls the sort off under hue. The permutation argument is untouched:
+   both members compute the same pair of keys and the same refusals. Key 0
+   is the very same `luma()` expression, so the resting picture is
+   bit-identical, and equal keys never trade.
 3. **The stride ladder** is what produces ribbons rather than mush:
 
 The pairing axis itself became a parameter with the **flow field**

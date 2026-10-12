@@ -68,7 +68,8 @@ Quick facts:
   row to restore one parameter, and a hover bubble on everything (nothing
   at rest). **Video and Audio each have three groups, and each effect
   group holds only its handles** (John's handles round, 2026-10-12): sort
-  = amount · flow · jitter · ribbons; feedback = the switch · trail · drift
+  = amount · sort by (`sortKey`, round 8: the ordering key; the barrier
+  stays on luma) · flow · jitter · ribbons; feedback = the switch · trail · drift
   pad · follow motion · blend · blend amount (`feedbackBlend`/`feedbackMix`);
   body = mix · body amount · follow · ring time · drive; smear = the switch · tail ·
   level · wobble. Everything that shapes rather than

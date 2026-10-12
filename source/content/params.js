@@ -16,6 +16,9 @@ export const DEFAULTS = {
   feedbackVideo: true,  // temporal feedback on videos — the resting state
   threshold: 0.05,   // luma above this is eligible; near-zero = the whole
                      // frame sorts but true black holds as a barrier
+  sortKey: 'luma',   // what decides which pixel climbs ("sort by", round 8):
+                     // the ordering key only — the barrier stays on luma.
+                     // See SORT_BY; 'luma' is the classic, bit for bit
   passes: 64,        // sort passes per frame (~3.5 cycles of a 256→1 ladder)
   streak: 256,       // max compare-exchange stride: longer = longer ribbons
   temperature: 0,    // fraction of pair-verdicts inverted per pass: the sort
@@ -90,6 +93,11 @@ export const DEFAULTS = {
 
 // The feedback blends, in the order of the composite shader's uBlend int.
 export const FEEDBACK_BLENDS = ['brighter', 'mix', 'screen', 'add'];
+
+// The sort keys, in the order of the sort shader's uKey int.
+export const SORT_BY = ['luma', 'hue', 'saturation', 'red', 'green', 'blue'];
+// A name onto the shader's int; anything unknown sorts by luma.
+export const sortKeyIndex = (name) => Math.max(0, SORT_BY.indexOf(name));
 
 export async function loadParams() {
   const stored = await chrome.storage.local.get(DEFAULTS);

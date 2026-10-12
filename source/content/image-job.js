@@ -12,6 +12,7 @@
 import { Overlay, objectFitRect } from './overlay.js';
 import { acquireGL } from '../gl/context.js';
 import { createBundle, destroyBundle } from '../gl/pipeline.js';
+import { sortKeyIndex } from './params.js';
 
 export class ImageJob {
   constructor(img, params, routeStats) {
@@ -145,6 +146,7 @@ export class ImageJob {
       motionGate: params.motionGate ?? 0,
       flow: flowAmount > 0,
       facets: params.flowMode === 'facets',
+      key: sortKeyIndex(params.sortKey),
     });
     glc.ensureSize(w, h);
     p.present(b);

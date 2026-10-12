@@ -44,6 +44,15 @@
 // motion trail (composite pass: |incoming − prev frame|, decaying); a pair
 // may only trade when BOTH members clear the gate, so damage stays inside
 // what the transmission itself is changing.
+//
+// uKey — the comparison key (`sortKey`, "sort by", round 8 part 2). Which
+// pixel climbs is decided by key(): 0 luma (the classic, and the very same
+// expression, so the default is bit-identical), 1 hue, 2 saturation, 3/4/5
+// one channel. Only the ORDERING reads the key. The BARRIER stays on luma —
+// threshold tests and the span midpoint read luma(), never key() — so
+// amount keeps its meaning under every key (dark material always holds the
+// picture together) and the permutation argument is untouched: both
+// members still compute the same key pair and the same refusals.
 import { GLSL_LUMA } from './common.js';
 
 export const FRAG_SORT = `#version 300 es
@@ -59,9 +68,35 @@ uniform float uThreshold;
 uniform float uTemp;
 uniform float uMotionGate;
 uniform int uSeed;
+uniform int uKey;
 in vec2 vUV;
 out vec4 outColor;
 ${GLSL_LUMA}
+// The ordering key. Plain if-chains on the int (ANGLE-safe); anything
+// unknown falls through to luma.
+float key(vec3 c) {
+  if (uKey == 1) {
+    // Hue in [0,1): red 0, green 1/3, blue 2/3. Grey has none: 0.
+    float mx = max(c.r, max(c.g, c.b));
+    float d = mx - min(c.r, min(c.g, c.b));
+    if (d <= 0.0) return 0.0;
+    float h;
+    if (mx == c.r) h = (c.g - c.b) / d;
+    else if (mx == c.g) h = (c.b - c.r) / d + 2.0;
+    else h = (c.r - c.g) / d + 4.0;
+    return fract(h / 6.0);
+  }
+  if (uKey == 2) {
+    // Saturation (HSV): (max - min) / max; black has none.
+    float mx = max(c.r, max(c.g, c.b));
+    if (mx <= 0.0) return 0.0;
+    return (mx - min(c.r, min(c.g, c.b))) / mx;
+  }
+  if (uKey == 3) return c.r;
+  if (uKey == 4) return c.g;
+  if (uKey == 5) return c.b;
+  return luma(c);
+}
 const float SECTOR = 0.39269908169872414; // pi/8: 16 sectors of 22.5 deg
 const float SECTOR8 = 0.7853981633974483; // pi/4: the facet grammar's 8
 const ivec2 DIRS[16] = ivec2[16](
@@ -119,9 +154,8 @@ void main() {
   }
   vec4 other = texelFetch(uTex, q, 0);
 
-  float lSelf = luma(self.rgb);
-  float lOther = luma(other.rgb);
-  if (lSelf < uThreshold || lOther < uThreshold) {
+  // The barrier reads luma whatever the key.
+  if (luma(self.rgb) < uThreshold || luma(other.rgb) < uThreshold) {
     outColor = self;
     return;
   }
@@ -151,8 +185,12 @@ void main() {
     }
   }
 
-  // Bright seeks the smaller projection along v (for columns: the video's
-  // top). "swap" is symmetric: both members output the other's value.
+  // The higher key seeks the smaller projection along v (for columns: the
+  // video's top; under luma, bright climbs). "swap" is symmetric: both
+  // members output the other's value. Equal keys do not trade (until
+  // temperature flips the verdict).
+  float lSelf = key(self.rgb);
+  float lOther = key(other.rgb);
   float lUpper = isUpper ? lSelf : lOther;
   float lLower = isUpper ? lOther : lSelf;
   bool swap = lUpper < lLower;

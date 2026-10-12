@@ -14,7 +14,7 @@
 // section). Text is an on/off effect with no knobs — its slider went with its
 // section (John, 2026-10-11) — so the sections are Video and Audio.
 
-import { DEFAULTS, FEEDBACK_BLENDS } from '../content/params.js';
+import { DEFAULTS, FEEDBACK_BLENDS, SORT_BY } from '../content/params.js';
 
 export const SECTIONS = [
   {
@@ -42,7 +42,7 @@ export const GROUPS = [
     id: 'sort',
     section: 'video',
     title: 'sort',
-    tip: 'The visible effect: runs of the picture rearranged into ribbons. How much sorts, how far the ribbons wander, how much they boil and how far they run — and every image takes these too.',
+    tip: 'The visible effect: runs of the picture rearranged into ribbons. How much sorts and by what, how far the ribbons wander, how much they boil and how far they run — and every image takes these too.',
   },
   {
     id: 'feedback',
@@ -124,6 +124,18 @@ export const DEFS = [
     section: 'video',
     group: 'sort',
     tip: 'How much of the picture is sorted. 0 = untouched; 1 = everything but true black, which always holds as a barrier. The most expressive knob. Stored inverted, as threshold (1 − amount). Shapes images too.',
+  },
+  // The comparison key (round 8 part 2; John: "visually impactful", and the
+  // name is his pick — "sort by" over "sort mode"). Ordering only: the dark
+  // barrier stays on luma, so amount means the same under every key.
+  {
+    key: 'sortKey',
+    label: 'sort by',
+    type: 'select',
+    options: SORT_BY,
+    section: 'video',
+    group: 'sort',
+    tip: 'What decides which pixel climbs. luma = the bright rises; hue = colours stratify into bands; saturation = the vivid rises over the drab; red/green/blue = one channel leads. The dark barrier still holds. Shapes images too.',
   },
   {
     key: 'flowAmount',

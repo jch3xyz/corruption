@@ -77,7 +77,7 @@ const LAYOUT = {
   video: {
     loose: [],
     groups: [
-      ['sort', ['threshold', 'flowAmount', 'temperature', 'streak']],
+      ['sort', ['threshold', 'sortKey', 'flowAmount', 'temperature', 'streak']],
       ['feedback', ['feedbackVideo', 'decay', 'driftX', 'driftY', 'motionGate', 'feedbackBlend', 'feedbackMix']],
       ['engine', ['keyframe', 'passes', 'maxRes', 'maxVideos', 'flowMode', 'flowScale', 'flowSpeed', 'resetMinS', 'resetMaxS']],
     ],
@@ -98,7 +98,7 @@ const LAYOUT = {
   },
 };
 const LABELS = {
-  threshold: 'amount', flowAmount: 'flow', temperature: 'jitter', streak: 'ribbons',
+  threshold: 'amount', sortKey: 'sort by', flowAmount: 'flow', temperature: 'jitter', streak: 'ribbons',
   feedbackVideo: 'feedback', decay: 'trail', driftX: 'drift', driftY: 'drift', motionGate: 'follow motion',
   feedbackBlend: 'blend', feedbackMix: 'blend amount',
   keyframe: 'clear buffer', passes: 'sort passes', maxRes: 'max res', maxVideos: 'max videos',
@@ -232,6 +232,17 @@ function tier1() {
       byKey.feedbackMix.min === 0 && byKey.feedbackMix.max === 1 && byKey.feedbackMix.step === 0.01 &&
       byKey.feedbackBlend.tip.startsWith('How the trail meets the new frame.') &&
       byKey.feedbackMix.tip.startsWith('How much of the trail survives against the new frame.')
+  );
+  // Sort by (round 8 part 2): the comparison key as a select, luma at rest
+  // (the classic, bit for bit), right after amount in the sort column.
+  check(
+    'sort by: a select over luma · hue · saturation · red · green · blue (the shader’s order), luma at rest, right after amount, tip leading with what you see',
+    byKey.sortKey?.type === 'select' && byKey.sortKey.label === 'sort by' &&
+      byKey.sortKey.options.join() === 'luma,hue,saturation,red,green,blue' &&
+      DEFAULTS.sortKey === 'luma' && byKey.sortKey.group === 'sort' &&
+      DEFS.indexOf(byKey.sortKey) === DEFS.indexOf(byKey.threshold) + 1 &&
+      byKey.sortKey.tip.startsWith('What decides which pixel climbs. luma = the bright rises; hue = colours stratify into bands;') &&
+      /dark barrier still holds/.test(byKey.sortKey.tip) && /Shapes images too/.test(byKey.sortKey.tip)
   );
   // The source-following body (design review M8): one 0–1 knob in the body
   // column after body amount, resting at 0 so the fixed chord is unchanged.
@@ -1402,6 +1413,32 @@ async function tier2() {
     await sleep(60);
   }
 
+  // -- sort by (round 8 part 2): the comparison key, a select after amount --
+  {
+    const r = row('sortKey');
+    const sel = r.querySelector('select');
+    check(
+      'the sort by row is a select right after amount in the sort group, showing luma at rest',
+      !!sel && r.previousElementSibling === row('threshold') && r.closest('.group')?.dataset.group === 'sort' &&
+        [...sel.options].map((o) => o.value).join() === 'luma,hue,saturation,red,green,blue' &&
+        sel.value === 'luma' && text(r.querySelector('.value')) === 'luma' && !('sortKey' in store)
+    );
+    sel.value = 'hue';
+    sel.dispatchEvent(new win.Event('input', { bubbles: true }));
+    await sleep(60);
+    check('choosing hue stores sortKey "hue" and the value cell follows', store.sortKey === 'hue' && text(r.querySelector('.value')) === 'hue');
+    fire(r.querySelector('label'), 'dblclick');
+    await sleep(60);
+    check('double-clicking sort by puts luma back', store.sortKey === 'luma' && sel.value === 'luma');
+    win.chrome.storage.local.set({ sortKey: 'saturation' });
+    await sleep(60);
+    check('a sortKey written elsewhere is followed', sel.value === 'saturation' && text(r.querySelector('.value')) === 'saturation');
+    // Leave hue for the presets below to capture.
+    sel.value = 'hue';
+    sel.dispatchEvent(new win.Event('input', { bubbles: true }));
+    await sleep(60);
+  }
+
   // -- presets --
   const btnDefault = $('#preset-default');
   const slot = (x) => $(`#presets .slot[data-slot="${x}"]`);
@@ -1471,6 +1508,7 @@ async function tier2() {
       !('keyframe' in store.presets.A) &&
       store.presets.A.driftX === -0.0075 &&
       store.presets.A.driftY === 0.0025 &&
+      store.presets.A.sortKey === 'hue' &&
       Object.keys(store.presets.A).length === DEFS.length - PRESET_EXCLUDED.length &&
       store.presets.B === null
   );
@@ -1935,7 +1973,7 @@ async function tier2() {
 
   // Round 3, item 7: the Video rows name the medium switch that would wake them.
   // The handles in their columns, and the keys of theirs filed in the engine.
-  const SORT = ['threshold', 'flowAmount', 'temperature', 'streak'];
+  const SORT = ['threshold', 'sortKey', 'flowAmount', 'temperature', 'streak'];
   const SORT_ENGINE = ['flowMode', 'flowScale', 'flowSpeed'];
   const FEEDBACK = ['feedbackVideo', 'decay', 'driftX', 'driftY', 'motionGate', 'feedbackBlend', 'feedbackMix'];
   const FEEDBACK_ENGINE = ['resetMinS', 'resetMaxS'];

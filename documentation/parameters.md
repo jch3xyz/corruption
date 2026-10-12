@@ -28,6 +28,7 @@ rather than steers.
 | `images` | images chip | on | on/off | Images on/off (the **images** chip, 2026-10-12). Off suspends every image job — the still shown as it arrived. Image look comes from the sort knobs under Video. |
 | **Video · sort** | | | | |
 | `threshold` | amount (shown inverted) | **0.05** | 0–1 | Luma above this is eligible for sorting (and feedback). Near-zero corrupts almost everything while true black holds as a barrier; 1 = untouched. The single most expressive knob. **Shown inverted, as amount = 1 − threshold** (the handles round, 2026-10-12): the slider, the typed value, the arrow keys and a MIDI sweep all speak amount, so up is more of the picture sorted (0.95 at rest). Storage, presets, MIDI maps and `DEFAULTS` keep `threshold` in the stored sense, unchanged. |
+| `sortKey` | sort by | **luma** | luma · hue · saturation · red · green · blue | What decides which pixel climbs (round 8 part 2; John: "visually impactful", and the name is his — *sort by* over *sort mode*). **luma** = the bright rises, the classic and the resting state, bit for bit. **hue** = colours stratify into bands (red 0 → green ⅓ → blue ⅔ → back toward red; grey counts as 0). **saturation** = the vivid rises over the drab (`(max − min) / max`; black is 0). **red / green / blue** = one channel leads. **The ordering only**: the barrier stays on luma, so `threshold` (amount) means the same under every key and dark material always holds the picture together — a dark but vivid blue still walls the sort off under hue. Every key is a permutation (harness-pinned); equal keys never trade. Shapes images too. |
 | `flowAmount` | flow | **0.5** | 0–1 | **The resting state flows** (John's sweet spot, 2026-08-12). 0 = the classic vertical grammar, bit-identical. Up = sorting follows a slowly morphing **curl-noise flow field**: ribbons meander and curl along streamlines instead of climbing columns. Directions quantize to 16 sectors with a per-pass dithered boundary, so material rounds curves instead of pooling at fixed seams. Still a permutation — nothing added, nothing lost, harness-pinned. **Every element draws its own seed, rerolled when its content changes** (a new video in YouTube's reused player is new content): pattern, phase, morph rate, swirl size, and handedness all differ per medium — no two screens show the same corruption, and no knob controls this (it is identity, not a parameter). |
 | `temperature` | jitter | **0** | 0–0.5 | Fraction of pair-verdicts inverted per pass. The sort simmers at its equilibrium instead of settling into it: ribbons boil at their edges and the picture never comes to rest. Applies in straight sort and feedback alike; barriers still hold (the boil stays inside bright spans). 0.5 = a pure random walk, no net sorting. |
 | `streak` | ribbons | **256** | 1–256 | Longest compare-exchange stride (rounded down to a power of two). Directly sets how far pixels can travel per frame — the ribbon-length knob, promoted from the engine to the sort column in the handles round (2026-10-12). 1 = classic single-step odd-even. |
@@ -248,7 +249,13 @@ recovers automatically when real content returns.
   blend replaces the `max` in `kept`; for brighter, screen and add the
   result is then lerped from incoming by `uMix`, for mix `uMix` is the
   crossfade. The mask still reads `luma(kept)`.
-- Sort direction is fixed: bright rises toward the video's top.
+- `sortKey` → `uKey` (0 luma, 1 hue, 2 saturation, 3 red, 4 green, 5
+  blue; the order of `SORT_BY` in params.js, unknown names read as luma).
+  The shader's `key()` decides the ORDER — the higher key climbs — while
+  the threshold tests (both members, the span midpoint) still read
+  `luma()`. Key 0 is the very same expression as before, so the default is
+  bit-identical.
+- Sort direction is fixed: the higher key rises toward the video's top.
 
 ## Adaptive governor (metrics.js)
 
@@ -314,7 +321,7 @@ you can see or hear comes first and the setup folds away. Since the
 handles — three or four controls named for what they do — and whatever
 shapes rather than steers is filed in the engine:
 
-- **Video** — **sort** (amount, flow, jitter, ribbons), **feedback** (its
+- **Video** — **sort** (amount, sort by, flow, jitter, ribbons), **feedback** (its
   own switch, then trail, the drift pad, follow motion — which reads the
   feedback trail — then blend and blend amount, how the trail meets the
   new frame), **engine** (clear buffer, a button that wipes the trail
@@ -330,7 +337,7 @@ shapes rather than steers is filed in the engine:
   chosen once, not played. The `audio` master is the chip above.
 - **Text** has no section: it is the chip and nothing else.
 
-In the mixer the effect columns fit their eight lane cells (sort 6,
+In the mixer the effect columns fit their eight lane cells (sort 7,
 feedback 8 — exactly full since the blend, body 8 — exactly full since
 follow, smear 5); the engines are 9 rows each (the Video engine since
 clear buffer), so an unfolded engine spills into a second column and the

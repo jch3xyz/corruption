@@ -54,6 +54,7 @@ export function createPipeline(gl) {
     'uTemp',
     'uMotionGate',
     'uSeed',
+    'uKey',
   ]);
   const field = buildProgram(gl, VERT_FULLSCREEN, FRAG_FIELD, [
     'uProcSize',
@@ -192,6 +193,8 @@ export function createPipeline(gl) {
       gl.uniform1f(sort.uniforms.uMotionGate, opts.motionGate ?? 0);
       gl.uniform1f(sort.uniforms.uUseFlow, opts.flow ? 1 : 0);
       gl.uniform1f(sort.uniforms.uFacets, opts.facets ? 1 : 0);
+      // The ordering key (SORT_BY order in params.js); absent = 0 = luma.
+      gl.uniform1i(sort.uniforms.uKey, opts.key | 0);
       gl.uniform1i(sort.uniforms.uTex, 0);
       // Always bound (every bundle owns one) so samplers stay complete;
       // never sampled unless uUseFlow is on.

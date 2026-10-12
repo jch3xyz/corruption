@@ -504,6 +504,166 @@ function tier0() {
     'pipeline: a different seed still conserves every pixel',
     globalKey(otherSeed) === globalKey(unsorted)
   );
+
+  // --- Sort by (round 8 part 2): the comparison key -------------------------
+  // key 0 luma (the classic), 1 hue, 2 saturation, 3/4/5 red/green/blue. Only
+  // the ordering reads the key; the barrier stays on luma.
+  const KEYS = ['luma', 'hue', 'saturation', 'red', 'green', 'blue'];
+  const cpuKey = (k, r, g2, b2) => {
+    if (k === 1) {
+      const mx = Math.max(r, g2, b2);
+      const d = mx - Math.min(r, g2, b2);
+      if (d <= 0) return 0;
+      const h = mx === r ? (g2 - b2) / d : mx === g2 ? (b2 - r) / d + 2 : (r - g2) / d + 4;
+      return ((h / 6) % 1 + 1) % 1;
+    }
+    if (k === 2) {
+      const mx = Math.max(r, g2, b2);
+      return mx <= 0 ? 0 : (mx - Math.min(r, g2, b2)) / mx;
+    }
+    if (k >= 3) return [r, g2, b2][k - 3];
+    return lumaOf(r, g2, b2);
+  };
+  // Readback runs bottom-up (present() flips V), so the video's top is the
+  // last readback row: ordered means the key never falls going up a column.
+  // Near-ties (inside tol) are excused — the shader works on half floats.
+  const climbs = (px, k, tol) => {
+    let bad = 0;
+    for (let x = 0; x < W; x++) {
+      for (let y = 0; y + 1 < H; y++) {
+        const i = (y * W + x) * 4;
+        const j = ((y + 1) * W + x) * 4;
+        const lo = cpuKey(k, px[i] / 255, px[i + 1] / 255, px[i + 2] / 255);
+        const hi = cpuKey(k, px[j] / 255, px[j + 1] / 255, px[j + 2] / 255);
+        if (lo > hi + tol) bad++;
+      }
+    }
+    return bad;
+  };
+  const same = (a, b2) => a.length === b2.length && a.every((v, i) => v === b2[i]);
+  check(
+    'sort by: key absent = key 0 (luma) = the previous output, bit for bit — straight, and flowing in facets',
+    same(run(sortSteps({ key: 0 })), s1) && same(run(flowSteps(1, 12.5, true)), faceted) &&
+      same(run((p, b) => {
+        p.uploadFrame(b, noisy);
+        p.runReset(b);
+        p.runFieldPass(b, { amount: 1, scale: 4, speed: 0.05, time: 12.5, seed: 7 });
+        p.runSortPasses(b, 200, 0, 64, { flow: true, facets: true, key: 0 });
+      }), faceted)
+  );
+  const byKeyOut = KEYS.map((_, k) => run(sortSteps({ key: k })));
+  const perKey = KEYS.map((name, k) => ({
+    name,
+    columns: sameColumns(byKeyOut[k], unsorted),
+    bad: climbs(byKeyOut[k], k, k === 1 || k === 2 ? 0.02 : 0.75 / 255),
+    moved: byKeyOut[k].some((v, i) => v !== unsorted[i]),
+  }));
+  check(
+    `sort by: every key is a permutation — each column keeps exactly its own pixels (${perKey.map((r) => `${r.name} ${r.columns ? 'ok' : 'LOST'}`).join(', ')})`,
+    perKey.every((r) => r.columns && r.moved)
+  );
+  check(
+    `sort by: every key sorts by what it says — the higher key climbs to the top of each column (inversions: ${perKey.map((r) => `${r.name} ${r.bad}`).join(', ')})`,
+    perKey.every((r) => r.bad === 0)
+  );
+  check(
+    'sort by: the keys are genuinely different orders (every pair of keys gives a different picture)',
+    byKeyOut.every((a, i) => byKeyOut.every((b2, j) => j <= i || !same(a, b2)))
+  );
+  check(
+    'sort by: every key is deterministic',
+    KEYS.every((_, k) => same(run(sortSteps({ key: k })), byKeyOut[k]))
+  );
+
+  // Red over a dimmer green (0.21 vs 0.17 luma): luma finds the column
+  // already in order and leaves it bit-identical; hue ranks green (1/3)
+  // above red (0) and lifts it over.
+  const redGreen = src((x) => {
+    x.fillStyle = 'rgb(255,0,0)';
+    x.fillRect(0, 0, W, H / 2);
+    x.fillStyle = 'rgb(0,60,0)';
+    x.fillRect(0, H / 2, W, H / 2);
+  });
+  const rgSteps = (key) => (p, b) => {
+    p.uploadFrame(b, redGreen);
+    p.runReset(b);
+    if (key !== null) p.runSortPasses(b, 200, 0, 64, { key });
+  };
+  const rgIn = run(rgSteps(null));
+  const rgLuma = run(rgSteps(0));
+  const rgHue = run(rgSteps(1));
+  const topPx = (px) => {
+    const i = ((H - 1) * W + (W >> 1)) * 4; // readback's last row = the top
+    return [px[i], px[i + 1], px[i + 2]].join(',');
+  };
+  check(
+    `sort by: red over a dimmer green — luma leaves it bit-identical, hue lifts the green to the top (top pixel ${topPx(rgLuma)} → ${topPx(rgHue)})`,
+    same(rgLuma, rgIn) && topPx(rgLuma) === '255,0,0' && topPx(rgHue) === '0,60,0' && sameColumns(rgHue, rgIn)
+  );
+
+  // Equal keys never trade: two colours with the same red channel (exactly
+  // equal on the GPU — the same 8-bit value), interleaved row by row. Sorted
+  // by red the picture is untouched; by luma or green it reorders.
+  const sameRed = src((x) => {
+    for (let j = 0; j < H; j++) {
+      x.fillStyle = j % 2 ? 'rgb(200,180,0)' : 'rgb(200,0,0)';
+      x.fillRect(0, j, W, 1);
+    }
+  });
+  const srSteps = (key) => (p, b) => {
+    p.uploadFrame(b, sameRed);
+    p.runReset(b);
+    if (key !== null) p.runSortPasses(b, 200, 0, 64, { key });
+  };
+  const srIn = run(srSteps(null));
+  check(
+    'sort by: equal keys never trade — rows sharing a red value stay put under red, and reorder under luma and green',
+    same(run(srSteps(3)), srIn) && !same(run(srSteps(0)), srIn) && !same(run(srSteps(4)), srIn)
+  );
+
+  // The barrier stays on luma under every key: a dark band (rows 28–35, at
+  // least half the longest stride wide, so no stride can straddle it past
+  // its midpoint check) stays put, and each side keeps its own material.
+  // The band is a deep blue, rgb(0,0,40): luma 0.011, under the 0.05
+  // threshold, but HIGH under hue (2/3), saturation (1) and blue (0.16) — so
+  // a barrier that read the key instead of luma would let it trade.
+  const banded = src((x) => {
+    x.drawImage(noisy, 0, 0);
+    x.fillStyle = 'rgb(0,0,40)';
+    x.fillRect(0, 28, W, 8);
+  });
+  const bandSteps = (key) => (p, b) => {
+    p.uploadFrame(b, banded);
+    p.runReset(b);
+    if (key !== null) p.runSortPasses(b, 200, 0.05, 16, { key });
+  };
+  const bandIn = run(bandSteps(null));
+  const sideKey = (px, x, y0, y1) => {
+    const out = [];
+    for (let y = y0; y < y1; y++) {
+      const i = (y * W + x) * 4;
+      out.push(`${px[i]},${px[i + 1]},${px[i + 2]}`);
+    }
+    return out.sort().join('|');
+  };
+  const bandHolds = KEYS.map((name, k) => {
+    const out = run(bandSteps(k));
+    let ok = out.some((v, i) => v !== bandIn[i]);
+    for (let x = 0; x < W && ok; x++) {
+      for (let y = 28; y < 36; y++) {
+        const i = (y * W + x) * 4;
+        if (out[i] !== 0 || out[i + 1] !== 0 || out[i + 2] !== 40) ok = false;
+      }
+      // Readback rows 0–27 are source rows 63–36 (below the band), 36–63 above.
+      if (sideKey(out, x, 0, 28) !== sideKey(bandIn, x, 0, 28)) ok = false;
+      if (sideKey(out, x, 36, 64) !== sideKey(bandIn, x, 36, 64)) ok = false;
+    }
+    return ok ? null : name;
+  }).filter(Boolean);
+  check(
+    `sort by: the dark barrier is luma's under every key — a deep-blue band (dark, but high in hue, saturation and blue) stays put and nothing crosses it (${bandHolds.join(', ') || 'all hold'})`,
+    bandHolds.length === 0
+  );
 }
 
 // --- The boot guard (round 8) ------------------------------------------------
