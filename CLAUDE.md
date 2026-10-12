@@ -51,20 +51,30 @@ Quick facts:
   suite at `/test/harness/panel.html` (pure DOM; drives the shipped panel in
   an iframe against a stubbed chrome.storage).
   Strip suite at `/test/harness/strip.html` (mock video page; mounts the
-  in-page bottom strip directly, no extension needed).
+  in-page bottom strip directly, no extension needed). **Run the pure-DOM
+  suites headless: `node test/headless.mjs panel strip text audio`** — a
+  background tab in the app's browser pane reports hidden and fails checks
+  for nothing.
 - Params live in chrome.storage.local; stored values beat code defaults —
   press the panel's **default** preset after changing DEFAULTS (it is never stored).
   Presets A/B/C (`presets`) are snapshots; a row double-click returns to the last-loaded one (`presetBase`).
-- The panel is an instrument, not a form (rebuilt 2026-08-20): three sections
-  behind dividers, sort and feedback knobs filed under **Video** (John's
-  call), typed values that clamp and snap, double-click a row to restore one
-  parameter, and a tooltip on everything. **Video and Audio each have three
-  groups** (sort · feedback · engine; body · smear · engine — engines folded
-  by default). **Labels are synth vocabulary for the stranger; keys never
-  change** (storage, MIDI maps, docs), and every tip ends with its key.
-  Rows, groups and hover copy live in `source/panel/defs.js`; **add a row
-  there when you add a param, with its `group`** — the panel harness fails if
-  a stored param has no row, a row has no tip, or a row leaves its group.
+- The panel is an instrument, not a form (rebuilt 2026-08-20): two sections
+  (Video, Audio) behind dividers, sort and feedback knobs filed under
+  **Video** (John's call), typed values that clamp and snap, double-click a
+  row to restore one parameter, and a hover bubble on everything (nothing
+  at rest). **Video and Audio each have three groups** (sort · feedback ·
+  engine; body · smear · engine — engines folded by default). **The four
+  chips are the four masters** (video, images, text, audio — text has no
+  knobs). **Gated rows hide**, they do not grey. **Labels are synth
+  vocabulary for the stranger; keys never change** (storage, MIDI maps,
+  docs), and every tip ends with its key. Rows, groups and hover copy live
+  in `source/panel/defs.js`; **add a row there when you add a param, with
+  its `group`** — the panel harness fails if a stored param has no row, a
+  row has no tip, or a row leaves its group.
+- **The panel's home is the bottom strip** (John, 2026-10-11): a 28 px
+  rail (A/B, chips, presets) that unfolds to a 208 px mixer with the four
+  effect columns in view. Window and side panel remain as options. MIDI
+  is a feature, not the primary mode: its block hides until a device.
 - How both pipelines actually work: [documentation/how-it-works.md](documentation/how-it-works.md).
   Per-knob documentation: [documentation/parameters.md](documentation/parameters.md).
   Site quirks: [documentation/site-notes.md](documentation/site-notes.md).

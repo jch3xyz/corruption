@@ -4,12 +4,13 @@
 // there persists in the kiosk profile.
 //
 // Where the panel opens is the stored preference `panelHome` (design review
-// M9, two prototypes pending John's choice):
-//   'window' — its own popup window (the default, and every fallback);
-//   'side'   — Chrome's side panel, docked in the browser window (Chrome
-//              114+; same extension origin, so the MIDI grant should carry);
+// M9; John chose the strip 2026-10-11):
 //   'strip'  — a horizontal strip the content script puts along the bottom
-//              of the page (source/content/strip.js).
+//              of the page (source/content/strip.js): a one-line rail at
+//              rest, the mixer when unfolded. The default.
+//   'window' — its own popup window (every fallback);
+//   'side'   — Chrome's side panel, docked in the browser window (Chrome
+//              114+; same extension origin, so the MIDI grant should carry).
 // A change applies on the next open. Every side-panel and strip call is
 // guarded: a Chrome without the API, a page with no content script
 // (chrome://, the Web Store), or a strip that failed to mount all fall
@@ -20,11 +21,12 @@ chrome.runtime.onInstalled.addListener(({ reason }) => {
 });
 
 const HOMES = ['window', 'side', 'strip'];
-let panelHome = 'window';
+const DEFAULT_HOME = 'strip';
+let panelHome = DEFAULT_HOME;
 let homeKnown = false;
 
 function setHome(value) {
-  panelHome = HOMES.includes(value) ? value : 'window';
+  panelHome = HOMES.includes(value) ? value : DEFAULT_HOME;
   homeKnown = true;
   // With the side panel chosen, Chrome itself opens it on a toolbar click
   // (and action.onClicked stops firing); otherwise the click comes to us.
@@ -37,9 +39,9 @@ function setHome(value) {
 }
 
 const homeLoaded = chrome.storage.local
-  .get({ panelHome: 'window' })
+  .get({ panelHome: DEFAULT_HOME })
   .then(({ panelHome: h }) => setHome(h))
-  .catch(() => setHome('window'));
+  .catch(() => setHome(DEFAULT_HOME));
 
 try {
   chrome.sidePanel?.setOptions?.({ path: 'panel/panel.html', enabled: true })?.catch?.(() => {});

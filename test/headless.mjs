@@ -6,6 +6,12 @@
 //   node test/headless.mjs panel strip text        # with test/serve.py running
 //   node test/headless.mjs http://localhost:8437/test/harness/audio.html
 //
+// Screenshots, for looking at a layout without a visible tab:
+//   HARNESS_SHOT_DIR=/tmp/shots HARNESS_VIEWPORT=1280x800 node test/headless.mjs strip
+// saves <page>.png after each suite completes. For a page that is not a
+// suite (panel-frame.html?layout=strip, say) set HARNESS_NO_SUITE=1 and the
+// runner waits HARNESS_WAIT_MS (default 1500) and shoots.
+//
 // A headless page counts as visible, so the pure-DOM suites (panel, strip,
 // text, audio tiers 1–2) run deterministically here. The visual suite
 // (index.html) still needs a real, visible tab — rVFC starves otherwise.
@@ -13,7 +19,7 @@
 // Chrome: $CHROME, else Google Chrome in /Applications.
 
 import { spawn } from 'node:child_process';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -21,13 +27,19 @@ const CHROME =
   process.env.CHROME || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 const BASE = process.env.HARNESS_BASE || 'http://localhost:8437/test/harness/';
 const TIMEOUT_MS = Number(process.env.HARNESS_TIMEOUT || 90000);
+const SHOT_DIR = process.env.HARNESS_SHOT_DIR || '';
+const NO_SUITE = process.env.HARNESS_NO_SUITE === '1';
+const WAIT_MS = Number(process.env.HARNESS_WAIT_MS || 1500);
+const [VIEW_W, VIEW_H] = (process.env.HARNESS_VIEWPORT || '1400x900').split('x').map(Number);
 
 const pages = process.argv.slice(2);
 if (!pages.length) {
   console.error('usage: node test/headless.mjs <panel|strip|text|audio|url> ...');
   process.exit(2);
 }
-const urls = pages.map((p) => (/^https?:/.test(p) ? p : `${BASE}${p}.html`));
+// A bare suite name (panel) becomes its page; anything with an extension or
+// a query string is used as written, relative to BASE.
+const urls = pages.map((p) => (/^https?:/.test(p) ? p : /[.?]/.test(p) ? `${BASE}${p}` : `${BASE}${p}.html`));
 
 const profile = mkdtempSync(join(tmpdir(), 'corruption-headless-'));
 const port = 9222 + Math.floor(Math.random() * 500);
@@ -41,7 +53,7 @@ const chrome = spawn(
     '--autoplay-policy=no-user-gesture-required',
     `--remote-debugging-port=${port}`,
     `--user-data-dir=${profile}`,
-    '--window-size=1400,900',
+    `--window-size=${VIEW_W},${VIEW_H}`,
     'about:blank',
   ],
   { stdio: ['ignore', 'ignore', 'pipe'] }
@@ -105,6 +117,7 @@ async function runPage(url) {
   await s.open;
   await s.send('Runtime.enable');
   await s.send('Page.enable');
+  await s.send('Emulation.setDeviceMetricsOverride', { width: VIEW_W, height: VIEW_H, deviceScaleFactor: 1, mobile: false });
   await s.send('Page.navigate', { url });
   const deadline = Date.now() + TIMEOUT_MS;
   const probe = `(() => {
@@ -116,13 +129,25 @@ async function runPage(url) {
     return JSON.stringify({ verdict: done ? done.textContent : m[0], fails });
   })()`;
   let result = null;
-  while (Date.now() < deadline) {
-    const { result: r } = await s.send('Runtime.evaluate', { expression: probe, returnByValue: true });
-    if (r.value) {
-      result = JSON.parse(r.value);
-      break;
+  if (NO_SUITE) {
+    await sleep(WAIT_MS);
+    result = { verdict: 'no suite: shot only', fails: [] };
+  } else {
+    while (Date.now() < deadline) {
+      const { result: r } = await s.send('Runtime.evaluate', { expression: probe, returnByValue: true });
+      if (r.value) {
+        result = JSON.parse(r.value);
+        break;
+      }
+      await sleep(250);
     }
-    await sleep(250);
+  }
+  if (SHOT_DIR) {
+    await sleep(300);
+    const { data } = await s.send('Page.captureScreenshot', { format: 'png' });
+    mkdirSync(SHOT_DIR, { recursive: true });
+    const name = url.replace(BASE, '').replace(/[^\w.-]+/g, '_') || 'page';
+    writeFileSync(join(SHOT_DIR, `${name}.png`), Buffer.from(data, 'base64'));
   }
   const consoleErrors = s.events
     .filter((e) => e.method === 'Runtime.exceptionThrown')

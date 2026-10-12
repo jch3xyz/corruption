@@ -387,63 +387,87 @@ no in-page mark; that is John's call.
 
 The panel has its own harness: `test/harness/panel.html`.
 
-### Where the panel lives (`panelHome`, prototypes pending John's choice)
+### Where the panel lives (`panelHome`; the strip, John's pick 2026-10-11)
 
 Design review M9: the room found a separate window odd, and a synth-literate
-player expects a horizontal strip under the picture, like a mixer. Two
-candidates are built beside the window, behind one stored preference, so
-John can play all three and choose. `panelHome` is a **panel preference, not
-a parameter**: it lives outside `DEFAULTS` beside `tooltips`, so no content
-script's param filter sees it, and the harness's "every stored key has a
-row" check excludes it. Its row is **panel lives in**, under `tooltips` at
-the bottom of the panel. **A change applies the next time the panel opens**;
-the panel you are using never moves out from under you.
+player expects a horizontal strip under the picture, like a mixer. Three
+homes were built behind one stored preference; John played them and chose
+the strip, which is now the default. `panelHome` is a **panel preference,
+not a parameter**: it lives outside `DEFAULTS` beside `tooltips`, so no
+content script's param filter sees it, and the harness's "every stored key
+has a row" check excludes it. Its row is **panel lives in**, in the prefs
+line. **A change applies the next time the panel opens**; the panel you are
+using never moves out from under you.
 
 | value | home | how it opens |
 |---|---|---|
-| `window` (default) | its own 400 × 720 popup window, as before | toolbar icon, Ctrl+Shift+P |
+| `strip` (default) | a strip along the bottom of every page: a **28 px rail** at rest, a **208 px mixer** unfolded | always present; the ▴/▾ button at its right end, Ctrl+Shift+P and the toolbar icon unfold and fold it |
+| `window` | its own 400 × 720 popup window | toolbar icon, Ctrl+Shift+P |
 | `side` | Chrome's side panel, docked in the browser window (Chrome 114+) | toolbar icon (Chrome opens it itself), Ctrl+Shift+P |
-| `strip` | a strip about 150 px tall along the bottom of every page, folding down to a thin **CORRUPTION ▴** tab | the tab, Ctrl+Shift+P, toolbar icon (all toggle) |
 
 All three run the same `panel.html`, `panel.js` and `panel.css`; there is
-one source of truth for every control and tip.
+one source of truth for every control, tip and gesture.
 
-- **Side panel.** Uses the manifest's `side_panel.default_path` and the
-  `sidePanel` permission. With `side` chosen the service worker sets
-  `openPanelOnActionClick`, so the toolbar click is Chrome's own; the
-  shortcut calls `chrome.sidePanel.open()` inside the key's gesture. Below
-  380 px wide the panel tightens its gutters, lets the shortcuts line and
-  the preset row wrap, and grows the help strip to 188 px so every tip still
-  fits (the harness checks 320, 360 and 420 px for overflow and clipped
-  tips). The side panel stays listed in Chrome's side-panel menu in every
-  home; nothing is gained by hiding it.
-- **Strip.** `source/content/strip.js`, top frame only, independent of
-  `enabled`. A `<deflection-strip>` element on `<html>` with its geometry set
-  inline `!important` and a closed shadow root, so page CSS cannot move it or
-  reach inside. It hosts `panel.html?layout=strip` in an iframe:
-  `panel.css` lays that out as the A/B, chips and presets in a cluster at
-  the left, the sections as five-row columns in a lane that scrolls
-  sideways (each section starts a fresh column; an unfolded engine adds
-  columns, never height), MIDI and the panel prefs to the right, and the
-  help copy as a full-height column at the right edge. Folded, there is no
-  iframe at all, so nothing can take the page's keyboard focus; the tab is
-  out of the tab order and pressing it does not take focus. The fold state
-  is `stripOpen` (written by the strip, followed by every tab). The iframe
-  is dropped while the tab is hidden, so only the visible tab runs a panel.
+- **The strip.** `source/content/strip.js`, top frame only, independent of
+  `enabled`. A `<deflection-strip>` element on `<html>` with its geometry
+  set inline `!important` and a closed shadow root, so page CSS cannot move
+  it or reach inside. It hosts `panel.html?layout=strip` in an iframe that
+  is always there while the tab is visible, at one of two heights:
+  - **The rail (28 px), the transport line.** One row: the title, the A/B
+    (22 px, click latches, hold compares), the four medium chips, the
+    presets, and the fold button ▴ at the right end. Nothing else; no hover
+    help (there is no room beside a 22 px control). This is what John
+    chose over a fold-to-tab (the key gesture would have been two clicks
+    away) and over always-open (it would always cover the player's
+    controls). The rail covers the bottom 28 px of the page, fixed footers
+    included; there is deliberately **no hover-to-unfold**, because the rail
+    sits where a player's scrubber often is and the pointer crosses it
+    constantly.
+  - **The mixer (208 px).** The panel's strip layout: the global block as a
+    cluster at the left (title, A/B, chips, presets, the prefs line, and the
+    MIDI line when a controller is present), then the sections as columns
+    in a lane — **sort · feedback · body · smear, all four in view at
+    1280 px with no sideways scroll** (John: video and audio controls at
+    hand without horizontal scrolling). The lane is eight rows of 24 px; a
+    section header starts a column, its first group's caption sits beneath
+    it, and every later group starts a fresh column. A folded engine costs
+    no column: its `engine ▸` disclosure sits on the section's title line;
+    unfolded, its rows take a column of their own under an *ENGINE* caption
+    (the lane scrolls sideways only then). Gated rows hide here too, so a
+    column closes up to its switch. The fold button ▾ sits in the top-right
+    corner.
+  The panel reads which it is from its own height (a `max-height: 60px`
+  media query), so no state travels down; the fold button posts `toggle` up
+  to the strip, which resizes. The fold state is `stripOpen` (written by
+  the strip, followed by every tab). The iframe is out of the page's tab
+  order (`tabindex="-1"`) and nothing in the housing ever takes focus; it is
+  dropped while the tab is hidden, so only the visible tab runs a panel.
   The strip hides while anything is fullscreen (the panel keeps running, so
   a MIDI controller still plays). If the panel inside does not report that
   it booted within 8 s, the strip removes itself and the page is as it was;
   the toolbar and shortcut then open the window instead.
+- **Side panel.** Uses the manifest's `side_panel.default_path` and the
+  `sidePanel` permission. With `side` chosen the service worker sets
+  `openPanelOnActionClick`, so the toolbar click is Chrome's own; the
+  shortcut calls `chrome.sidePanel.open()` inside the key's gesture. Below
+  380 px wide the panel tightens its gutters and lets the shortcuts line
+  and the preset row wrap (the harness checks 320, 360 and 420 px for
+  overflow and for every tip fitting the bubble).
 - **Fallbacks.** Every side-panel and strip call is guarded. A Chrome without
   `chrome.sidePanel`, a page with no content script (chrome:// pages, the Web
   Store), or a strip that failed all fall through to the window.
 
-**Verified** (headless Chromium, harness): the prefs row, its three options
-and its storage; the strip layout at 1280 × 150 (sections side by side, no
-overflow, every tip fits); the side-panel widths 320–420 px; the strip's
-housing on a mock page with hostile CSS (`test/harness/strip.html`: geometry,
-isolation, fold by tab / keyboard / message, focus kept, fullscreen, tab
-visibility, the failure path leaving the page untouched).
+**Verified** (headless Chrome, `node test/headless.mjs strip panel`): the
+prefs row, its three options and its storage; the mixer at 1280 × 208 (four
+effect columns in view, no sideways scroll, nothing cut off, the engine
+disclosure on the title line, an unfolded engine adding a captioned
+column, gates closing a column up, the bubble beside a row inside the
+frame); the rail at 1280 × 28 (one aligned line, sections and prefs hidden,
+no bubble, the A/B latching); the side-panel widths 320–420 px; the strip's
+housing on a mock page with hostile CSS (`test/harness/strip.html`: the
+rail's geometry, isolation, unfold by the panel's button, fold by keyboard
+and message, focus kept, fullscreen, tab visibility at both heights, the
+failure path leaving the page untouched).
 
 **Not verified without a real Chrome** (the extension cannot load in
 headless Playwright): that `sidePanel.open()` from the shortcut is accepted
@@ -455,13 +479,16 @@ strip at all (the iframe carries `allow="midi"`, but the permission prompt
 in a cross-origin frame and a page's own Permissions-Policy may refuse it);
 that Chrome's command takes Ctrl+Shift+P before a page that binds it;
 that page CSP never blocks the extension iframe on real sites (the 8 s
-failure path covers it if it does).
+failure path covers it if it does); how the rail sits over real players'
+controls and fixed footers.
 
-**Known costs of the strip.** Expanded, it covers the bottom ~150 px of the
-page, fixed footers and players' own controls included; it does not push
-the page up, because that means restyling the page. `panel.html` is
-web-accessible so pages can host it, which also means any page can detect
-that the extension is installed.
+**Known costs of the strip.** The rail covers the bottom 28 px of every
+page and the mixer ~208 px, fixed footers and players' own controls
+included; it does not push the page up, because that means restyling the
+page. Fullscreen hides it, so a mouse user has no controls in fullscreen
+(a keyboard-summoned overlay is the direction if that matters). `panel.html`
+is web-accessible so pages can host it, which also means any page can
+detect that the extension is installed.
 
 ## MIDI
 

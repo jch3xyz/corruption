@@ -556,3 +556,98 @@ A synth-literate stranger can now find the piece, play it, break it and
 recover in thirty seconds, in an instrument's words. What remains is the
 "how much" handle and the seam on the page, both John's calls, and the
 effects queue from round 2.
+
+---
+
+# Round 4: John tests the branch in real Chrome (2026-10-11)
+
+The first local pass after the cloud session. John loaded the branch, played
+the three homes and sent notes; each decided item landed the same day as
+its own verified commit. Room evidence outranks the heuristics, as before.
+
+## Decisions taken
+
+- **The strip is the home** (M9 closed). "I prefer the bottom strip to the
+  separate webpage approach." Its recorded concerns, re-weighed: covering
+  the bottom of the page (the real cost — answered by resting as a 28 px
+  rail), fullscreen hiding it (open; a keyboard-summoned overlay is the
+  direction if it matters), MIDI in a cross-origin iframe (demoted with
+  MIDI itself), CSP/CSP-like refusal (the 8 s failure path), Ctrl+Shift+P
+  contention and extension detectability (footnotes). At rest the strip is
+  a **transport line** — John's pick over fold-to-tab (the key gesture two
+  clicks away) and over always-open-translucent (always over the player's
+  controls). No hover-to-unfold, on purpose: the rail sits where a scrubber
+  often is. Unfolded, it is a 208 px mixer with sort · feedback · body ·
+  smear in view at 1280 px and no sideways scroll (John: video and audio at
+  hand without horizontal scrolling; the strip free to grow taller). A
+  folded engine costs no column: its disclosure sits on the section's
+  title line.
+- **Text is a switch.** "Get rid of the text slider and just leave the
+  toggle. It's more of an on/off effect anyway." `textMin` is gone; 8 is a
+  constant; the Text section went with it; the four chips are the four
+  masters, each with its own ⊙. Trade-off: one less control against a
+  navigability dial the stranger never understood.
+- **Gated controls hide; they do not grey.** "If controls are greyed out
+  contingent on a different toggle being on, then those controls shouldn't
+  be visible at all until the toggle is on." The gating switch stays as the
+  header of the knobs it hides, so the surface unfolds as it is patched (the
+  engine-fold gesture everywhere); a switched-off medium's section keeps
+  its header and says which chip brings it back. Trade-off: recognition
+  (you cannot see that feedback *has* knobs until it is on) for minimalism
+  and the instrument feel; mitigated by the switch-as-header.
+- **Help is a bubble, nothing at rest.** The help column "is very large,
+  takes up a lot of real-estate, and stays present even with tooltips
+  off"; "in an ideal world our control panel will be so intuitive that
+  tooltips would be unnecessary." John's pick over a single help toggle
+  with captions and over no help at all. Heuristic 10 (help at the moment
+  of need) and 8 over an always-visible legend (6); the two hidden gestures
+  are now only discoverable by hovering.
+- **MIDI hides until a controller connects.** "While MIDI should still be
+  a feature, it will by far not be the primary mode of operation. Primary
+  mode of operation is keyboard and mouse." Its block and every ⊙ wait for
+  a device; the chips carry a ⊙ each so every medium stays mappable.
+
+## The finding that is still open: the controls themselves
+
+John, verbatim in substance: the effects were separated from the engines,
+but the controls were neither simplified nor changed in how they work; they
+were given no more hold over the effect and no more intuitive handles;
+the existing list was only made easier to navigate. And: *which* controls a
+player needs *when*, and *what* they need to know about them then, should
+be re-asked — keeping the feeling of an instrument rather than a control
+panel, with the honest caveat that a synthesizer is an instrument with a
+control panel.
+
+A first cut, for John to argue with (it is an effects decision, not a
+panel one — each line changes what a handle means):
+
+| Effect | Handles, named for the result | Demoted to engine |
+|---|---|---|
+| Sort | amount (threshold, inverted), flow, wildness (jitter) | flow mode, flow scale, flow speed |
+| Feedback | trail (decay), drift (one 2-D pad for drift x/y), follow motion (motion gate) | clear window |
+| Body | ring (ring time), drive, mix | body type, exciter, comb damp |
+| Smear | tail, level (return), wobble | clears and their timings |
+
+The 2-D drift pad is the one new control form: two sliders become a
+direction you push. This sits with open items 2–5 from round 3 (amount,
+macro, headline knobs) and the effects queue from round 2; they are one
+piece of work.
+
+## Outside the box (John: "think of this extension like a harness on the
+internet… it could be a whole overlay")
+
+Logged, not scheduled:
+
+- **A keyboard-summoned overlay** over the page (Ctrl+Shift+P in
+  fullscreen): large handles, survives fullscreen, where the strip cannot.
+- **Handles on the media itself**: hover a corrupted video and its own
+  overlay appears — drag sets drift direction, scroll sets amount. The
+  harness idea taken literally; a content-script surface, so a spike, not
+  a commit.
+
+## Verification
+
+Headless Chrome via `node test/headless.mjs` (new this round; a background
+tab in the app's pane reports hidden and fails a dozen checks for
+nothing): panel 218/218, strip 41/41, text 35/35, audio tiers 34/34. Real
+Chrome: John's checklist in build-plan.md, rewritten for the strip.

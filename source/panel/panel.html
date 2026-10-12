@@ -38,6 +38,9 @@
     <p class="hint midi-hint" data-tip="Each row's ⊙ button is its MIDI learn control: click it to arm, then move a knob or fader on the controller to bind that CC. One CC per parameter; re-learn to change it.">Click a param's ⊙ then move a knob to map it.</p>
   </div>
   <div id="prefs"></div>
+  <!-- Strip layout only (panel.js shows it): grows the rail to the mixer and
+       folds it back. Posts to the strip in the page; the strip resizes. -->
+  <button id="strip-fold" class="fold" type="button" hidden data-tip="Unfold the full mixer, or fold it back to this one line. Ctrl+Shift+P does the same from the page.">▴</button>
   </main>
   <div id="tooltip" role="note"></div>
   <script type="module" src="panel.js"></script>

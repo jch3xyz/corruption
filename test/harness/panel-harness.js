@@ -295,10 +295,10 @@ function tier1() {
       !DEFS.some((d) => d.key === 'panelHome' || d.key === 'stripOpen')
   );
   check(
-    'panelHome offers window · side · strip, defaults to the window, and its tip says when a change applies',
+    'panelHome offers strip · window · side, defaults to the strip (John, 2026-10-11), and its tip says when a change applies',
     PANEL_HOME.key === 'panelHome' &&
-      PANEL_HOMES.join() === 'window,side,strip' &&
-      PANEL_HOME.default === 'window' &&
+      PANEL_HOMES.join() === 'strip,window,side' &&
+      PANEL_HOME.default === 'strip' &&
       PANEL_HOME.tip.length > 20 &&
       /next time/i.test(PANEL_HOME.tip)
   );
@@ -529,8 +529,8 @@ async function tier2() {
       !!homeRow && homeRow.previousElementSibling === prefRow && text(homeRow.querySelector('label')) === 'panel lives in'
     );
     check(
-      'it offers the three homes, window first and selected',
-      !!sel && [...sel.options].map((o) => o.value).join() === 'window,side,strip' && sel.value === 'window'
+      'it offers the three homes, strip first and selected',
+      !!sel && [...sel.options].map((o) => o.value).join() === 'strip,window,side' && sel.value === 'strip'
     );
     check(
       'it carries a tip that says a change applies on the next open',
@@ -541,20 +541,20 @@ async function tier2() {
       win.getComputedStyle(homeRow).gridTemplateColumns === win.getComputedStyle(row('threshold')).gridTemplateColumns
     );
     check('choosing nothing writes nothing', !('panelHome' in store));
-    sel.value = 'strip';
+    sel.value = 'window';
     sel.dispatchEvent(new win.Event('change', { bubbles: true }));
     await sleep(40);
-    check('choosing a home stores it as panelHome', store.panelHome === 'strip');
+    check('choosing a home stores it as panelHome', store.panelHome === 'window');
     win.chrome.storage.local.set({ panelHome: 'side' });
     await sleep(40);
     check('a panelHome change from elsewhere is followed', sel.value === 'side');
     win.chrome.storage.local.set({ panelHome: 'nonsense' });
     await sleep(40);
-    check('an unknown stored home reads as the window', sel.value === 'window');
-    sel.value = 'window';
+    check('an unknown stored home reads as the strip', sel.value === 'strip');
+    sel.value = 'strip';
     sel.dispatchEvent(new win.Event('change', { bubbles: true }));
     await sleep(40);
-    check('and the window can be chosen back', store.panelHome === 'window');
+    check('and the strip can be chosen back', store.panelHome === 'strip');
   }
   check(
     'every section header is a jump target',
@@ -1458,9 +1458,9 @@ async function tier2() {
 }
 
 // --- Tier 3: the other homes' layouts (design review M9) --------------------
-// The same shipped panel in the two shapes the new homes give it: the strip
-// (panel.html?layout=strip, 1280 × 150) and Chrome's side panel at its
-// narrowest (~320 px wide).
+// The same shipped panel in the shapes the homes give it: the strip
+// unfolded (panel.html?layout=strip, 1280 × 208), the strip at rest (the
+// rail, 1280 × 28) and Chrome's side panel at its narrowest (~320 px wide).
 
 // Render every tip into the bubble exactly as the panel does (tip, hint,
 // key) and list the ones that exceed the bubble's budget: 340 px wide (the
@@ -1501,14 +1501,15 @@ function tipsThatClip(d) {
 async function tier3() {
   tier('tier 3 — the strip and side-panel layouts (M9)');
 
-  // -- the strip: panel.html?layout=strip at 1280 × 150 --
+  // -- the strip, unfolded: panel.html?layout=strip at 1280 × 208 --
   {
-    const f = await bootFrame('./panel-frame.html?layout=strip', 1280, 150);
+    const f = await bootFrame('./panel-frame.html?layout=strip', 1280, 208);
     const w = f.contentWindow;
     const d = w.document;
     const q = (s) => d.querySelector(s);
     const rect = (el) => el.getBoundingClientRect();
-    check('the frame really is 1280 × 150', w.innerWidth === 1280 && w.innerHeight === 150);
+    const vis = (el) => !!el && el.getClientRects().length > 0;
+    check('the frame really is 1280 × 208', w.innerWidth === 1280 && w.innerHeight === 208);
     check('?layout=strip switches the panel to the strip layout', d.documentElement.dataset.layout === 'strip');
     const heads = SECTIONS.map((s) => d.getElementById(`section-${s.id}`));
     const hr = heads.map(rect);
@@ -1524,50 +1525,135 @@ async function tier3() {
         q('#scroll').scrollHeight <= q('#scroll').clientHeight
     );
     const c = q('#controls');
-    check(
-      'the sections scroll sideways in their own lane, never vertically',
-      ['auto', 'scroll'].includes(w.getComputedStyle(c).overflowX) &&
-        c.scrollWidth > c.clientWidth &&
-        c.scrollHeight <= c.clientHeight + 1
-    );
     const cr = rect(c);
-    const inLane = [...c.querySelectorAll('.section, .row, .group-head')].filter((el) => el.getClientRects().length);
+    const groupHead = (sec, g) => q(`#controls .group[data-section="${sec}"][data-group="${g}"] .group-head`);
+    // In the strip a folded engine's disclosure lives in the section header.
+    const engineBtn = (sec) => q(`#section-${sec} .group-head.disclosure`);
     check(
-      'every visible row fits the lane’s height (no row cut off at the bottom)',
-      inLane.every((el) => rect(el).top >= cr.top - 1 && rect(el).bottom <= cr.bottom + 1)
+      'a folded engine costs no column: its disclosure sits in the section header line, beside the title',
+      ['video', 'audio'].every((sec) => vis(engineBtn(sec)) && Math.abs(rect(engineBtn(sec)).top - rect(q(`#section-${sec} h2`)).top) < 6)
     );
     check(
-      'the global block is a cluster at the left: A/B, the mediums, the presets, all in view',
-      ['#ab', '.chips', '#presets'].every((s) => {
+      'the four effect groups — sort · feedback · body · smear — are all in view with no sideways scroll',
+      c.scrollWidth <= c.clientWidth + 1 && c.scrollLeft === 0 &&
+        [['video', 'sort'], ['video', 'feedback'], ['audio', 'body'], ['audio', 'smear']].every(([sec, g]) => {
+          const r = rect(groupHead(sec, g));
+          return vis(groupHead(sec, g)) && r.left >= cr.left - 1 && r.right <= cr.right + 1;
+        })
+    );
+    check(
+      'each effect group is its own column: feedback right of sort, smear right of body, body right of feedback',
+      rect(groupHead('video', 'feedback')).left > rect(groupHead('video', 'sort')).right &&
+        rect(groupHead('audio', 'body')).left > rect(groupHead('video', 'feedback')).right &&
+        rect(groupHead('audio', 'smear')).left > rect(groupHead('audio', 'body')).right
+    );
+    check(
+      'the lane never scrolls vertically, and every visible row fits its height (no row cut off)',
+      c.scrollHeight <= c.clientHeight + 1 &&
+        [...c.querySelectorAll('.section, .row, .group-head')].filter(vis).every((el) => rect(el).top >= cr.top - 1 && rect(el).bottom <= cr.bottom + 1)
+    );
+    check(
+      'the Audio header and its status line share the column top without colliding with the body caption',
+      rect(groupHead('audio', 'body')).top >= rect(q('#section-audio')).bottom - 1
+    );
+    check(
+      'the global block is a cluster at the left: A/B, the mediums, the presets and the prefs, all in view',
+      ['#ab', '.chips', '#presets', '#prefs'].every((s) => {
         const r = rect(q(s));
         return r.width > 0 && r.right <= cr.left && r.top >= 0 && r.bottom <= w.innerHeight;
-      })
+      }) && !!q('#panelHome') && rect(q('#panelHome')).width > 0 && q('.midi').getClientRects().length === 0
     );
+    const fold = q('#strip-fold');
     check(
-      'the panel prefs sit to the right of the lane, in view; MIDI is out of sight without a device',
-      (() => {
-        const r = rect(q('#prefs'));
-        return r.left >= cr.right && r.bottom <= w.innerHeight && !!q('#panelHome') && rect(q('#panelHome')).width > 0 &&
-          q('.midi').getClientRects().length === 0;
-      })()
+      'the fold button shows in the strip’s top-right corner, offering to fold (▾)',
+      vis(fold) && fold.textContent === '▾' && rect(fold).right <= w.innerWidth && rect(fold).top < 30 && rect(fold).left > w.innerWidth - 60
     );
     check('no help column: the bubble is hidden at rest in the strip too', q('#tooltip').hidden);
-    // The chip captions still jump: in the strip that is a sideways scroll.
+    // Hovering a row in the strip puts the bubble beside it, inside the frame.
+    q('.row[data-key="decay"]').dispatchEvent(new w.MouseEvent('mouseover', { bubbles: true }));
+    await sleep(420);
+    {
+      const tipR = rect(q('#tooltip'));
+      const rowR = rect(q('.row[data-key="decay"]'));
+      check(
+        'in the strip a hovered row’s bubble stays inside the frame and beside the row',
+        !q('#tooltip').hidden && tipR.top >= 0 && tipR.bottom <= w.innerHeight + 0.5 && tipR.left >= 0 && tipR.right <= w.innerWidth + 0.5 &&
+          (tipR.bottom <= rowR.top + 1 || tipR.top >= rowR.bottom - 1)
+      );
+    }
+    c.dispatchEvent(new w.MouseEvent('mouseover', { bubbles: true }));
+    await sleep(320);
+    // The chip captions still jump; with everything in view that is a flash, not a scroll.
     d.querySelector('.chip[data-key="audioEnabled"] .chip-name').click();
-    await sleep(700);
-    const ar = rect(d.getElementById('section-audio'));
-    check('the audio chip’s caption scrolls the lane sideways to Audio', c.scrollLeft > 0 && ar.left >= cr.left - 2 && ar.left < cr.right);
-    d.querySelector('.group[data-section="video"][data-group="engine"] .group-head').click();
+    let flashed = false;
+    for (let i = 0; i < 40 && !flashed; i++) {
+      await sleep(30);
+      flashed = d.getElementById('section-audio').classList.contains('flash');
+    }
+    check('the audio chip’s caption lands on Audio (already in view, so it flashes rather than scrolls)', c.scrollLeft === 0 && flashed);
+    engineBtn('video').click();
     await sleep(60);
     check(
-      'an unfolded engine adds columns, not height',
+      'an unfolded engine adds a captioned column, not height',
       c.scrollHeight <= c.clientHeight + 1 &&
         d.documentElement.scrollHeight <= w.innerHeight &&
+        vis(q('#controls .group.engine[data-section="video"] .group-cap')) &&
         ['passes', 'maxVideos'].every((k) => {
           const r = d.querySelector(`.row[data-key="${k}"]`).getBoundingClientRect();
           return r.height > 0 && r.bottom <= cr.bottom + 1;
         })
     );
+    engineBtn('video').click();
+    await sleep(60);
+    // Gates hide rows in the strip too, and the column closes up.
+    const fbToggle = d.querySelector('.row[data-key="feedbackVideo"] input');
+    fbToggle.checked = false;
+    fbToggle.dispatchEvent(new w.Event('input', { bubbles: true }));
+    await sleep(60);
+    check(
+      'feedback off in the strip: its column is the switch alone',
+      vis(d.querySelector('.row[data-key="feedbackVideo"]')) && !vis(d.querySelector('.row[data-key="decay"]')) &&
+        c.scrollHeight <= c.clientHeight + 1
+    );
+    fbToggle.checked = true;
+    fbToggle.dispatchEvent(new w.Event('input', { bubbles: true }));
+    await sleep(60);
+    f.remove();
+  }
+
+  // -- the strip at rest: the rail, 1280 × 28 --
+  {
+    const f = await bootFrame('./panel-frame.html?layout=strip', 1280, 28);
+    const w = f.contentWindow;
+    const d = w.document;
+    const q = (s) => d.querySelector(s);
+    const rect = (el) => el.getBoundingClientRect();
+    const vis = (el) => !!el && el.getClientRects().length > 0;
+    check('the frame really is 1280 × 28', w.innerWidth === 1280 && w.innerHeight === 28);
+    const parts = ['#ab', '.chip[data-key="video"] .chip-toggle', '.chip[data-key="audioEnabled"] .chip-toggle', '#preset-default', '#preset-save', '#strip-fold'];
+    check(
+      'the rail is one line: the A/B, the four chips, the presets and the fold button, all in view and vertically aligned',
+      parts.every((s) => vis(q(s)) && rect(q(s)).top >= -0.5 && rect(q(s)).bottom <= w.innerHeight + 0.5) &&
+        (() => {
+          const mids = parts.map((s) => (rect(q(s)).top + rect(q(s)).bottom) / 2);
+          return Math.max(...mids) - Math.min(...mids) <= 4;
+        })()
+    );
+    check(
+      'the rail hides the sections, the prefs, the MIDI block and the A/B’s caption',
+      !vis(q('#controls')) && !vis(q('#prefs')) && !vis(q('.midi')) && !vis(q('.ab .ab-say'))
+    );
+    check('the fold button offers to unfold (▴) at the rail’s right end', q('#strip-fold').textContent === '▴' && rect(q('#strip-fold')).left > w.innerWidth - 60);
+    check('nothing overflows the rail', d.documentElement.scrollWidth <= w.innerWidth && d.documentElement.scrollHeight <= w.innerHeight);
+    q('#ab').dispatchEvent(new w.MouseEvent('mouseover', { bubbles: true }));
+    await sleep(420);
+    check('no hover help in the rail: there is no room for a bubble', q('#tooltip').hidden);
+    // The A/B still works at 22 px.
+    q('#ab').click();
+    await sleep(90);
+    check('the rail’s A/B latches', w.__store.enabled === false && !q('#ab').classList.contains('on'));
+    q('#ab').click();
+    await sleep(90);
     f.remove();
   }
 

@@ -40,6 +40,9 @@ import { initMIDI } from './midi.js';
 // sideways, the hover copy in a column at the right.
 const LAYOUT = new URLSearchParams(location.search).get('layout') === 'strip' ? 'strip' : 'column';
 if (LAYOUT === 'strip') document.documentElement.dataset.layout = 'strip';
+// The strip's rail: the same page in a frame too short for anything but one
+// line (panel.css lays it out as a row; hover help is suppressed).
+const RAIL = window.matchMedia('(max-height: 60px)');
 
 const defByKey = Object.fromEntries(DEFS.map((d) => [d.key, d]));
 const isNumeric = (def) => def.type !== 'toggle' && def.type !== 'select';
@@ -343,13 +346,25 @@ function buildGroup(group, defs) {
 
   const rows = document.createElement('div');
   rows.className = 'group-rows';
+  if (group.collapsible) {
+    // In the strip the disclosure moves up into the section header (so a
+    // folded engine costs no column), and this caption heads the rows'
+    // own column when they are unfolded. Hidden in the column layout.
+    const cap = document.createElement('div');
+    cap.className = 'group-cap';
+    cap.textContent = group.title;
+    cap.dataset.tip = group.tip;
+    rows.appendChild(cap);
+  }
   for (const def of defs) rows.appendChild(buildRow(def));
   wrap.append(head, rows);
+  wrap.classList.toggle('engine', !!group.collapsible);
   groupEls[`${group.section}.${group.id}`] = { wrap, head };
 
   if (group.collapsible) {
     engineGroups[group.section] = { head, rows, title: group.title };
     paintEngine(group.section, false);
+    if (LAYOUT === 'strip') sectionEls[group.section]?.head.querySelector('h2')?.after(head);
   }
   return wrap;
 }
@@ -789,7 +804,9 @@ function setGated(key, gate) {
 // medium is off hides its groups and shows the one-line note instead.
 function setGroupShown(sectionId, groupId, shown) {
   const g = groupEls[`${sectionId}.${groupId}`];
-  if (g) g.wrap.hidden = !shown;
+  if (!g) return;
+  g.wrap.hidden = !shown;
+  g.head.hidden = !shown; // the disclosure may live in the section header (strip)
 }
 
 function setSectionOff(sectionId, note) {
@@ -1189,7 +1206,8 @@ function placeTip(anchor) {
 
 function renderTip() {
   const anchor = tipSay ? sayAnchor : tipShown;
-  const show = tooltipsOn && !!anchor && anchor.isConnected;
+  // No bubble in the rail: there is no room beside a 22 px control.
+  const show = tooltipsOn && !!anchor && anchor.isConnected && !(LAYOUT === 'strip' && RAIL.matches);
   tipEl.hidden = !show;
   if (!show) return;
   tipEl.textContent = '';
@@ -1304,12 +1322,16 @@ homeSelect.addEventListener('change', () => {
 
 // In the strip the panel is an iframe inside the page. It tells the strip
 // when it has booted (so a strip whose iframe never loads can take itself
-// down and leave the page as it was), and passes Ctrl+Shift+P up when the
-// keystroke lands inside the panel and no Chrome command claimed it first.
-if (LAYOUT === 'strip' && window.parent !== window) {
+// down and leave the page as it was), asks it to grow or fold when the fold
+// button is pressed, and passes Ctrl+Shift+P up when the keystroke lands
+// inside the panel and no Chrome command claimed it first. Whether the
+// frame is the rail or the mixer is read from its own height (RAIL), so no
+// state has to travel down.
+const foldBtn = document.getElementById('strip-fold');
+if (LAYOUT === 'strip') {
   const tell = (op) => {
     try {
-      window.parent.postMessage({ type: 'deflection:strip', op }, '*');
+      if (window.parent !== window) window.parent.postMessage({ type: 'deflection:strip', op }, '*');
     } catch {
       // no parent to tell: the strip's own timeout covers it
     }
@@ -1320,6 +1342,16 @@ if (LAYOUT === 'strip' && window.parent !== window) {
       tell('toggle');
     }
   });
+  foldBtn.hidden = false;
+  const paintFold = () => {
+    const rail = RAIL.matches;
+    foldBtn.textContent = rail ? '▴' : '▾';
+    foldBtn.setAttribute('aria-expanded', String(!rail));
+    foldBtn.dataset.hint = rail ? 'Unfold the mixer.' : 'Fold back to one line.';
+  };
+  RAIL.addEventListener('change', paintFold);
+  paintFold();
+  foldBtn.addEventListener('click', () => tell('toggle'));
   queueMicrotask(() => tell('ready'));
 }
 

@@ -523,16 +523,18 @@ export const PRESET_EXCLUDED = ['enabled'];
 // to decide what the toolbar icon and Ctrl+Shift+P open; the content script
 // reads it to decide whether to put the strip on the page. A change applies
 // on the next open: a live panel is never moved out from under the player.
+// The strip is John's pick (2026-10-11) and the default; window and side
+// panel remain for the kiosk and for anyone who wants them.
 export const PANEL_HOME = {
   key: 'panelHome',
   label: 'panel lives in',
-  default: 'window',
+  default: 'strip',
   options: [
+    ['strip', 'bottom strip'],
     ['window', 'window'],
     ['side', 'side panel'],
-    ['strip', 'bottom strip'],
   ],
-  tip: 'Where this panel opens: its own window, docked in Chrome’s side panel, or a mixer strip along the bottom of every page (collapse it to a tab with a click or Ctrl+Shift+P). Takes effect the next time the panel opens.',
+  tip: 'Where this panel opens: a strip along the bottom of every page that rests as one line and unfolds to a mixer (the default), its own window, or docked in Chrome’s side panel. Takes effect the next time the panel opens.',
   hint: 'A panel preference, not a parameter of the piece — the panel you are using stays where it is.',
 };
 export const PANEL_HOMES = PANEL_HOME.options.map(([value]) => value);

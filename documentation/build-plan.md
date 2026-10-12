@@ -215,22 +215,45 @@ balance are the open item below. The previous sound is exactly reachable at
   flash where they land (images → SORT); Video rows read *needs video* /
   *needs video or images*; the MIDI learn line hides with no device.
 
-  **M9 prototypes built, pending John's choice:** the panel can open in its
-  window (default), Chrome's side panel, or an in-page bottom strip, chosen
-  by the panel preference `panelHome` (row "panel lives in"); see
-  [parameters.md](parameters.md#where-the-panel-lives-panelhome-prototypes-pending-johns-choice)
-  for what is verified and what needs a real Chrome. Strip suite:
-  `test/harness/strip.html`. The prototypes were cherry-picked onto the
-  branch after round 3 and reconciled with it (strip layout keeps a
-  full-height help column; the overlay strip is window-mode only).
+  **M9 decided (John, testing the branch in real Chrome, 2026-10-11): the
+  strip.** "I prefer the bottom strip to the separate webpage approach."
+  It is the default `panelHome`; window and side panel remain. The strip
+  rests as a **transport line** — a 28 px rail carrying the A/B, the four
+  chips and the presets — and unfolds to a 208 px **mixer** with the four
+  effect columns (sort · feedback · body · smear) in view at 1280 px with no
+  sideways scroll (both John's asks: the key gesture always one click
+  away; video and audio controls at hand without horizontal scrolling; the
+  strip free to grow taller). John's picks among the rest options: the
+  transport line over fold-to-tab and over always-open-translucent. See
+  [parameters.md](parameters.md#where-the-panel-lives-panelhome-the-strip-johns-pick-2026-10-11)
+  for the housing, what is verified and what still needs a real Chrome.
+  Strip suite: `test/harness/strip.html` (41 checks).
 
-  **Open items John holds (2026-10-12):** (1) the in-page first-run mark,
-  the remaining half of the seam; (2) which `panelHome` becomes the
-  default, after the real-Chrome checks below; (3) threshold shown
-  inverted as an *amount*; (4) an intensity macro; (5) headline knobs that
-  ship at the rail (ring time, drive, tail); (6) the effects queue in
-  design-review.md (feedback blend, direct sort handles, source-following
-  audio body, performance ramp); (7) the comb body / gated exciter A/B.
+  **Round 4 — John's own testing (2026-10-11), landed the same day**, each
+  its own commit, logged in `design-review.md`: the `textMin` slider
+  removed (text is a switch; the Text section went with it, the chips are
+  the four masters); gated rows hidden rather than greyed (the gating
+  switch stays as the header of what it hides; a switched-off medium's
+  section says which chip brings it back); the help column replaced by a
+  hover bubble beside the control, nothing at rest, and the MIDI block
+  hidden until a controller connects (MIDI is a feature; keyboard and
+  mouse are the primary mode); the strip as above. Also a dependency-free
+  headless runner for the pure-DOM suites (`node test/headless.mjs`).
+
+  **Open items John holds (2026-10-11):** (1) the in-page first-run mark,
+  the remaining half of the seam; (2) threshold shown inverted as an
+  *amount*; (3) an intensity macro; (4) headline knobs that ship at the
+  rail (ring time, drive, tail); (5) the effects queue in design-review.md
+  (feedback blend, direct sort handles, source-following audio body,
+  performance ramp); (6) the comb body / gated exciter A/B; **(7) the
+  controls themselves** — John's round-4 note that the groups were made
+  easier to navigate but the controls were neither simplified nor given
+  more hold over the effect: each effect wants two or three handles named
+  for what they do (a first cut is in design-review.md round 4), the rest
+  demoted to engine, and the question of *which* controls a player needs
+  *when* re-asked; (8) the outside-the-box forms — a keyboard-summoned
+  overlay that survives fullscreen, and handles on the media itself —
+  logged, not scheduled.
 
 For a full technical description of both pipelines — the GL sort/composite
 path and the resonant-body audio path, with the reasoning behind each —
@@ -388,21 +411,25 @@ visible tab.
 
 ## John's manual checklist (needs real Chrome; not yet all exercised)
 
-- **Panel, first.** Load unpacked from `source/` at the branch head. Open
-  YouTube, click the icon: the A/B latches on a click and compares while
-  held past 600 ms; the four switches drop their medium; the room's old
-  `userDefaults` has migrated into preset slot A (base dot on A); `save…`
-  then a slot, load, `undo` within ten seconds; the help strip grows on
-  hover; the audio status line under AUDIO names sources on a playing
-  video (the stats plumbing content script → service worker → panel is
-  untested outside the harness); the toolbar badge reads ON and clears on
-  Ctrl+Shift+D.
-- **Placement.** Set `panel lives in` (bottom of the panel) to `side`,
-  close, Ctrl+Shift+P: does the side panel open, does a second icon click
-  close it, does MIDI work there without a new prompt? Then `strip` on
-  YouTube: does it appear, does MIDI work inside its iframe, how badly
-  does it cover the player's own controls, does fullscreen hide it? The
-  answers decide the default; log the verdict in design-review.md M9.
+- **The strip, first (the default since 2026-10-11).** Load unpacked from
+  `source/` at the branch head; if `panelHome` is stored from earlier
+  testing, set it to `bottom strip` and reload the page. On YouTube: the
+  rail sits along the bottom; the A/B latches on a click and compares while
+  held past 600 ms; the four chips drop their medium; ▴ unfolds the mixer
+  and ▾ folds it; Ctrl+Shift+P does the same; sort · feedback · body ·
+  smear are all in view at your width with no sideways scroll; `engine ▸`
+  on a title line unfolds a captioned column; hovering a row shows a
+  bubble beside it (none on the rail); switching feedback or smear off
+  folds its knobs away under the switch; the audio status line under
+  AUDIO names sources on a playing video (the stats plumbing content
+  script → service worker → panel is untested outside the harness); the
+  toolbar badge reads ON and clears on Ctrl+Shift+D; how badly the rail
+  and the mixer sit over the player's own controls; fullscreen hides the
+  strip. Then `window` and `side` once each: the column panel with the
+  bubble and no help strip.
+- **Side panel.** Set `panel lives in` to `side`, close, Ctrl+Shift+P:
+  does the side panel open, does a second icon click close it, does MIDI
+  work there without a new prompt?
 - **MIDI** in every home: the ⊙ column must appear only when a controller
   is present; learn and bind one knob per home.
 - Visual suite re-run in real Chrome (the embedded pane starves rVFC and
