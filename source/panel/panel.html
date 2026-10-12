@@ -6,10 +6,9 @@
   <link rel="stylesheet" href="panel.css">
 </head>
 <body>
-  <!-- Everything scrolls inside #scroll. The help strip (#tooltip) is pinned
-       to the bottom edge: one line at rest, in room the scroller leaves free,
-       so it never covers a row; on hover it grows upward over the scroller's
-       bottom as an overlay, so nothing reflows. -->
+  <!-- Everything scrolls inside #scroll. Help is a hover bubble (#tooltip)
+       placed beside the hovered control by panel.js: nothing at rest, so the
+       panel's whole height is controls. -->
   <main id="scroll">
   <!-- The global block, above the first divider (design review M1, M2, M3,
        M7): what the piece is, the A/B, the four mediums, the presets. -->
@@ -31,9 +30,11 @@
   </div>
   <p class="hint note" id="persist-note" data-tip="Every move you make is remembered across restarts with no save needed. A preset is a snapshot you can jump back to.">Changes are kept automatically; presets are snapshots.</p>
   <div id="controls"></div>
+  <!-- MIDI is a feature, not the primary mode (keyboard and mouse are): the
+       block is out of sight until a controller is connected. -->
   <div class="midi">
     <h2 data-tip="Bind a hardware controller to any parameter. Class-compliant controllers work with no setup; the permission grant persists in this browser profile.">MIDI</h2>
-    <div id="midi-status" data-tip="Connected MIDI inputs. &quot;no device&quot; means nothing is plugged in — the panel still works entirely by mouse.">no device</div>
+    <div id="midi-status" data-tip="Connected MIDI inputs. This block only appears while a controller is plugged in — the panel works entirely by mouse and keyboard.">no device</div>
     <p class="hint midi-hint" data-tip="Each row's ⊙ button is its MIDI learn control: click it to arm, then move a knob or fader on the controller to bind that CC. One CC per parameter; re-learn to change it.">Click a param's ⊙ then move a knob to map it.</p>
   </div>
   <div id="prefs"></div>

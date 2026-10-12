@@ -90,7 +90,7 @@ export const DEFS = [
     key: 'enabled',
     label: 'enabled',
     type: 'toggle',
-    tip: 'The A/B: the whole piece on or off — video, images, text and sound. Click to latch. Press and hold past half a second to see and hear the page untouched for as long as you hold; let go and the bending comes back. Ctrl+Shift+D flips it from any page without the panel.',
+    tip: 'The whole piece on or off — video, images, text and sound. Click to latch; hold past half a second to compare the page untouched, and let go to come back. Ctrl+Shift+D does the same from any page.',
   },
   {
     key: 'video',
@@ -283,7 +283,7 @@ export const DEFS = [
     key: 'textScramble',
     label: 'text',
     type: 'toggle',
-    tip: 'Text on/off. Letters rearrange inside their own word, page-wide; anything that is not a letter — space, punctuation, digit, emoji — is a barrier no glyph crosses, so every word keeps its length and the page keeps its shape. Runs shorter than eight characters are left alone, so the shortest furniture (Home, OK) survives.',
+    tip: 'Text on/off. Letters rearrange inside their own word, page-wide; anything that is not a letter is a barrier no glyph crosses, so every word keeps its length and the page its shape. Runs under eight characters are left alone, so Home and OK survive.',
   },
   {
     key: 'audioEnabled',

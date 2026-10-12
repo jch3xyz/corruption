@@ -360,25 +360,25 @@ flashes its row the same way, so the clamp is visible.
 
 **Tooltips.** Everything in the panel — the title line, the A/B, the chips,
 the presets caption, every row, value field, section header, group caption
-and button, the MIDI block — carries hover copy explaining what it is and
-what it does. The copy appears in a **help strip pinned to the bottom
-edge** of the panel, full width. At rest it is **one line** (~40 px)
-reading *Hover to read a knob · double-click a name to reset it*, in room
-the panel column keeps free below the scroller, so at rest it covers no
-row. On hover it **grows to fit the tip** (at most 136 px, ~120 ms)
-upward **as an overlay** over the bottom of the scroller: no row moves, and
-the scroller's height and scroll length never change. The strip ignores
-the pointer, so growing over the hovered row cannot steal the hover; the
-cost is that a tip can briefly cover the lowest rows while it is read. A
-click can also put a one-line message there for a moment (*switch ON to
-see it*, *images are shaped by SORT*). A parameter's tip leads with what
-you will see or hear, then the precise sentence, then the gesture hint, and
-ends with its storage key in muted type (`key: audioFbReturn`) so the panel
-and this sheet stay cross-referenced. The harness checks every tip fits
-the 136 px cap and that hovering moves no row. The `tooltips` switch at the
-bottom, under the MIDI block, turns the layer off entirely (the strip goes
-and gives its line back to the scroller); it defaults on and the setting
-persists (storage key `tooltips`, also outside `DEFAULTS`).
+and button — carries hover copy explaining what it is and what it does. The
+copy appears in a **bubble beside the hovered control** (2026-10-11,
+replacing the help strip under the column and the help column at the
+strip's right edge, which John found took real estate and stayed even with
+tooltips off): **nothing shows at rest**, so the panel's whole height is
+controls. The bubble sits above the control when there is room, else
+below, is clamped inside the panel, is at most 340 px wide, and ignores
+the pointer so appearing beside the hovered row cannot steal the hover. A
+click can also put a one-line message in it for a moment, anchored to what
+was clicked (*switch ON to see it*, *images are shaped by SORT*). A
+parameter's tip leads with what you will see or hear, then the precise
+sentence, then the gesture hint, and ends with its storage key in muted
+type (`key: audioFbReturn`) so the panel and this sheet stay
+cross-referenced. The harness renders every tip into the bubble and checks
+it fits a 340 × 150 budget — the most that can stand beside a row in the
+shortest home. The `tooltips` switch at the bottom turns the layer off
+entirely; it defaults on and the setting persists (storage key `tooltips`,
+outside `DEFAULTS`). The aim John set is a panel so plain the bubbles are
+never needed; they are the fallback, not the furniture.
 
 **Outside the panel.** The toolbar icon carries a yellow **ON** badge while
 `enabled` is on and none when off, and its hover title names the piece and
@@ -467,9 +467,10 @@ that the extension is installed.
 
 1. Open the panel on the kiosk once and grant the MIDI permission (it
    persists in the profile).
-2. With a controller connected, every row shows a ⊙ button (they stay
-   hidden while the MIDI block reads "no device", and so does the block's
-   "click a param's ⊙" instruction). Click one (it arms,
+2. With a controller connected, the MIDI block appears at the bottom of
+   the panel and every row, the A/B and the four chips show a ⊙ button
+   (without a controller the block and every ⊙ are out of sight — MIDI is a
+   feature, not the primary mode, John 2026-10-11). Click one (it arms,
    highlighted), move a knob — that CC is now bound and the button shows
    its number. Folded engine rows have theirs too: unfold the engine first. Mappings persist in
    storage; re-learn to change, one CC per param.

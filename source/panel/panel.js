@@ -371,7 +371,7 @@ function buildTooltipRow() {
   const row = document.createElement('div');
   row.className = 'row pref';
   row.dataset.tip =
-    'Show these explanations on hover, anywhere in the panel. Off silences them entirely.';
+    'Show these explanations in a bubble when you hover a control. Off silences them entirely.';
   row.dataset.hint =
     'A panel preference, not a parameter of the piece — it never reaches the page.';
 
@@ -445,7 +445,6 @@ function buildAB(def) {
   ab.id = 'ab';
   ab.dataset.key = def.key;
   ab.dataset.tip = def.tip;
-  ab.dataset.hint = 'Click: latch. Hold past half a second: compare, release to come back.';
   const state = document.createElement('span');
   state.className = 'ab-state';
   const say = document.createElement('span');
@@ -593,7 +592,7 @@ function buildChips() {
         head.scrollIntoView({ block: 'start', behavior: 'smooth' });
         head.focus({ preventScroll: true });
         whenLanded(() => flashEl(head));
-        if (chip.say) say(chip.say);
+        if (chip.say) say(chip.say, name);
       });
     } else {
       name = document.createElement('span');
@@ -611,7 +610,7 @@ function buildChips() {
       queueWrite(chip.key, v);
       setUI(chip.key, v);
       // The switch works while the piece is off, but shows nothing: say so.
-      if (!inputs.enabled.checked) say('switch ON to see it');
+      if (!inputs.enabled.checked) say('switch ON to see it', pill);
     });
 
     // The chip is its key's only face (no row anywhere), so it holds the
@@ -1142,24 +1141,26 @@ document.addEventListener(
 })();
 
 // --- Tooltips (John, 2026-08-20: everything explains itself on hover) ---
-// The copy lives in a strip pinned to the panel's bottom edge (finding 6).
-// Round 3: at rest it is one line — the legend for the two gestures nothing
-// else shows — in room the column leaves free, so it covers no row. On hover
-// it grows (to TIP_MAX) upward over the scroller's bottom as an overlay, so
-// no row moves; the scroller's own geometry never changes. A one-line
-// message (`say`) can take the strip for a moment; hover waits behind it.
+// The copy is a bubble beside the hovered control (2026-10-11, John: the
+// help strip and its column took real estate and stayed even with tooltips
+// off; in an ideal panel they would be unnecessary). Nothing shows at rest.
+// The bubble sits above the control when there is room, else below, and
+// is clamped to the viewport; it ignores the pointer so appearing beside
+// the hovered row cannot steal the hover. A one-line message (`say`) uses
+// the same bubble for a moment, anchored to what was clicked.
 
 const tipEl = document.getElementById('tooltip');
 const tipToggle = document.getElementById('tooltips');
 const tipToggleValue = document.getElementById('tooltips-value');
-const TIP_IDLE = 'Hover to read a knob · double-click a name to reset it';
-const TIP_MAX = 136;
+const TIP_GAP = 6; // px between the bubble and its anchor
+const TIP_MARGIN = 4; // px kept from the viewport's edges
 const SAY_MS = 1800;
 let tooltipsOn = (await store.get({ tooltips: true })).tooltips !== false;
 let tipTimer = 0;
 let tipHost = null; // under the pointer
-let tipShown = null; // whose tip the strip is showing (after the delay)
+let tipShown = null; // whose tip the bubble is showing (after the delay)
 let tipSay = null; // a transient one-line message
+let sayAnchor = null; // what the message is about
 let sayTimer = 0;
 
 function tipLine(text) {
@@ -1168,32 +1169,34 @@ function tipLine(text) {
   return p;
 }
 
-// Grow or shrink to fit the content, between one line and TIP_MAX. The
-// height is set in px so the change can transition. In the strip layout the
-// help copy is a full-height column (panel.css), so it never grows.
-function sizeStrip() {
-  if (LAYOUT === 'strip') {
-    tipEl.style.height = '';
-    return;
-  }
-  const from = tipEl.offsetHeight;
-  tipEl.style.height = 'auto';
-  const want = Math.min(TIP_MAX, tipEl.offsetHeight);
-  tipEl.style.height = `${from}px`;
-  void tipEl.offsetHeight;
-  tipEl.style.height = `${want}px`;
+// Place the bubble beside `anchor`: above if it fits, else below, else
+// wherever it fits in the viewport; never off the edges.
+function placeTip(anchor) {
+  const r = anchor.getBoundingClientRect();
+  const w = tipEl.offsetWidth;
+  const h = tipEl.offsetHeight;
+  const vw = document.documentElement.clientWidth;
+  const vh = document.documentElement.clientHeight;
+  let top = r.top - h - TIP_GAP;
+  if (top < TIP_MARGIN) top = r.bottom + TIP_GAP;
+  if (top + h > vh - TIP_MARGIN) top = Math.max(TIP_MARGIN, vh - h - TIP_MARGIN);
+  let left = r.left;
+  if (left + w > vw - TIP_MARGIN) left = vw - w - TIP_MARGIN;
+  if (left < TIP_MARGIN) left = TIP_MARGIN;
+  tipEl.style.left = `${Math.round(left)}px`;
+  tipEl.style.top = `${Math.round(top)}px`;
 }
 
 function renderTip() {
-  tipEl.hidden = !tooltipsOn;
-  if (!tooltipsOn) return;
+  const anchor = tipSay ? sayAnchor : tipShown;
+  const show = tooltipsOn && !!anchor && anchor.isConnected;
+  tipEl.hidden = !show;
+  if (!show) return;
   tipEl.textContent = '';
   tipEl.classList.toggle('say', !!tipSay);
-  tipEl.classList.toggle('idle', !tipSay && !tipShown);
-  tipEl.classList.toggle('open', !tipSay && !!tipShown);
   if (tipSay) {
     tipEl.appendChild(tipLine(tipSay));
-  } else if (tipShown) {
+  } else {
     tipEl.appendChild(tipLine(tipShown.dataset.tip));
     if (tipShown.dataset.hint) {
       const hint = document.createElement('p');
@@ -1207,10 +1210,8 @@ function renderTip() {
       key.textContent = `key: ${tipShown.dataset.param}`;
       tipEl.appendChild(key);
     }
-  } else {
-    tipEl.appendChild(tipLine(TIP_IDLE));
   }
-  sizeStrip();
+  placeTip(anchor);
 }
 
 function hideTip() {
@@ -1221,11 +1222,12 @@ function hideTip() {
   renderTip();
 }
 
-// A short line in the strip: what a click did that the panel cannot show.
-// With tooltips off the strip is gone, so the message goes nowhere.
-function say(text) {
+// A short line beside `anchor`: what a click did that the panel cannot
+// show. With tooltips off the bubble is gone, so the message goes nowhere.
+function say(text, anchor) {
   clearTimeout(sayTimer);
   tipSay = text;
+  sayAnchor = anchor ?? sayAnchor;
   renderTip();
   sayTimer = setTimeout(() => {
     tipSay = null;
@@ -1237,7 +1239,6 @@ function setTooltips(on) {
   tooltipsOn = on;
   tipToggle.checked = on;
   tipToggleValue.textContent = on ? 'on' : 'off';
-  document.body.classList.toggle('tips-off', !on); // its line goes back to the scroller
   clearTimeout(tipTimer);
   tipShown = null;
   renderTip();

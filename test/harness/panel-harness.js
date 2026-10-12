@@ -688,7 +688,7 @@ async function tier2() {
   // -- MIDI learn hidden until a device is present --
   const learns = [...doc.querySelectorAll('.learn')];
   check(
-    'with no MIDI device every ⊙ is hidden — the rows’, the A/B’s and the four chips’ — and the status says "no device"',
+    'with no MIDI device every ⊙ is hidden — the rows’, the A/B’s and the four chips’ — and the (hidden) status reads "no device"',
     !doc.body.classList.contains('midi-device') &&
       learns.length === DEFS.filter((d) => d.section).length + 1 + CHIP_KEYS.length &&
       CHIP_KEYS.every((k) => !!chip(k).querySelector('.learn')) &&
@@ -696,12 +696,12 @@ async function tier2() {
       /no device|unavailable|denied/i.test($('#midi-status').textContent)
   );
   check(
-    'with no MIDI device the "click a param’s ⊙" instruction is hidden too',
-    !shown($('.midi .midi-hint')) && shown($('#midi-status'))
+    'with no MIDI device the whole MIDI block is out of sight (keyboard and mouse are the primary mode)',
+    !shown($('.midi')) && !shown($('#midi-status')) && !shown($('.midi .midi-hint'))
   );
   doc.body.classList.add('midi-device');
   await sleep(30);
-  check('a connected device shows the learn instruction', shown($('.midi .midi-hint')));
+  check('a connected device brings the MIDI block and its learn instruction into view', shown($('.midi')) && shown($('.midi .midi-hint')) && shown($('#midi-status')));
   check(
     'a connected device (the midi-device class) brings every visible row’s ⊙ back',
     learns.filter((el) => shown(el.closest('.row, .ab-row, .chip'))).every((el) => shown(el)) &&
@@ -861,9 +861,13 @@ async function tier2() {
       flashed ||= head.classList.contains('flash');
       if (flashed && Math.abs(top) < 40) break;
     }
+    // The header reaches the top when there is enough below it to scroll;
+    // otherwise the scroller goes as far as it can and the header is in view.
+    const scroller = $('#scroll');
+    const scrolledOut = scroller.scrollTop >= scroller.scrollHeight - scroller.clientHeight - 1;
     check(
       `clicking the ${key} chip's caption scrolls ${landing[key]} into view and flashes it when it lands`,
-      top >= -2 && top < 40 && flashed
+      top >= -2 && (top < 40 || (scrolledOut && top < win.innerHeight)) && flashed
     );
     if (key === 'images') {
       check(
@@ -1246,31 +1250,15 @@ async function tier2() {
     f.remove();
   }
 
-  // -- tooltips: the help strip (round 3: one line at rest, an overlay on hover) --
+  // -- tooltips: a bubble beside the hovered control (2026-10-11), nothing at rest --
   const tip = $('#tooltip');
   const sc = $('#scroll');
   $('#scroll').scrollTo(0, 0);
   fire($('#controls'), 'mouseover');
   await sleep(300);
   check(
-    'at rest the strip is one line (~40 px) carrying the legend',
-    !tip.hidden && tip.classList.contains('idle') &&
-      Math.abs(tip.getBoundingClientRect().height - 40) <= 2 &&
-      text(tip) === 'Hover to read a knob · double-click a name to reset it' &&
-      tip.firstElementChild.scrollWidth <= tip.firstElementChild.clientWidth + 1
-  );
-  check(
-    'the strip is full width and pinned to the panel’s bottom edge',
-    (() => {
-      const r = tip.getBoundingClientRect();
-      return Math.abs(r.bottom - win.innerHeight) <= 1 && r.left <= 0.5 && Math.abs(r.width - win.innerWidth) <= 1;
-    })()
-  );
-  check(
-    'at rest the strip covers no row: the scroller ends where the idle strip begins',
-    !sc.contains(tip) &&
-      ['auto', 'scroll'].includes(win.getComputedStyle(sc).overflowY) &&
-      Math.abs(sc.getBoundingClientRect().bottom - tip.getBoundingClientRect().top) <= 0.5
+    'at rest no help shows: the bubble is hidden and the scroller runs to the panel’s bottom edge',
+    tip.hidden && Math.abs(sc.getBoundingClientRect().bottom - win.innerHeight) <= 0.5 && !$('.tips-off')
   );
   const geometry = () => ({
     sh: sc.scrollHeight,
@@ -1279,6 +1267,8 @@ async function tier2() {
     tops: [...doc.querySelectorAll('.row')].map((r) => r.offsetTop).join(),
   });
   const restGeom = geometry();
+  const inside = (r) => r.left >= 0 && r.top >= 0 && r.right <= win.innerWidth + 0.5 && r.bottom <= win.innerHeight + 0.5;
+  const beside = (bubble, host) => bubble.bottom <= host.top + 1 || bubble.top >= host.bottom - 1;
 
   fire(row('threshold'), 'mouseover');
   await sleep(520);
@@ -1295,69 +1285,36 @@ async function tier2() {
     tip.lastElementChild?.classList.contains('key') && text(tip.lastElementChild) === 'key: threshold'
   );
   check(
-    'on hover the strip grows to fit (at most 136 px), still pinned to the bottom, over the scroller',
+    'the bubble sits beside the hovered row — above or below it, never over it — inside the panel, at most 340 px wide',
     (() => {
-      const r = tip.getBoundingClientRect();
-      return (
-        tip.classList.contains('open') && r.height > 44 && r.height <= 136.5 &&
-        Math.abs(r.bottom - win.innerHeight) <= 1 && r.top < sc.getBoundingClientRect().bottom &&
-        tip.scrollHeight <= tip.clientHeight + 1
-      );
+      const b = tip.getBoundingClientRect();
+      const r = row('threshold').getBoundingClientRect();
+      return win.getComputedStyle(tip).position === 'fixed' && inside(b) && beside(b, r) && b.width <= 340.5 &&
+        tip.scrollHeight <= tip.clientHeight + 1;
     })()
   );
   {
     const g = geometry();
     check(
-      'the grown strip is an overlay: the scroller’s scrollHeight, height, scroll position and every row’s offsetTop are unchanged',
+      'the bubble is an overlay: the scroller’s scrollHeight, height, scroll position and every row’s offsetTop are unchanged',
       g.sh === restGeom.sh && g.ch === restGeom.ch && g.st === restGeom.st && g.tops === restGeom.tops
     );
   }
   check(
-    'the strip ignores the pointer, so growing over the hovered row cannot steal its hover',
+    'the bubble ignores the pointer, so appearing beside the hovered row cannot steal its hover',
     win.getComputedStyle(tip).pointerEvents === 'none'
   );
-  check(
-    'the strip animates its height (~120 ms)',
-    /height/.test(win.getComputedStyle(tip).transitionProperty) &&
-      Math.abs(parseFloat(win.getComputedStyle(tip).transitionDuration) - 0.12) < 0.03
-  );
   {
-    // Every tip has to fit the grown strip: render each one into it exactly
-    // as the panel does (tip, hint, key) at natural height and look for
-    // overflow past the 136 px cap.
-    const saved = [...tip.childNodes];
-    const savedClass = tip.className;
-    const savedHeight = tip.style.height;
-    tip.className = 'open';
-    tip.style.height = 'auto';
-    const overflow = [];
-    for (const host of doc.querySelectorAll('[data-tip]')) {
-      tip.textContent = '';
-      const body = doc.createElement('div');
-      body.textContent = host.dataset.tip;
-      tip.appendChild(body);
-      for (const [cls, t] of [['hint', host.dataset.hint], ['key', host.dataset.param && `key: ${host.dataset.param}`]]) {
-        if (!t) continue;
-        const p = doc.createElement('p');
-        p.className = cls;
-        p.textContent = t;
-        tip.appendChild(p);
-      }
-      if (tip.scrollHeight > tip.clientHeight + 1) overflow.push(host.dataset.param || host.id || host.className || host.tagName);
-    }
-    tip.replaceChildren(...saved);
-    tip.className = savedClass;
-    tip.style.height = savedHeight;
-    check(`every tip fits the strip without clipping (${overflow.join(', ') || 'all fit'})`, overflow.length === 0);
+    // Every tip has to fit a bubble that can stand beside a row in the
+    // shortest home (the strip, ~200 px): render each one into the bubble
+    // exactly as the panel does (tip, hint, key) and measure it.
+    const clip = tipsThatClip(doc);
+    check(`every tip fits the bubble’s budget, 340 × ${TIP_MAX_H} (${clip.join(', ') || 'all fit'})`, clip.length === 0);
   }
 
   fire($('#controls'), 'mouseover');
   await sleep(300);
-  check(
-    'leaving the row returns the strip to its one-line resting legend (the two hidden gestures)',
-    !tip.hidden && tip.classList.contains('idle') && /double-click/i.test(tip.textContent) && /hover/i.test(tip.textContent) &&
-      Math.abs(tip.getBoundingClientRect().height - 40) <= 2
-  );
+  check('leaving the row hides the bubble: nothing at rest', tip.hidden);
 
   fire(field('passes'), 'mouseover');
   await sleep(420);
@@ -1365,24 +1322,24 @@ async function tier2() {
     'the value field explains that typed values clamp',
     !tip.hidden && tip.textContent.toLowerCase().includes('clamp')
   );
+  fire($('#controls'), 'mouseover');
+  await sleep(300);
 
   const toggle = $('#tooltips');
   check('tooltips default to on', toggle.checked);
   toggle.checked = false;
   toggle.dispatchEvent(new win.Event('change', { bubbles: true }));
   await sleep(60);
-  check(
-    'turning tooltips off removes the strip and gives its line back to the scroller',
-    tip.hidden && Math.abs(sc.getBoundingClientRect().bottom - win.innerHeight) <= 0.5
-  );
   fire($('#controls'), 'mouseover');
   fire(row('decay'), 'mouseover');
   await sleep(420);
-  check('and suppresses the next one', tip.hidden);
+  check('turning tooltips off suppresses the next one', tip.hidden);
   check('the tooltip preference persists', store.tooltips === false);
   toggle.checked = true;
   toggle.dispatchEvent(new win.Event('change', { bubbles: true }));
   await sleep(60);
+  fire($('#controls'), 'mouseover');
+  await sleep(300);
 
   // -- everything explains itself --
   const bare = [];
@@ -1505,11 +1462,18 @@ async function tier2() {
 // (panel.html?layout=strip, 1280 × 150) and Chrome's side panel at its
 // narrowest (~320 px wide).
 
-// Render every tip into the help area exactly as the panel does and list
-// the ones that clip.
+// Render every tip into the bubble exactly as the panel does (tip, hint,
+// key) and list the ones that exceed the bubble's budget: 340 px wide (the
+// stylesheet's cap) by TIP_MAX_H tall, the most that can stand beside a row
+// in the shortest home.
+const TIP_MAX_H = 150;
 function tipsThatClip(d) {
   const tip = d.getElementById('tooltip');
   const saved = [...tip.childNodes];
+  const savedHidden = tip.hidden;
+  const savedClass = tip.className;
+  tip.hidden = false;
+  tip.className = '';
   const overflow = [];
   for (const host of d.querySelectorAll('[data-tip]')) {
     tip.textContent = '';
@@ -1523,9 +1487,14 @@ function tipsThatClip(d) {
       p.textContent = t;
       tip.appendChild(p);
     }
-    if (tip.scrollHeight > tip.clientHeight + 1) overflow.push(host.dataset.param || host.dataset.pref || host.className || host.tagName);
+    const r = tip.getBoundingClientRect();
+    if (r.width > 340.5 || r.height > TIP_MAX_H || tip.scrollHeight > tip.clientHeight + 1) {
+      overflow.push(`${host.dataset.param || host.dataset.pref || host.id || host.className || host.tagName} ${Math.round(r.height)}px`);
+    }
   }
   tip.replaceChildren(...saved);
+  tip.className = savedClass;
+  tip.hidden = savedHidden;
   return overflow;
 }
 
@@ -1575,19 +1544,14 @@ async function tier3() {
       })
     );
     check(
-      'MIDI and the panel prefs sit to the right of the lane, in view',
-      ['.midi', '#prefs'].every((s) => {
-        const r = rect(q(s));
-        return r.left >= cr.right && r.bottom <= w.innerHeight;
-      }) && !!q('#panelHome') && rect(q('#panelHome')).width > 0
+      'the panel prefs sit to the right of the lane, in view; MIDI is out of sight without a device',
+      (() => {
+        const r = rect(q('#prefs'));
+        return r.left >= cr.right && r.bottom <= w.innerHeight && !!q('#panelHome') && rect(q('#panelHome')).width > 0 &&
+          q('.midi').getClientRects().length === 0;
+      })()
     );
-    const tr = rect(q('#tooltip'));
-    check(
-      'the help copy is a full-height column at the right edge',
-      Math.abs(tr.right - w.innerWidth) <= 1 && tr.top <= 0.5 && Math.abs(tr.bottom - w.innerHeight) <= 1
-    );
-    const clip = tipsThatClip(d);
-    check(`every tip fits the strip’s help column (${clip.join(', ') || 'all fit'})`, clip.length === 0);
+    check('no help column: the bubble is hidden at rest in the strip too', q('#tooltip').hidden);
     // The chip captions still jump: in the strip that is a sideways scroll.
     d.querySelector('.chip[data-key="audioEnabled"] .chip-name').click();
     await sleep(700);
@@ -1632,7 +1596,7 @@ async function tier3() {
     const withUndo = fits() && !d.getElementById('preset-undo').hidden;
     check(`at ${width} px nothing overflows: at rest, in save mode, with undo showing`, atRest && saving && withUndo);
     const clip = tipsThatClip(d);
-    check(`at ${width} px every tip fits the help strip (${clip.join(', ') || 'all fit'})`, clip.length === 0);
+    check(`at ${width} px every tip fits the bubble’s budget (${clip.join(', ') || 'all fit'})`, clip.length === 0);
     f.remove();
   }
 }

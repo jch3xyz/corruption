@@ -8,19 +8,13 @@ body {
   margin: 0;
   padding: 0;
   user-select: none;
-  /* The panel is a column: everything scrolls in #scroll. The column keeps
-     one strip line free at the bottom (--strip), where the help strip rests;
-     a grown strip overlays the scroller instead of pushing it (round 3). */
-  --strip: 40px;
+  /* The panel is a column: everything scrolls in #scroll. Help is a hover
+     bubble over it (2026-10-11), so the column is controls to the edge. */
   height: 100vh;
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  padding-bottom: var(--strip);
 }
-
-/* tooltips off: the strip is gone and its line goes back to the scroller. */
-body.tips-off { padding-bottom: 0; }
 
 #scroll {
   flex: 1 1 auto;
@@ -453,60 +447,41 @@ body:not(.midi-device) .ab-row { grid-template-columns: 1fr; }
   border-top: 1px solid #232329;
 }
 
+/* MIDI is a feature, not the primary mode (John, 2026-10-11): the whole
+   block waits out of sight until a controller is connected. */
+body:not(.midi-device) .midi { display: none; }
+
 #midi-status { color: #7a9a7a; }
 
 .hint { color: #55555c; margin: 6px 0 0; }
 
-/* The learn instruction only means something with a controller connected. */
-body:not(.midi-device) .midi-hint { display: none; }
-
-/* Hover copy for every control in the panel: a strip pinned to the bottom
-   edge (finding 6). At rest it is one line tall and sits in the room the
-   column leaves free, so it covers nothing. On hover it grows (to at most
-   136px) upward over the scroller's bottom as an overlay — no row moves.
-   It ignores the pointer, so growing over the hovered row cannot steal the
-   hover and flicker. Every tip is written to fit 136px (the harness checks). */
+/* Hover copy for every control in the panel: a bubble placed beside the
+   hovered control by panel.js (2026-10-11, replacing the help strip and its
+   column — nothing at rest, no real estate). It ignores the pointer, so
+   appearing near the hovered row cannot steal the hover and flicker. Every
+   tip is written to fit TIP_W × TIP_H (the harness checks). */
 #tooltip {
   position: fixed;
   left: 0;
-  right: 0;
-  bottom: 0;
-  z-index: 2;
-  height: var(--strip);
-  min-height: var(--strip);
-  max-height: 136px;
-  overflow: hidden;
+  top: 0;
+  z-index: 10;
+  width: max-content;
+  max-width: 340px;
   pointer-events: none;
-  transition: height 120ms ease-out;
   background: #1b1b21;
   color: #d8d8dc;
-  border-top: 1px solid #34343c;
-  padding: 8px 14px;
+  border: 1px solid #3a3a44;
+  border-radius: 5px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
+  padding: 7px 10px;
   font-size: 11px;
   line-height: 1.4;
 }
 
 #tooltip[hidden] { display: none; }
 
-/* Grown over the rows: a shadow says it is lying on top of them. */
-#tooltip.open { box-shadow: 0 -6px 14px rgba(0, 0, 0, 0.35); }
-
-/* At rest, and for a one-line message: a single line, centred in the strip. */
-#tooltip.idle, #tooltip.say {
-  display: flex;
-  align-items: center;
-  font-size: 10px;
-  white-space: nowrap;
-}
-
-#tooltip.idle > *, #tooltip.say > * {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-#tooltip.idle { color: #6c6c76; }
-#tooltip.say { color: #e8e864; }
+/* A one-line message (`say`): what a click did that the panel cannot show. */
+#tooltip.say { color: #e8e864; white-space: nowrap; }
 
 #tooltip .hint {
   color: #8a8a94;
@@ -533,8 +508,6 @@ body:not(.midi-device) .midi-hint { display: none; }
   .chips { gap: 6px; }
   .chip-name { letter-spacing: 0.08em; }
   .row { gap: 8px; }
-  /* Narrower lines need a taller help strip for the same copy. */
-  #tooltip { padding: 8px 12px; height: 188px; }
 }
 
 /* --- The strip layout (design review M9): panel.html?layout=strip, hosted
@@ -634,28 +607,4 @@ body:not(.midi-device) .midi-hint { display: none; }
 :root[data-layout='strip'] .midi h2 { margin: 0 0 2px; font-size: 10px; }
 :root[data-layout='strip'] #midi-status { font-size: 10px; }
 
-/* The hover copy: a column at the right edge, full height. The column
-   panel's overlay (round 3: one line at rest, growing upward over the rows)
-   does not apply here — the column is a flex item beside #scroll, always
-   the strip's full height, and shows the legend at rest and the hovered tip
-   in place: no growth, no overlay, nothing covered. */
-:root[data-layout='strip'] #tooltip {
-  position: static;
-  flex: 0 0 340px;
-  width: 340px;
-  height: auto;
-  min-height: 0;
-  max-height: none;
-  transition: none;
-  box-shadow: none;
-  border-top: none;
-  border-left: 1px solid #34343c;
-  padding: 6px 12px;
-}
 
-/* The legend and a `say` line wrap in the column instead of ellipsing. */
-:root[data-layout='strip'] #tooltip.idle,
-:root[data-layout='strip'] #tooltip.say {
-  display: block;
-  white-space: normal;
-}
