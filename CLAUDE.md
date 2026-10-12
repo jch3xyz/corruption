@@ -50,9 +50,8 @@ Quick facts:
   suite at `/test/harness/panel.html` (pure DOM; drives the shipped panel in
   an iframe against a stubbed chrome.storage).
 - Params live in chrome.storage.local; stored values beat code defaults —
-  use the panel's "restore defaults" after changing DEFAULTS. If John has
-  pressed **"set defaults"**, his saved snapshot (`userDefaults`) outranks
-  both: hit "clear saved" first, then "restore defaults".
+  press the panel's **original** preset after changing DEFAULTS (it is never stored).
+  Presets A/B/C (`presets`) are snapshots; a row double-click returns to the last-loaded one (`presetBase`).
 - The panel is an instrument, not a form (rebuilt 2026-08-20): three sections
   behind dividers, sort and feedback knobs filed under **Video** (John's
   call), typed values that clamp and snap, double-click a row to restore one

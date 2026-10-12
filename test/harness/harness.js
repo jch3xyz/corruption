@@ -811,6 +811,75 @@ async function run() {
     registry.refresh();
   }
 
+  // --- Per-medium switches (video / images): the master's gate, per kind ---
+  // Asserted on job state and the page elements, not on mirroring, so a
+  // starved pane (no rVFC, stills never rendered) still tests the logic:
+  // the counts must drop to zero and return to exactly where they were.
+  {
+    const kindJobs = (kind) =>
+      [...registry.jobs.values()].filter((j) => (j.kind === 'image') === (kind === 'image'));
+    const shown = (j) => (j.video ?? j.img).style.opacity !== '0';
+    // Last in the suite on purpose: every check line pushes the video grid
+    // further down the status log, and in a short (headless, 720 px) window
+    // an extra line earlier on scrolls the grid out of view and starves the
+    // checks after it. Bring a live video into view first.
+    videos.find((v) => v.isConnected)?.scrollIntoView({ block: 'start' });
+    await waitFor(() => registry.stats().active > 0);
+    const before = registry.stats();
+
+    params.video = false;
+    registry.paramsChanged({ video: false });
+    check(
+      'video:false suspends every video job and shows the originals',
+      await waitFor(
+        () =>
+          registry.stats().active === 0 &&
+          kindJobs('video').every((j) => !j.active && shown(j)) &&
+          kindJobs('video').every((j) => !j.overlay || j.overlay.canvas.style.display === 'none')
+      )
+    );
+    check('video:false leaves image jobs alone', registry.stats().activeImages === before.activeImages);
+    params.video = true;
+    registry.paramsChanged({ video: true });
+    check(
+      `video:true reactivates the same video jobs (${before.active})`,
+      before.active > 0 && (await waitFor(() => registry.stats().active === before.active))
+    );
+
+    // The test images sit below the fold in a short window, so pin one more
+    // copy into the viewport (position: fixed — no scroll, no reflow of the
+    // video grid) to give the switch an active image job to act on.
+    const pinImg = document.createElement('img');
+    pinImg.src = sameImg.src;
+    pinImg.style.cssText = 'position:fixed;left:8px;bottom:8px;width:120px;z-index:5';
+    document.body.appendChild(pinImg);
+    await waitFor(() => !!registry.jobs.get(pinImg)?.active);
+    const sameImgJob = registry.jobs.get(pinImg);
+    const beforeImg = registry.stats();
+    params.images = false;
+    registry.paramsChanged({ images: false });
+    check(
+      'images:false suspends every image job and shows the originals',
+      await waitFor(
+        () =>
+          registry.stats().activeImages === 0 &&
+          kindJobs('image').every((j) => !j.active && !j.mirrored && shown(j))
+      )
+    );
+    check('images:false leaves video jobs alone', registry.stats().active === beforeImg.active);
+    params.images = true;
+    registry.paramsChanged({ images: true });
+    check(
+      `images:true reactivates the same image jobs (${beforeImg.activeImages})`,
+      beforeImg.activeImages > 0 &&
+        (await waitFor(
+          () => registry.stats().activeImages === beforeImg.activeImages && !!sameImgJob?.active
+        ))
+    );
+    pinImg.remove(); // the next scan tears its job down
+    await waitFor(() => !registry.jobs.has(pinImg));
+  }
+
   const done = document.createElement('div');
   done.id = 'done';
   done.textContent = `HARNESS COMPLETE: ${passCount} passed, ${failCount} failed`;

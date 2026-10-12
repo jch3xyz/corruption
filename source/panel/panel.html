@@ -6,19 +6,31 @@
   <link rel="stylesheet" href="panel.css">
 </head>
 <body>
-  <h1 data-tip="CORRUPTION — if the signal is corrupting us, we take back power by corrupting the signal. Every video frame, image, sound and word in the browser is rearranged between decode and display." data-hint="Ctrl+Shift+D toggles the whole piece off and back on from any page.">CORRUPTION</h1>
+  <!-- The global block, above the first divider (design review M1, M2, M3,
+       M7): what the piece is, the A/B, the four mediums, the presets. -->
+  <header class="masthead">
+    <h1 data-tip="CORRUPTION — if the signal is corrupting us, we take back power by corrupting the signal. Every video frame, image, sound and word in the browser is rearranged between arrival and display." data-hint="The bytes arrive perfect; only what you are shown bends.">CORRUPTION</h1>
+    <p class="lede" data-tip="What the piece does, in one line. Nothing is downloaded or changed at the source — switch it off and every page is exactly as it arrived.">Bends every video, image, sound and word in the browser. Switch it off to compare.</p>
+    <p class="keys" id="keys" data-tip="Keyboard shortcuts that work from any page, with or without this panel open. They can be changed at chrome://extensions/shortcuts.">Ctrl+Shift+D  on/off   ·   Ctrl+Shift+P  this panel</p>
+  </header>
   <div id="globals"></div>
-  <div class="footer">
-    <button id="defaults" class="btn">restore defaults</button>
-    <button id="setdefaults" class="btn" data-tip="Save every parameter at its current setting as the defaults. From then on &quot;restore defaults&quot; and a double-click on any row come back here — no code edit, no reload." data-hint="Saved in storage, so it survives restarts and outlives this session.">set defaults</button>
-    <button id="cleardefaults" class="btn subtle" data-tip="Forget the saved defaults and fall back to the ones compiled into the extension. Nothing on screen changes until you restore." hidden>clear saved</button>
+  <div class="presets" id="presets">
+    <button id="preset-original" class="btn preset" data-tip="Back to the settings the piece shipped with. It can never be overwritten, so this way back always exists. Leaves the on/off switch where it is." data-hint="Undo appears for ten seconds afterwards.">original</button>
+    <button class="btn preset slot" data-slot="A">A</button>
+    <button class="btn preset slot" data-slot="B">B</button>
+    <button class="btn preset slot" data-slot="C">C</button>
+    <button id="preset-save" class="btn subtle" data-tip="Save the current settings into a slot. Click this, then click A, B or C. Escape or a click elsewhere cancels." data-hint="Two clicks on purpose, so loading can never overwrite a slot by accident.">save…</button>
+    <button id="preset-cancel" class="btn subtle" data-tip="Leave save mode without saving anything." hidden>cancel</button>
+    <button id="preset-undo" class="btn undo" data-tip="Put back the settings you had just before that load — for ten seconds after it." hidden>undo</button>
   </div>
+  <p class="hint note" id="persist-note" data-tip="Every move you make is remembered across restarts with no save needed. A preset is a snapshot you can jump back to.">Changes are kept automatically; presets are snapshots.</p>
   <div id="controls"></div>
   <div class="midi">
     <h2 data-tip="Bind a hardware controller to any parameter. Class-compliant controllers work with no setup; the permission grant persists in this browser profile.">MIDI</h2>
     <div id="midi-status" data-tip="Connected MIDI inputs. &quot;no device&quot; means nothing is plugged in — the panel still works entirely by mouse.">no device</div>
     <p class="hint" data-tip="Each row's ⊙ button is its MIDI learn control: click it to arm, then move a knob or fader on the controller to bind that CC. One CC per parameter; re-learn to change it.">Click a param's ⊙ then move a knob to map it.</p>
   </div>
+  <div id="prefs"></div>
   <div id="tooltip" role="tooltip" hidden></div>
   <script type="module" src="panel.js"></script>
 </body>

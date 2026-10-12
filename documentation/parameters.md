@@ -7,12 +7,14 @@ frame or two.
 
 Open the panel: click the toolbar icon, or Ctrl+Shift+P.
 Kill switch: Ctrl+Shift+D toggles `enabled` without the panel.
-How the panel itself works — sections, typed values, saved defaults,
-tooltips — is [below](#the-panel).
+How the panel itself works — the A/B, the medium chips, presets, sections,
+typed values, tooltips — is [below](#the-panel).
 
 | Param | Default | Range | What it does |
 |---|---|---|---|
-| `enabled` | on | on/off | Master switch. Off restores every video/image untouched. |
+| `enabled` | on | on/off | Master switch — the panel's big **A/B** button (click latches, press-and-hold bypasses while held). Off restores every video/image/word untouched and ramps audio dry. The toolbar badge reads **ON** while it is on. |
+| `video` | on | on/off | Video on/off (the **video** chip, 2026-10-12). Off suspends every video job exactly as `enabled: false` does — overlay dropped, the video shown as transmitted — while images, text and audio carry on. |
+| `images` | on | on/off | Images on/off (the **images** chip, 2026-10-12). Off suspends every image job — the still shown as it arrived. Image look comes from the sort knobs under Video. |
 | `feedbackVideo` | **on** | on/off | Temporal feedback on videos — **the resting state** (John, 2026-08-12; previously off): smear accumulates, drifts, decays, clears at slow 30–60 s keyframes. Off = straight per-frame pixel sorting. |
 | `threshold` | **0.05** | 0–1 | Luma above this is eligible for sorting (and feedback). Near-zero corrupts almost everything while true black holds as a barrier; 1 = untouched. The single most expressive knob. |
 | `passes` | **64** | 0–64 | Sort passes per frame. A full 256→1 stride ladder is 18 passes, so 64 runs ~3.5 settling cycles. |
@@ -185,14 +187,30 @@ always shows your requested values.
 
 ## The panel
 
-Rebuilt 2026-08-20 for performing rather than for reading source. Three
-sections under a global block, and the whole thing explains itself on hover.
+Rebuilt 2026-08-20 for performing rather than for reading source; the global
+block redesigned 2026-10-12 for the stranger (design review M1, M2, M3, M7).
+Three sections under a global block, and the whole thing explains itself on
+hover.
 
-**Layout.** The global block at the top is `enabled`, the `tooltips` switch,
-and the two defaults buttons — everything that governs all four mediums at
-once. Below it, a divider and a left-aligned title open each section:
-**Video**, **Text**, **Audio**. (An **Images** section held the image
-feedback rows until image feedback was removed, 2026-10-12.)
+**The global block** is everything above the first divider, in order:
+
+- **Title line.** CORRUPTION, one plain sentence saying what it does, and
+  the two shortcuts. The shortcut line reads the real bindings from
+  `chrome.commands.getAll()` (so a rebind at chrome://extensions/shortcuts
+  shows), falling back to the manifest's suggested keys.
+- **The A/B** — one large button bound to `enabled`. Yellow *ON — bending
+  the page* or dark *OFF — page untouched*. **Click latches. Press and hold**
+  (longer than 250 ms) **bypasses**: the piece flips while held and comes
+  back the moment you let go (also on pointer-leave or cancel), so a
+  stranger can hold to see the original and release to return. Space/Enter
+  latch. Its ⊙ MIDI learn sits beside it.
+- **The four medium chips** — video · images · text · audio. The pill
+  switches the medium (`video`, `images`, `textScramble`, `audioEnabled`);
+  the caption above it jumps to the section that shapes it (images jump to
+  Video, where their knobs live). The text and audio rows in their own
+  sections stay canonical — chip and row are one control. Chips dim while
+  the A/B is off, because it governs all four.
+- **Presets** (below).
 
 The sort knobs genuinely belong to video *and* images — one shader, two
 callers — and John's call (2026-08-20) is that they live under **Video**,
@@ -200,7 +218,8 @@ with the tooltips saying so, rather than being duplicated or given a
 section of their own. Images are one-shot sorted stills with no knobs of
 their own (image feedback and its animation ticker were removed
 2026-10-12, John); the feedback knobs shape video only.
-So: if a knob shapes images at all, it is under Video.
+So: if a knob shapes images at all, it is under Video. Each section header
+is a jump target (`#section-video`, `#section-text`, `#section-audio`).
 
 **Typing values.** Every numeric row's readout is an editable field. Type a
 number and the knob follows as you type; press Enter (or click away) and the
@@ -209,29 +228,52 @@ text settles at the parameter's own precision. Values outside the range
 to the parameter's step, so the field, the knob and storage can never
 disagree. ↑/↓ step by one increment, shift+↑/↓ by ten; Escape abandons the
 edit. A field that has your caret in it is never reformatted mid-keystroke,
-but a value arriving from elsewhere — MIDI, a restore, the other panel
+but a value arriving from elsewhere — MIDI, a preset load, the other panel
 window — does update it.
 
-**Defaults, two layers.** `restore defaults` puts every parameter back;
-`set defaults` saves the panel exactly as it stands right now as the set it
-goes back to. That is the point of it: find a configuration by ear and eye
-during install, press `set defaults`, and it is the resting state without a
-source edit or a reload. The snapshot lives in `chrome.storage.local` under
-`userDefaults` (outside `DEFAULTS`, so no content script ever sees it) and
-survives restarts. A third button, `clear saved`, appears only once a set
-exists and drops it — after which `restore defaults` goes back to the
-`DEFAULTS` compiled into `params.js`.
+**Presets.** Every move is already kept (storage persists across restarts);
+presets are snapshots to jump between. The row is **original · A · B · C ·
+save…**:
 
-**One parameter at a time.** Double-click any row to restore just that
-parameter — to the saved set if there is one, otherwise to the code default.
-The row flashes to confirm. Double-clicking inside a value field selects the
-text instead, as it should.
+- **original** puts every parameter back to the `DEFAULTS` compiled into
+  `params.js`. Nothing in the UI can redefine it, so the way back to the
+  shipped piece always exists.
+- **A · B · C** are slots. Clicking one **loads** it; an empty slot is
+  dashed and only says "empty".
+- **save…** is deliberately secondary and two clicks: it puts the row in a
+  visible save mode (slots read *save → A*, a Cancel appears), the next slot
+  click writes the current settings there and flashes "saved to A", and the
+  row returns to load mode. Escape or a click anywhere else cancels. This is
+  the fix for the room slip (meaning to restore, pressing save).
+- **Every load and every original restore** flashes ("loaded" /
+  "restored") and offers **undo** for ten seconds, which puts back exactly
+  the settings from before.
+- Presets never capture or load the A/B (`enabled`): loading a look while
+  comparing must not switch the page back on.
 
-**Tooltips.** Everything in the panel — every row, every value field, every
-section header, every button, the MIDI block — carries hover copy explaining
-what it is and what it does. The `tooltips` switch in the global block turns
-the layer off entirely; it defaults on and the setting persists (storage key
-`tooltips`, also outside `DEFAULTS`).
+Storage: one key `presets` (`{A, B, C}`, each a values object or null) and
+`presetBase`, both outside `DEFAULTS`, so no content script sees them. The
+old single snapshot (`userDefaults`, from the "set defaults" button) is
+migrated on panel boot: if slot A is empty it moves into A, A becomes the
+base, and `userDefaults` is removed.
+
+**One parameter at a time.** Double-click any row to put just that
+parameter back to the **base preset** — the last one loaded (original, or
+the slot last loaded; stored as `presetBase`). The base is marked with a
+yellow underline and its tooltip says so. The row flashes to confirm.
+Double-clicking inside a value field selects the text instead, as it should.
+
+**Tooltips.** Everything in the panel — the title line, the A/B, the chips,
+every row, value field, section header and button, the MIDI block — carries
+hover copy explaining what it is and what it does. The `tooltips` switch at
+the bottom, under the MIDI block, turns the layer off entirely; it defaults
+on and the setting persists (storage key `tooltips`, also outside
+`DEFAULTS`).
+
+**Outside the panel.** The toolbar icon carries a yellow **ON** badge while
+`enabled` is on and none when off, and its hover title names the piece and
+the shortcuts (the service worker updates both on every change). There is
+no in-page mark; that is John's call.
 
 The panel has its own harness: `test/harness/panel.html`.
 
@@ -242,7 +284,7 @@ The panel has its own harness: `test/harness/panel.html`.
 2. Click a param's ⊙ button (it arms, highlighted), move a knob — that CC
    is now bound and the button shows its number. Mappings persist in
    storage; re-learn to change, one CC per param.
-3. Toggle params (`enabled`) treat CC value ≥64 as on.
+3. Toggle params (`enabled`, the A/B) treat CC value ≥64 as on.
 
 Any class-compliant controller works. Suggested performance set: threshold,
 decay, driftY, passes. For audio: `audioMix`, `audioSustain`,

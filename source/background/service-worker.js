@@ -44,6 +44,39 @@ chrome.commands.onCommand.addListener((command) => {
 
 chrome.action.onClicked.addListener(() => openPanel());
 
+// The seam outside the panel (design review finding 1 / M1): the toolbar
+// icon says whether the piece is on. Badge "ON" in the A/B's yellow, blank
+// when off; the hover title says the same in words. Nothing in-page — a
+// first-run mark is John's call and deliberately absent.
+const BADGE_YELLOW = '#e8e864';
+const TITLE_BASE = 'CORRUPTION — click to play, Ctrl+Shift+D on/off';
+
+async function refreshBadge(enabled) {
+  if (enabled === undefined) {
+    ({ enabled = true } = await chrome.storage.local.get('enabled'));
+  }
+  enabled = enabled !== false;
+  try {
+    await chrome.action.setBadgeText({ text: enabled ? 'ON' : '' });
+    await chrome.action.setBadgeBackgroundColor({ color: BADGE_YELLOW });
+    if (chrome.action.setBadgeTextColor) {
+      await chrome.action.setBadgeTextColor({ color: '#131316' });
+    }
+    await chrome.action.setTitle({
+      title: `${TITLE_BASE}\n${enabled ? 'ON — bending every page' : 'OFF — pages untouched'}`,
+    });
+  } catch (err) {
+    console.warn('[DEFLECTION] badge', err);
+  }
+}
+
+chrome.runtime.onStartup.addListener(() => refreshBadge());
+chrome.runtime.onInstalled.addListener(() => refreshBadge());
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === 'local' && 'enabled' in changes) refreshBadge(changes.enabled.newValue);
+});
+refreshBadge(); // every service-worker wake: the badge can never go stale
+
 // Image-path fallback (route 3): host permissions let the SW fetch what
 // page CORS won't allow. MV3 messaging JSON-serializes, so bytes travel as
 // a base64 data URL — ugly but universal, and rare (the DNR header rule

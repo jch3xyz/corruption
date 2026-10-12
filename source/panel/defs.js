@@ -7,8 +7,10 @@
 // and images genuinely SHARE live under Video — so their tooltips say so
 // rather than the layout lying about it. The Images section went with image
 // feedback (removed 2026-10-12, John): stills have no knobs of their own.
-// `enabled` belongs to no section: it is the master switch and kills all
-// three at once, so it sits above the first divider.
+// `enabled`, `video` and `images` belong to no section: they are the global
+// block above the first divider — the A/B (`enabled`) and two of the four
+// medium chips. The other two chips drive `textScramble` and `audioEnabled`,
+// whose canonical rows stay in their own sections.
 
 import { DEFAULTS } from '../content/params.js';
 
@@ -32,7 +34,7 @@ export const SECTIONS = [
 
 // Appended under every parameter's tooltip — the two gestures that are not
 // discoverable from looking at the row.
-export const ROW_HINT = 'Double-click the row to restore its default.';
+export const ROW_HINT = 'Double-click the row to put it back to the marked preset.';
 export const NUM_HINT = 'Type a value and press Enter; ↑/↓ steps (shift ×10). Out-of-range values clamp.';
 
 export const DEFS = [
@@ -40,7 +42,19 @@ export const DEFS = [
     key: 'enabled',
     label: 'enabled',
     type: 'toggle',
-    tip: 'Master switch for the whole piece — video, images, text and audio. Off restores every page untouched. Ctrl+Shift+D toggles it without the panel.',
+    tip: 'The A/B: the whole piece on or off — video, images, text and sound. Click to latch. Press and hold to see and hear the page untouched for as long as you hold; let go and the bending comes back. Ctrl+Shift+D flips it from any page without the panel.',
+  },
+  {
+    key: 'video',
+    label: 'video',
+    type: 'toggle',
+    tip: 'Video on/off. Off shows every video exactly as it arrived while images, text and sound keep bending. The Video section below shapes it.',
+  },
+  {
+    key: 'images',
+    label: 'images',
+    type: 'toggle',
+    tip: 'Images on/off. Off puts every still picture back as it arrived. Images take their look from the sort knobs in the Video section.',
   },
 
   // --- Video (plus the sort grammar images share) ---
@@ -401,13 +415,25 @@ export const fmtValue = (def, v) => {
   return fmtNumber(def, v);
 };
 
-// Defaults resolve through John's saved set first, then the code DEFAULTS.
-// "set defaults" writes the saved set; "clear saved" drops it, which is the
-// escape hatch that keeps correction #8 true (edit DEFAULTS in source and
-// the panel can still get back to it).
-export function defaultFor(key, userDefaults) {
-  if (userDefaults && Object.prototype.hasOwnProperty.call(userDefaults, key)) {
-    return userDefaults[key];
+// A row's restore value resolves through the BASE preset first — the slot
+// last loaded (A/B/C), or null when the base is "original" — then the code
+// DEFAULTS. "original" is never stored, so the compiled DEFAULTS are always
+// one click away (correction #8: edit DEFAULTS in source and the panel can
+// still reach them). A partial preset falls through per key.
+export function defaultFor(key, base) {
+  if (base && Object.prototype.hasOwnProperty.call(base, key)) {
+    return base[key];
   }
   return DEFAULTS[key];
 }
+
+// The preset slots, in display order. Stored together under `presets`
+// ({A, B, C}, each a values object or null), with `presetBase` naming the
+// last-loaded one — both outside DEFAULTS, so no content script sees them.
+export const PRESET_SLOTS = ['A', 'B', 'C'];
+
+// Keys a preset neither captures nor loads. The A/B is the comparison
+// gesture, not part of a look: loading a preset (or "original") while the
+// page is switched off must not switch it back on, and a save made mid-hold
+// must not capture the bypass.
+export const PRESET_EXCLUDED = ['enabled'];

@@ -15,7 +15,11 @@
 -->
 <script>
   (() => {
-    const data = {};
+    // ?seed=<url-encoded JSON> pre-populates storage BEFORE the panel boots,
+    // so the harness can test what the panel does with what it finds there
+    // (the legacy userDefaults → preset A migration).
+    const seed = new URLSearchParams(location.search).get('seed');
+    const data = seed ? JSON.parse(seed) : {};
     const listeners = [];
     window.__store = data;
     window.chrome = {
@@ -34,6 +38,15 @@
             for (const [k, v] of Object.entries(values)) {
               changes[k] = { oldValue: data[k], newValue: v };
               data[k] = v;
+            }
+            for (const fn of listeners) fn(changes, 'local');
+          },
+          async remove(keys) {
+            const changes = {};
+            for (const k of [].concat(keys)) {
+              if (!(k in data)) continue;
+              changes[k] = { oldValue: data[k] };
+              delete data[k];
             }
             for (const fn of listeners) fn(changes, 'local');
           },

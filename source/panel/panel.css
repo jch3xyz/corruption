@@ -14,9 +14,154 @@ h1 {
   font-size: 13px;
   letter-spacing: 0.35em;
   font-weight: 600;
-  margin: 0 0 16px;
+  margin: 0 0 6px;
   color: #fff;
 }
+
+/* --- The global block (2026-10-12: M1, M2, M3, M7) --- */
+
+.masthead { margin: 0 0 14px; }
+
+.lede {
+  margin: 0;
+  color: #b8b8c0;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.keys {
+  margin: 4px 0 0;
+  color: #5c5c66;
+  font-size: 10px;
+  white-space: pre;
+}
+
+/* The A/B: the biggest thing in the panel, readable from across a room. */
+.ab-row {
+  display: grid;
+  grid-template-columns: 1fr 28px;
+  gap: 10px;
+  align-items: center;
+}
+
+.ab {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 58px;
+  padding: 10px 12px;
+  background: #1a1a1f;
+  color: #75757e;
+  border: 1px solid #34343c;
+  border-radius: 6px;
+  font-family: inherit;
+  cursor: pointer;
+  touch-action: none;
+  transition: background 80ms, color 80ms;
+}
+
+.ab:hover { border-color: #55555e; }
+.ab:focus-visible { outline: 2px solid #8a8a40; outline-offset: 2px; }
+
+.ab .ab-state {
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: 0.22em;
+}
+
+.ab .ab-say { font-size: 11px; }
+
+.ab.on {
+  background: #e8e864;
+  color: #131316;
+  border-color: #e8e864;
+}
+
+/* Held: the momentary bypass — a dashed edge says "this will spring back". */
+.ab.held { outline: 2px dashed #e8e864; outline-offset: 3px; }
+
+/* The four mediums: a caption that jumps, a pill that switches. */
+.chips {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  margin: 12px 0 0;
+}
+
+.master-off .chips { opacity: 0.45; }
+
+.chip { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+
+.chip-name {
+  background: none;
+  border: none;
+  padding: 0;
+  color: #9a9a70;
+  font-family: inherit;
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  text-align: left;
+  cursor: pointer;
+}
+
+.chip-name:hover { color: #e8e864; }
+
+.chip-toggle {
+  height: 28px;
+  background: transparent;
+  color: #65656e;
+  border: 1px solid #3a3a44;
+  border-radius: 4px;
+  font-family: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.chip-toggle:hover { border-color: #5a5a64; }
+
+.chip.on .chip-toggle {
+  background: #4a4a24;
+  color: #e8e864;
+  border-color: #8a8a40;
+}
+
+/* Presets: original · A · B · C · save… (· undo). */
+.presets {
+  display: flex;
+  flex-wrap: nowrap; /* save mode relabels the slots in place — no reflow */
+  gap: 6px;
+  align-items: center;
+  margin: 16px 0 0;
+}
+
+.presets .btn { white-space: nowrap; }
+
+.btn.preset { padding: 6px 10px; }
+
+/* The slots share the spare width, so "save → A" fits where "A" stood. */
+.btn.slot { flex: 1 1 0; min-width: 34px; padding: 6px 4px; }
+
+.btn.slot.empty { border-style: dashed; color: #55555c; }
+
+/* The base preset — the one a row double-click returns to. */
+.btn.base { box-shadow: inset 0 -2px 0 #e8e864; }
+
+.presets.saving .slot { border-color: #8a8a40; color: #e8e864; }
+
+.btn.undo { color: #e8e864; border-color: #6a6a30; }
+
+.btn:disabled { opacity: 0.35; cursor: default; }
+
+.hint.note { font-size: 10px; margin: 7px 0 0; }
+
+/* Section headers are jump targets for the chips. */
+.section { scroll-margin-top: 12px; }
+.section:focus { outline: none; }
+
+#prefs { margin-top: 12px; }
 
 h2 {
   font-size: 11px;
@@ -147,15 +292,6 @@ select {
 }
 
 .learn.mapped { color: #b8b860; }
-
-/* The defaults buttons close the global block, above the first divider. */
-.footer {
-  margin: 12px 0 0;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  align-items: center;
-}
 
 .btn {
   background: #1e1e24;

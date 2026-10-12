@@ -9,6 +9,9 @@
 // smear. Images never animate (image feedback removed 2026-10-12, John).
 export const DEFAULTS = {
   enabled: true,
+  video: true,       // per-medium switches under the master (the panel's
+  images: true,      // chips, 2026-10-12): off suspends that medium's jobs
+                     // exactly as `enabled: false` does — originals shown
   feedbackVideo: true,  // temporal feedback on videos — the resting state
   threshold: 0.05,   // luma above this is eligible; near-zero = the whole
                      // frame sorts but true black holds as a barrier

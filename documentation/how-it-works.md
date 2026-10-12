@@ -72,8 +72,15 @@ values; `paramsChanged(changed)` exists purely for side effects (re-ranking,
 still invalidation, pushing params to worklets).
 
 Consequence worth knowing: **stored values beat code defaults.** After editing
-`DEFAULTS`, the panel's "restore defaults" is required or the old values
-persist from storage.
+`DEFAULTS`, press the panel's **original** preset or the old values persist
+from storage. Presets (`presets`, slots A/B/C) and the double-click base
+(`presetBase`) live in storage outside `DEFAULTS`; "original" is never
+stored, so it always means the code as it stands.
+
+The registry gates jobs in `rebalance()`: `enabled` off suspends every job
+(and restores text); with it on, `video: false` suspends the video jobs and
+`images: false` the image jobs at the same point, each reactivating on the
+next rebalance once switched back. Audio and text answer to their own keys.
 
 Web MIDI maps one CC per parameter, learned in the panel and persisted under a
 `midiMap` key that is deliberately *not* in `DEFAULTS` (which is what keeps it

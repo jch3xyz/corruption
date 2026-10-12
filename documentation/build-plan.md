@@ -168,6 +168,11 @@ balance are the open item below. The previous sound is exactly reachable at
   brighter-wins rule is now an open effects question (M5), as is a
   source-following audio apparatus (M8). Comb body and gated exciter are
   removal candidates pending a deliberate A/B, John's call.
+  **Global block redesign landed (M1, M2, M3, M7):** title line with the
+  shortcuts, a large A/B on `enabled` (click latches, hold bypasses), four
+  medium chips (new params `video`/`images`, gated in `registry.rebalance()`),
+  presets original · A · B · C behind a save mode with ten-second undo,
+  toolbar badge/title; the legacy `userDefaults` migrates to preset slot A.
   **M6 landed 2026-10-12:** image feedback is gone — its toggle, the image
   animation ticker and the two knobs only it read, the panel's Images
   section, and the visual suite's two ticker checks. Images are one-shot
@@ -243,13 +248,12 @@ Design invariants that hold everywhere:
    in-session test pane — see Dev workflow).
 7. **Chrome heuristic-caches old-mtime modules for hours** — always test
    through `test/serve.py` (sends no-store), never a plain http.server.
-8. **Stored params beat code defaults**: after changing DEFAULTS, hit
-   "restore defaults" in the panel or the old values persist from storage.
-   Since 2026-08-20 there is a layer in front of that: if John has pressed
-   "set defaults", the saved snapshot (`userDefaults`) is what "restore
-   defaults" and every double-click return to, and it also outranks a
-   changed `DEFAULTS`. Press **"clear saved" first**, then "restore
-   defaults", to reach freshly edited code defaults.
+8. **Stored params beat code defaults**: after changing DEFAULTS, press
+   **original** in the panel's preset row or the old values persist from
+   storage. "original" is never stored, so it always reaches freshly edited
+   code defaults. (Until 2026-10-12 a saved "set defaults" snapshot,
+   `userDefaults`, stood in front of them; it now migrates to preset slot A.
+   A row double-click returns to the last-loaded preset, `presetBase`.)
 9. **An effect must be a process done to the audio, not a synth the audio
    drives.** The engine used to output `sum(modes)` — the input never appeared
    in the output — while the visual side is a permutation with harness-asserted

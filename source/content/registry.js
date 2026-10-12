@@ -167,10 +167,17 @@ export class Registry {
       (job.kind === 'image' ? images : videos).push([area, job]);
     }
 
+    // The per-medium switches gate here, at the same point the master does:
+    // a switched-off medium's jobs suspend (overlay dropped, original shown)
+    // and the next rebalance with the switch back on reactivates them.
+    // Audio and text answer to their own keys (audioEnabled, textScramble).
+    const videoOn = this.params.video !== false;
+    const imagesOn = this.params.images !== false;
+
     videos.sort((a, b) => b[0] - a[0]);
     let slots = Math.max(1, this.params.maxVideos ?? 8);
     for (const [area, job] of videos) {
-      if (area > 0 && slots > 0) {
+      if (videoOn && area > 0 && slots > 0) {
         job.activate();
         if (job.active) slots--;
       } else {
@@ -179,7 +186,8 @@ export class Registry {
     }
 
     for (const [area, job] of images) {
-      if (area > 0) job.activate();
+      if (!imagesOn) job.suspend();
+      else if (area > 0) job.activate();
     }
 
     this.rebalanceAudio();

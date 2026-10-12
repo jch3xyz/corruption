@@ -8,6 +8,11 @@
 // markup that ships, and stubs chrome.storage.local so the harness can read
 // exactly what the panel wrote.
 //
+// 2026-10-12: the global block was redesigned (design review M1/M2/M3/M7):
+// title + subtitle + shortcuts, a large A/B with hold-to-bypass, four medium
+// chips, and presets (immutable original, slots A/B/C behind a save mode,
+// undo after every load). The old "set defaults" snapshot migrates to A.
+//
 // Run: python3 test/serve.py  →  http://localhost:8437/test/harness/panel.html
 
 import { DEFAULTS } from '../../source/content/params.js';
@@ -19,7 +24,17 @@ import {
   fmtNumber,
   decimals,
   defaultFor,
+  PRESET_SLOTS,
+  PRESET_EXCLUDED,
 } from '../../source/panel/defs.js';
+
+// Keys the panel may store that are NOT parameters: panel furniture and the
+// preset store. Excluded from "every stored key has a row".
+const PANEL_ONLY = ['tooltips', 'midiMap', 'presets', 'presetBase'];
+// Sectionless rows: the global block's own controls.
+const GLOBAL_KEYS = ['enabled', 'video', 'images'];
+// The chips, in order, and the key each one drives.
+const CHIP_KEYS = ['video', 'images', 'textScramble', 'audioEnabled'];
 
 const status = document.getElementById('status');
 let passCount = 0;
@@ -43,6 +58,8 @@ const numeric = DEFS.filter((d) => d.type !== 'toggle' && d.type !== 'select');
 const byKey = Object.fromEntries(DEFS.map((d) => [d.key, d]));
 
 // --- Tier 1: the control table and the value helpers -----------------------
+
+const defsSection = (key) => byKey[key].section;
 
 function tier1() {
   tier('tier 1 — control table + value helpers (pure)');
@@ -69,8 +86,19 @@ function tier1() {
 
   const declared = new Set(SECTIONS.map((s) => s.id));
   check(
-    'every row belongs to a declared section, except the master switch',
-    DEFS.every((d) => (d.key === 'enabled' ? !d.section : declared.has(d.section)))
+    'every row belongs to a declared section, except the global block (A/B, video, images)',
+    DEFS.every((d) => (GLOBAL_KEYS.includes(d.key) ? !d.section : declared.has(d.section)))
+  );
+  check(
+    'the per-medium switches exist as on-by-default toggles',
+    DEFAULTS.video === true &&
+      DEFAULTS.images === true &&
+      byKey.video?.type === 'toggle' &&
+      byKey.images?.type === 'toggle'
+  );
+  check(
+    'presets are three slots and never capture the A/B',
+    PRESET_SLOTS.join() === 'A,B,C' && PRESET_EXCLUDED.includes('enabled')
   );
   check(
     'no section is empty',
@@ -135,15 +163,15 @@ function tier1() {
   );
 
   check(
-    'with no saved set, defaults come from the code',
+    'with "original" as the base, defaults come from the code',
     DEFS.every((d) => defaultFor(d.key, null) === DEFAULTS[d.key])
   );
   check(
-    'a saved set wins over the code defaults',
+    'a base preset wins over the code defaults',
     defaultFor('threshold', { threshold: 0.42 }) === 0.42
   );
   check(
-    'a partial saved set still falls through per key',
+    'a partial base preset still falls through per key',
     defaultFor('decay', { threshold: 0.42 }) === DEFAULTS.decay
   );
   check(
@@ -156,7 +184,13 @@ function tier1() {
   // content scripts filter on `key in DEFAULTS`, and these are not knobs.
   check(
     'panel-only keys stay out of the parameter set',
-    !('userDefaults' in DEFAULTS) && !('tooltips' in DEFAULTS) && !('midiMap' in DEFAULTS)
+    !('userDefaults' in DEFAULTS) && PANEL_ONLY.every((k) => !(k in DEFAULTS))
+  );
+  check(
+    '"every stored key has a row" ignores the preset store and panel prefs',
+    Object.keys({ ...DEFAULTS, ...Object.fromEntries(PANEL_ONLY.map((k) => [k, 1])) })
+      .filter((k) => !PANEL_ONLY.includes(k))
+      .every((k) => DEFS.some((d) => d.key === k))
   );
 }
 
@@ -186,6 +220,28 @@ function press(el, k, opts = {}) {
 
 function fire(el, type_, opts = {}) {
   el.dispatchEvent(new win.MouseEvent(type_, { bubbles: true, ...opts }));
+}
+
+function pointer(el, type_, opts = {}) {
+  el.dispatchEvent(
+    new win.PointerEvent(type_, { bubbles: true, pointerId: 1, button: 0, isPrimary: true, ...opts })
+  );
+}
+
+const chip = (key) => doc.querySelector(`.chip[data-key="${key}"]`);
+const text = (el) => el.textContent.trim();
+
+async function bootFrame(src) {
+  const f = document.createElement('iframe');
+  f.style.cssText = 'width:400px;height:720px;border:1px solid #2e2e36;margin-left:8px';
+  f.src = src;
+  document.getElementById('stage').appendChild(f);
+  const deadline = Date.now() + 8000;
+  while (!f.contentWindow?.__panelReady) {
+    if (Date.now() > deadline) throw new Error(`${src} never booted`);
+    await sleep(50);
+  }
+  return f;
 }
 
 async function tier2() {
@@ -235,34 +291,207 @@ async function tier2() {
     strayBeforeFirstDivider.length === 0
   );
 
-  // The global block above the first divider: master switch, tooltips
-  // switch, defaults buttons — in that order, and nothing else.
+  // The global block above the first divider (2026-10-12): title line, the
+  // A/B, the four medium chips — then the preset row and its note — and
+  // nothing else; the tooltips switch moved down beside MIDI.
   const globals = [...$('#globals').children];
   check(
-    'the global block is the master switch then the tooltips switch',
+    'the global block is the A/B then the four medium chips',
     globals.length === 2 &&
-      globals[0].dataset.key === 'enabled' &&
-      globals[1].classList.contains('pref')
+      globals[0].classList.contains('ab-row') &&
+      globals[1].classList.contains('chips')
   );
   check(
-    'the tooltips switch lines up with the parameter row above it',
-    win.getComputedStyle(globals[1]).gridTemplateColumns ===
-      win.getComputedStyle(globals[0]).gridTemplateColumns
+    'the title line names the piece, says what it does, and shows both shortcuts',
+    text($('h1')) === 'CORRUPTION' &&
+      $('.masthead .lede')?.textContent.includes('Switch it off') &&
+      /Ctrl\+Shift\+D\s+on\/off/.test($('#keys').textContent) &&
+      /Ctrl\+Shift\+P\s+this panel/.test($('#keys').textContent)
+  );
+  const ab = $('#ab');
+  check(
+    'the A/B is one full-width button bound to enabled, with its MIDI learn beside it',
+    ab?.tagName === 'BUTTON' &&
+      ab.dataset.key === 'enabled' &&
+      ab.getBoundingClientRect().width > 0.8 * $('#globals').getBoundingClientRect().width &&
+      !!$('.ab-row .learn')
   );
   check(
-    'the defaults buttons close the global block, above every divider',
+    'the A/B dominates: taller than any other control in the panel',
     (() => {
-      const body = [...doc.body.children];
-      const g = body.indexOf($('#globals'));
-      const f = body.indexOf($('#defaults').closest('.footer'));
-      const c = body.indexOf($('#controls'));
-      return g < f && f < c;
+      const h = ab.getBoundingClientRect().height;
+      return [...doc.querySelectorAll('.btn, .chip-toggle, .row')].every(
+        (el) => el.getBoundingClientRect().height * 1.6 < h
+      );
     })()
   );
   check(
-    'every parameter in the table reached the DOM',
-    DEFS.every((d) => !!row(d.key))
+    'the A/B reads ON in yellow at rest',
+    ab.classList.contains('on') &&
+      text(ab).startsWith('ON') &&
+      win.getComputedStyle(ab).backgroundColor === 'rgb(232, 232, 100)'
   );
+  check(
+    'the chips are video · images · text · audio, each bound to its key',
+    [...doc.querySelectorAll('.chips .chip')].map((c) => c.dataset.key).join() === CHIP_KEYS.join() &&
+      [...doc.querySelectorAll('.chip-name')].map((c) => text(c).replace(/\W+$/, '')).join() ===
+        'video,images,text,audio'
+  );
+  check(
+    'every chip shows itself on at rest (filled)',
+    CHIP_KEYS.every((k) => chip(k).classList.contains('on'))
+  );
+  check(
+    'the presets close the global block, above every divider',
+    (() => {
+      const body = [...doc.body.children];
+      const g = body.indexOf($('#globals'));
+      const p = body.indexOf($('#presets'));
+      const n = body.indexOf($('#persist-note'));
+      const c = body.indexOf($('#controls'));
+      return g < p && p < n && n < c;
+    })()
+  );
+  check(
+    'the preset row is original · A · B · C · save…, and nothing else shows',
+    [...$('#presets').children].filter((b) => !b.hidden).map(text).join() === 'original,A,B,C,save…'
+  );
+  check(
+    'one line says changes persist and presets are snapshots',
+    /kept automatically/.test($('#persist-note').textContent) &&
+      /snapshots/.test($('#persist-note').textContent)
+  );
+  check(
+    'the old defaults buttons are gone',
+    !$('#defaults') && !$('#setdefaults') && !$('#cleardefaults')
+  );
+  const prefRow = $('#prefs .row.pref');
+  check(
+    'the tooltips switch sits at the bottom, after the MIDI block',
+    !!prefRow &&
+      !!$('#tooltips') &&
+      (doc.querySelector('.midi').compareDocumentPosition(prefRow) & win.Node.DOCUMENT_POSITION_FOLLOWING) !== 0
+  );
+  check(
+    'the tooltips switch lines up with the parameter rows',
+    win.getComputedStyle(prefRow).gridTemplateColumns ===
+      win.getComputedStyle(row('threshold')).gridTemplateColumns
+  );
+  check(
+    'every section header is a jump target',
+    SECTIONS.every((sec) => doc.getElementById(`section-${sec.id}`)?.classList.contains('section'))
+  );
+  check(
+    'every parameter with a section reached the DOM as a row',
+    DEFS.filter((d) => d.section).every((d) => !!row(d.key))
+  );
+  check(
+    'nothing in the panel overflows its 400 px window',
+    doc.documentElement.scrollWidth <= win.innerWidth
+  );
+
+  // -- the A/B --
+  ab.click(); // keyboard-style activation (detail 0): Space/Enter
+  await sleep(90);
+  check(
+    'clicking the A/B latches the piece off, and it says so',
+    store.enabled === false && !ab.classList.contains('on') && text(ab).startsWith('OFF') &&
+      text(ab).includes('untouched')
+  );
+  ab.click();
+  await sleep(90);
+  check('clicking again latches it back on', store.enabled === true && ab.classList.contains('on'));
+
+  pointer(ab, 'pointerdown');
+  await sleep(60);
+  pointer(ab, 'pointerup');
+  await sleep(90);
+  check('a quick press-and-release latches too', store.enabled === false);
+  ab.click();
+  await sleep(90);
+
+  pointer(ab, 'pointerdown');
+  await sleep(400);
+  await sleep(60);
+  check(
+    'press and hold bypasses: the piece is off while held',
+    store.enabled === false && ab.classList.contains('held') && text(ab).includes('let go')
+  );
+  pointer(ab, 'pointerup');
+  await sleep(90);
+  check(
+    'release after a hold comes back — no latch',
+    store.enabled === true && ab.classList.contains('on') && !ab.classList.contains('held')
+  );
+
+  pointer(ab, 'pointerdown');
+  await sleep(400);
+  pointer(ab, 'pointerleave');
+  await sleep(90);
+  check('dragging off the A/B mid-hold also comes back', store.enabled === true);
+
+  ab.click(); // latched off: a hold now bypasses the other way
+  await sleep(90);
+  pointer(ab, 'pointerdown');
+  await sleep(400);
+  await sleep(60);
+  const heldOn = store.enabled === true;
+  pointer(ab, 'pointercancel');
+  await sleep(90);
+  check('held from OFF it shows the piece, and cancel returns to OFF', heldOn && store.enabled === false);
+  ab.click();
+  await sleep(90);
+
+  // -- the four chips --
+  for (const key of CHIP_KEYS) {
+    chip(key).querySelector('.chip-toggle').click();
+    await sleep(90);
+    const off = store[key] === false && !chip(key).classList.contains('on');
+    chip(key).querySelector('.chip-toggle').click();
+    await sleep(90);
+    check(
+      `the ${key} chip writes ${key} off and back on`,
+      off && store[key] === true && chip(key).classList.contains('on')
+    );
+  }
+  chip('textScramble').querySelector('.chip-toggle').click();
+  await sleep(90);
+  check(
+    'the text chip and the canonical text row are one control',
+    !row('textScramble').querySelector('input').checked && row('textMin').classList.contains('inert')
+  );
+  const textRow = row('textScramble').querySelector('input');
+  textRow.checked = true;
+  textRow.dispatchEvent(new win.Event('input', { bubbles: true }));
+  await sleep(90);
+  check(
+    'and the row drives the chip back',
+    store.textScramble === true && chip('textScramble').classList.contains('on')
+  );
+  check(
+    'the A/B governs the chips: they dim while the piece is off',
+    await (async () => {
+      ab.click();
+      await sleep(90);
+      const dim = parseFloat(win.getComputedStyle($('.chips')).opacity) < 1;
+      ab.click();
+      await sleep(90);
+      return dim && store.enabled === true;
+    })()
+  );
+
+  for (const key of ['textScramble', 'audioEnabled']) {
+    chip(key).querySelector('.chip-name').click();
+    const head = doc.getElementById(`section-${defsSection(key)}`);
+    let top = Infinity;
+    for (let i = 0; i < 30 && Math.abs(top) > 20; i++) {
+      await sleep(50);
+      top = head.getBoundingClientRect().top;
+    }
+    check(`clicking the ${key} chip's caption scrolls its section header into view`, top >= -2 && top < 40);
+  }
+  win.scrollTo(0, 0);
+  await sleep(60);
 
   // -- typed values --
   type('threshold', '0.42');
@@ -344,53 +573,174 @@ async function tier2() {
     field('threshold').value === before && store.threshold === 1
   );
 
-  // -- saved defaults --
-  const btnSet = $('#setdefaults');
-  const btnRestore = $('#defaults');
-  const btnClear = $('#cleardefaults');
+  // -- presets --
+  const btnOriginal = $('#preset-original');
+  const slot = (x) => $(`#presets .slot[data-slot="${x}"]`);
+  const btnSave = $('#preset-save');
+  const btnCancel = $('#preset-cancel');
+  const btnUndo = $('#preset-undo');
 
-  check('"clear saved" stays hidden until a set has been saved', btnClear.hidden);
+  type('threshold', '0.42');
+  type('passes', '30');
+  field('passes').blur();
+  await sleep(90);
 
-  btnSet.click();
+  check('every slot starts empty and looks it', PRESET_SLOTS.every((x) => slot(x).classList.contains('empty')));
+  slot('A').click();
   await sleep(60);
   check(
-    '"set defaults" captures every live value',
-    !!store.userDefaults &&
-      store.userDefaults.threshold === 1 &&
-      store.userDefaults.passes === 21 &&
-      Object.keys(store.userDefaults).length === DEFS.length
+    'clicking an empty slot does nothing but say so',
+    store.threshold === 0.42 && text(slot('A')) === 'empty' && btnUndo.hidden
   );
-  check('"clear saved" appears once a set exists', !btnClear.hidden);
+  await sleep(900);
 
-  type('threshold', '0.2');
+  btnSave.click();
+  await sleep(30);
+  check(
+    'save… puts the row in a visible save mode',
+    $('#presets').classList.contains('saving') &&
+      text(slot('A')) === 'save → A' &&
+      text(slot('C')) === 'save → C' &&
+      !btnCancel.hidden &&
+      btnSave.hidden
+  );
+  press(doc.body, 'Escape');
+  await sleep(30);
+  check('Escape cancels save mode', !$('#presets').classList.contains('saving') && text(slot('A')) === 'A');
+
+  btnSave.click();
+  await sleep(30);
+  pointer($('#controls'), 'pointerdown');
+  await sleep(30);
+  check('a click elsewhere cancels save mode', !$('#presets').classList.contains('saving'));
+
+  btnSave.click();
+  await sleep(30);
+  btnCancel.click();
+  await sleep(30);
+  check('Cancel cancels save mode, and nothing was written', !$('#presets').classList.contains('saving') && !store.presets);
+
+  btnSave.click();
+  await sleep(30);
+  slot('A').click();
+  await sleep(60);
+  check(
+    'save mode then a slot writes presets.A with every parameter but the A/B',
+    !!store.presets?.A &&
+      store.presets.A.threshold === 0.42 &&
+      store.presets.A.passes === 30 &&
+      !('enabled' in store.presets.A) &&
+      Object.keys(store.presets.A).length === DEFS.length - PRESET_EXCLUDED.length &&
+      store.presets.B === null
+  );
+  check(
+    'the slot flashes "saved to A" and the row is back in load mode',
+    text(slot('A')) === 'saved to A' && !$('#presets').classList.contains('saving') && !btnSave.hidden
+  );
+  check('saving does not move the base', (store.presetBase ?? 'original') === 'original');
+  await sleep(900);
+  check('a saved slot no longer looks empty', !slot('A').classList.contains('empty'));
+
+  // original: every row back to DEFAULTS, the A/B left where it is
+  type('threshold', '0.7');
+  field('threshold').blur();
+  ab.click();
   await sleep(90);
-  btnRestore.click();
+  btnOriginal.click();
+  await sleep(90);
+  const notRestored = DEFS.filter(
+    (d) => !PRESET_EXCLUDED.includes(d.key) && store[d.key] !== DEFAULTS[d.key]
+  ).map((d) => d.key);
+  check(
+    `"original" restores every row to the compiled defaults (${notRestored.join(', ') || 'all'})`,
+    notRestored.length === 0 &&
+      Number(slider('threshold').value) === DEFAULTS.threshold &&
+      field('passes').value === fmtNumber(byKey.passes, DEFAULTS.passes)
+  );
+  check('"original" leaves the A/B alone', store.enabled === false);
+  check('"original" flashes "restored" and offers undo', text(btnOriginal) === 'restored' && !btnUndo.hidden);
+  check('the base is original, and it is marked', store.presetBase === 'original' && btnOriginal.classList.contains('base'));
+  ab.click();
+  await sleep(90);
+
+  btnUndo.click();
   await sleep(90);
   check(
-    '"restore defaults" comes back to the saved set, not the code defaults',
-    store.threshold === 1 &&
-      Number(slider('threshold').value) === 1 &&
-      field('threshold').value === '1.00'
+    'undo after a restore reinstates the values from before it',
+    store.threshold === 0.7 && store.passes === 30 && Number(slider('threshold').value) === 0.7 && btnUndo.hidden
   );
 
-  type('threshold', '0.2');
+  slot('A').click();
+  await sleep(90);
+  check(
+    'loading A restores its values, flashes "loaded", offers undo',
+    store.threshold === 0.42 && store.passes === 30 && text(slot('A')) === 'loaded' && !btnUndo.hidden
+  );
+  check(
+    'the base follows the load, and A is marked as the base',
+    store.presetBase === 'A' && slot('A').classList.contains('base') && !btnOriginal.classList.contains('base')
+  );
+  check('A’s tooltip says it is the base', /base/i.test(slot('A').dataset.hint));
+  btnUndo.click();
+  await sleep(90);
+  check(
+    'undo after a load reinstates the previous values and the previous base',
+    store.threshold === 0.7 && store.presetBase === 'original' && btnOriginal.classList.contains('base')
+  );
+
+  slot('A').click();
+  await sleep(90);
+  type('threshold', '0.9');
+  field('threshold').blur();
   await sleep(90);
   fire(row('threshold'), 'dblclick');
   await sleep(90);
-  check('a double-click restores to the saved value too', store.threshold === 1);
+  check('a row double-click returns to the base preset (A)', store.threshold === 0.42);
 
-  btnClear.click();
-  await sleep(60);
-  check(
-    '"clear saved" drops the saved set and hides itself',
-    store.userDefaults === null && btnClear.hidden
-  );
-  btnRestore.click();
+  btnOriginal.click();
   await sleep(90);
-  check(
-    'with the saved set cleared, restore goes back to the code defaults',
-    store.threshold === DEFAULTS.threshold && store.passes === DEFAULTS.passes
-  );
+  type('threshold', '0.9');
+  field('threshold').blur();
+  await sleep(90);
+  fire(row('threshold'), 'dblclick');
+  await sleep(90);
+  check('with original as the base, a double-click returns to the code default', store.threshold === DEFAULTS.threshold);
+
+  slot('A').click(); // a fresh undo window, then let it lapse
+  await sleep(90);
+  const undoShown = !btnUndo.hidden;
+  await sleep(10200);
+  check('undo is offered for ten seconds, then withdrawn', undoShown && btnUndo.hidden);
+  btnOriginal.click();
+  await sleep(90);
+
+  // -- migration: a legacy userDefaults becomes slot A and the base --
+  {
+    const legacy = { ...DEFAULTS, threshold: 0.33, passes: 12 };
+    const seed = { userDefaults: legacy, threshold: 0.6, presets: { A: null, B: { threshold: 0.21 }, C: null } };
+    const f = await bootFrame(`./panel-frame.html?seed=${encodeURIComponent(JSON.stringify(seed))}`);
+    const w = f.contentWindow;
+    const s2 = w.__store;
+    check(
+      'a legacy userDefaults migrates into slot A on boot, and becomes the base',
+      s2.presets?.A?.threshold === 0.33 && s2.presets.A.passes === 12 && s2.presetBase === 'A'
+    );
+    check('the legacy key is removed', !('userDefaults' in s2));
+    check('the migration leaves other slots alone', s2.presets.B?.threshold === 0.21);
+    check(
+      'migration loads nothing: the live values stay as stored',
+      s2.threshold === 0.6 &&
+        w.document.querySelector('.row[data-key="threshold"] input[type=range]').value === '0.6'
+    );
+    const r2 = w.document.querySelector('.row[data-key="threshold"]');
+    r2.dispatchEvent(new w.MouseEvent('dblclick', { bubbles: true }));
+    await sleep(90);
+    check(
+      'after migration a double-click returns to the old saved value',
+      s2.threshold === 0.33 && w.document.querySelector('.slot[data-slot="A"]').classList.contains('base')
+    );
+    f.remove();
+  }
 
   // -- tooltips --
   const tip = $('#tooltip');
@@ -441,7 +791,7 @@ async function tier2() {
   // -- everything explains itself --
   const bare = [];
   for (const el of doc.querySelectorAll(
-    'h1, .section, .row, .row input.value.num, .learn, .btn, .midi h2, #midi-status, .midi .hint'
+    'h1, .lede, .keys, .ab, .chip-name, .chip-toggle, #persist-note, .section, .row, .row input.value.num, .learn, .btn, .midi h2, #midi-status, .midi .hint'
   )) {
     if (el.hidden) continue;
     if (!el.dataset.tip || el.dataset.tip.length < 20) bare.push(el.className || el.tagName);
@@ -469,7 +819,7 @@ async function tier2() {
 
   // -- the panel never invents parameters --
   const strays = Object.keys(store).filter(
-    (k) => !(k in DEFAULTS) && !['userDefaults', 'tooltips', 'midiMap'].includes(k)
+    (k) => !(k in DEFAULTS) && !PANEL_ONLY.includes(k)
   );
   check(`the panel writes no key the content scripts do not know (${strays.join(', ') || 'none'})`, strays.length === 0);
 }

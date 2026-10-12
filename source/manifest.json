@@ -32,7 +32,9 @@
       "matches": ["<all_urls>"]
     }
   ],
-  "action": {},
+  "action": {
+    "default_title": "CORRUPTION — click to play, Ctrl+Shift+D on/off"
+  },
   "commands": {
     "toggle-effect": {
       "suggested_key": { "default": "Ctrl+Shift+D" },

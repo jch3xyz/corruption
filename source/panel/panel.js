@@ -3,9 +3,12 @@
 // Outside the extension (dev preview, panel harness) a local shim stands in
 // for storage so the UI is testable in a plain tab.
 //
-// Three storage keys live OUTSIDE params.js DEFAULTS on purpose, so the
+// Four storage keys live OUTSIDE params.js DEFAULTS on purpose, so the
 // content scripts (which filter on `key in DEFAULTS`) never see them:
-// `midiMap`, `userDefaults` (John's "set defaults" snapshot) and `tooltips`.
+// `midiMap`, `presets` (slots A/B/C), `presetBase` (the last-loaded preset,
+// which a row double-click returns to) and `tooltips`. A legacy
+// `userDefaults` (the old "set defaults" snapshot) migrates into slot A on
+// boot and is removed.
 
 import { DEFAULTS } from '../content/params.js';
 import {
@@ -17,6 +20,8 @@ import {
   fmtValue,
   fmtNumber,
   defaultFor,
+  PRESET_SLOTS,
+  PRESET_EXCLUDED,
 } from './defs.js';
 import { initMIDI } from './midi.js';
 
@@ -93,6 +98,14 @@ const store = {
     }
     for (const fn of shim.listeners) fn(changes);
   },
+  async remove(key) {
+    if (hasChrome) {
+      if (chrome.storage.local.remove) return chrome.storage.local.remove(key);
+      return chrome.storage.local.set({ [key]: null });
+    }
+    delete shim.data[key];
+    for (const fn of shim.listeners) fn({ [key]: { newValue: undefined } });
+  },
   onChanged(fn) {
     if (hasChrome) {
       chrome.storage.onChanged.addListener((changes, area) => {
@@ -107,13 +120,19 @@ const store = {
 // --- Build the UI ---
 
 const controls = document.getElementById('controls');
-// The global block above the first divider: the master switch, the
-// tooltips switch, and the defaults buttons (John, 2026-08-20).
+// The global block above the first divider (redesigned 2026-10-12, design
+// review M1/M2/M3/M7): the A/B, the four medium chips, then the presets.
 const globals = document.getElementById('globals');
+// `inputs[key]` holds each parameter's state: a real <input>/<select> for a
+// section row, a plain { checked } holder for the global toggles that have
+// no row (enabled, video, images). Extra views of the same key — the A/B
+// face, the chips — register a renderer and are redrawn on every setUI.
 const inputs = {};
 const valueEls = {};
 const learnEls = {};
 const rowEls = {};
+const renderers = {};
+const onRender = (key, fn) => (renderers[key] ??= []).push(fn);
 
 function buildRow(def) {
   const row = document.createElement('div');
@@ -153,6 +172,7 @@ function buildRow(def) {
           : Number(input.value);
     queueWrite(def.key, v);
     writeValueCell(def, v);
+    for (const fn of renderers[def.key] ?? []) fn(v); // e.g. the medium chip
     syncFor(def.key);
   });
 
@@ -197,6 +217,8 @@ function buildRow(def) {
 function buildSection(section) {
   const head = document.createElement('div');
   head.className = 'section';
+  head.id = `section-${section.id}`; // jump target for the medium chips
+  head.tabIndex = -1;
   head.dataset.section = section.id;
   head.dataset.tip = section.tip;
   const title = document.createElement('h2');
@@ -206,8 +228,9 @@ function buildSection(section) {
 }
 
 // The tooltips switch is panel furniture rather than a parameter of the
-// piece — but it belongs with `enabled` in the de facto global block at the
-// top (John, 2026-08-20), not tucked into the footer.
+// piece. It sat in the global block until the 2026-10-12 redesign gave that
+// block to the A/B, the mediums and the presets; it now lives at the bottom
+// beside the MIDI block, as a small row.
 function buildTooltipRow() {
   const row = document.createElement('div');
   row.className = 'row pref';
@@ -232,8 +255,154 @@ function buildTooltipRow() {
   return row;
 }
 
-// `enabled` carries no section — it is the master switch for all three, so
-// it goes in the global block rather than inside any one of them.
+// --- The A/B (M1): one large button bound to `enabled` ---
+// Click latches. Press and hold (> HOLD_MS) bypasses momentarily: the piece
+// flips while held and comes back on release, so a stranger can hold to see
+// the original and let go to return. Keyboard Space/Enter latch (they arrive
+// as a click with detail 0; mouse clicks are handled by the pointer path).
+const HOLD_MS = 250;
+
+function buildAB(def) {
+  const wrap = document.createElement('div');
+  wrap.className = 'ab-row';
+
+  const ab = document.createElement('button');
+  ab.className = 'ab';
+  ab.id = 'ab';
+  ab.dataset.key = def.key;
+  ab.dataset.tip = def.tip;
+  ab.dataset.hint = 'Click: latch. Hold: compare, release to come back.';
+  const state = document.createElement('span');
+  state.className = 'ab-state';
+  const say = document.createElement('span');
+  say.className = 'ab-say';
+  ab.append(state, say);
+
+  const learn = document.createElement('button');
+  learn.className = 'learn';
+  learn.textContent = '⊙';
+  learn.addEventListener('click', () => armLearn(def.key));
+
+  inputs[def.key] = { checked: true };
+  rowEls[def.key] = ab;
+  learnEls[def.key] = learn;
+
+  let held = false;
+  onRender(def.key, (on) => {
+    ab.classList.toggle('on', on);
+    ab.classList.toggle('held', held);
+    ab.setAttribute('aria-pressed', String(on));
+    state.textContent = on ? 'ON' : 'OFF';
+    say.textContent = held
+      ? on
+        ? '— holding: bending · let go to return'
+        : '— holding: page untouched · let go to return'
+      : on
+        ? '— bending the page'
+        : '— page untouched';
+    globals.classList.toggle('master-off', !on);
+  });
+
+  const setEnabled = (v) => {
+    queueWrite(def.key, v);
+    setUI(def.key, v);
+  };
+
+  let timer = 0;
+  let pointer = null;
+  let heldFrom = null;
+  ab.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0 || pointer !== null) return;
+    pointer = e.pointerId;
+    timer = setTimeout(() => {
+      timer = 0;
+      held = true;
+      heldFrom = inputs[def.key].checked;
+      setEnabled(!heldFrom);
+    }, HOLD_MS);
+  });
+  const release = (latch) => (e) => {
+    if (pointer === null || e.pointerId !== pointer) return;
+    pointer = null;
+    if (held) {
+      held = false;
+      setEnabled(heldFrom); // back to exactly where the hold began
+    } else if (timer) {
+      clearTimeout(timer);
+      timer = 0;
+      if (latch) setEnabled(!inputs[def.key].checked);
+    }
+  };
+  ab.addEventListener('pointerup', release(true));
+  ab.addEventListener('pointercancel', release(false));
+  ab.addEventListener('pointerleave', release(false));
+  ab.addEventListener('click', (e) => {
+    if (e.detail === 0) setEnabled(!inputs[def.key].checked); // keyboard
+  });
+  ab.addEventListener('contextmenu', (e) => e.preventDefault()); // long-press on touch
+
+  wrap.append(ab, learn);
+  return wrap;
+}
+
+// --- The four medium chips (M7): video · images · text · audio ---
+// The pill toggles its key; the caption above it jumps to the section that
+// shapes that medium. text and audio drive the existing section masters —
+// their rows stay canonical, the chips are the fast path.
+const CHIPS = [
+  { key: 'video', label: 'video', section: 'video' },
+  { key: 'images', label: 'images', section: 'video' },
+  { key: 'textScramble', label: 'text', section: 'text' },
+  { key: 'audioEnabled', label: 'audio', section: 'audio' },
+];
+
+function buildChips() {
+  const strip = document.createElement('div');
+  strip.className = 'chips';
+  for (const chip of CHIPS) {
+    const def = defByKey[chip.key];
+    const cell = document.createElement('div');
+    cell.className = 'chip';
+    cell.dataset.key = chip.key;
+
+    const name = document.createElement('button');
+    name.className = 'chip-name';
+    name.textContent = `${chip.label} ↓`;
+    const sectionTitle = SECTIONS.find((s) => s.id === chip.section)?.title ?? chip.section;
+    name.dataset.tip = `Jump to the ${sectionTitle} section, where ${chip.label} is shaped.`;
+    name.addEventListener('click', () => {
+      const head = document.getElementById(`section-${chip.section}`);
+      head?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+      head?.focus({ preventScroll: true });
+    });
+
+    const pill = document.createElement('button');
+    pill.className = 'chip-toggle';
+    pill.dataset.tip = def.tip;
+    pill.dataset.hint = 'Click to switch this medium on or off. The big switch above still governs all four.';
+    pill.addEventListener('click', () => {
+      const v = !inputs[chip.key].checked;
+      queueWrite(chip.key, v);
+      setUI(chip.key, v);
+    });
+
+    // video and images have no section row: the chip is their only face.
+    if (!def.section) {
+      inputs[chip.key] = { checked: true };
+      rowEls[chip.key] = cell;
+    }
+    onRender(chip.key, (on) => {
+      cell.classList.toggle('on', on);
+      pill.setAttribute('aria-pressed', String(on));
+      pill.textContent = on ? 'on' : 'off';
+    });
+
+    cell.append(name, pill);
+    strip.appendChild(cell);
+  }
+  return strip;
+}
+
 {
   const bySection = new Map(SECTIONS.map((s) => [s.id, []]));
   const loose = [];
@@ -242,16 +411,26 @@ function buildTooltipRow() {
     if (def.section && !bucket) console.warn('[panel] unknown section', def.section, def.key);
     (bucket ?? loose).push(def);
   }
-  for (const def of loose) globals.appendChild(buildRow(def));
-  globals.appendChild(buildTooltipRow());
+  // Sectionless rows are the global block's: the A/B plus the chips. Any
+  // other sectionless key would have no face, so it is flagged loudly.
+  const chipKeys = new Set(CHIPS.map((c) => c.key));
+  for (const def of loose) {
+    if (def.key !== 'enabled' && !chipKeys.has(def.key)) {
+      console.warn('[panel] sectionless param with no global control', def.key);
+    }
+  }
+  globals.appendChild(buildAB(defByKey.enabled));
   for (const section of SECTIONS) {
     controls.appendChild(buildSection(section));
     for (const def of bySection.get(section.id)) controls.appendChild(buildRow(def));
   }
+  globals.appendChild(buildChips()); // after the rows: text/audio chips read their defs
+  document.getElementById('prefs').appendChild(buildTooltipRow());
 }
 
 function writeValueCell(def, v) {
   const el = valueEls[def.key];
+  if (!el) return; // a global toggle with no value cell — its renderer draws it
   if (!isNumeric(def)) {
     el.textContent = fmtValue(def, v);
     return;
@@ -313,6 +492,7 @@ function setUI(key, v) {
     inputs[key].value = v;
   }
   writeValueCell(def, v);
+  for (const fn of renderers[key] ?? []) fn(def.type === 'toggle' ? !!v : v);
   syncFor(key);
 }
 
@@ -377,9 +557,65 @@ function queueWrite(key, value) {
   }
 }
 
-// --- Defaults: John's saved set first, the code DEFAULTS behind it ---
+// --- Presets (M2): original, slots A·B·C, save mode, undo ---
+// "original" is the compiled DEFAULTS and nothing can redefine it. The slots
+// are snapshots; clicking one LOADS it. Saving is a visible, one-shot mode
+// (save… then a slot), so the room slip — meaning to load, pressing save —
+// cannot happen. Every load and every restore offers undo for ten seconds.
+// The last-loaded preset is the BASE: a row double-click returns there.
 
-let userDefaults = (await store.get({ userDefaults: null })).userDefaults ?? null;
+const UNDO_MS = 10000;
+const presetRow = document.getElementById('presets');
+const btnOriginal = document.getElementById('preset-original');
+const btnSave = document.getElementById('preset-save');
+const btnCancel = document.getElementById('preset-cancel');
+const btnUndo = document.getElementById('preset-undo');
+const slotEls = Object.fromEntries(
+  [...presetRow.querySelectorAll('.slot')].map((el) => [el.dataset.slot, el])
+);
+
+const emptyPresets = () => Object.fromEntries(PRESET_SLOTS.map((s) => [s, null]));
+const isBase = (name) => name === 'original' || PRESET_SLOTS.includes(name);
+
+function normalisePresets(p) {
+  const out = emptyPresets();
+  if (p && typeof p === 'object') {
+    for (const s of PRESET_SLOTS) {
+      if (p[s] && typeof p[s] === 'object') out[s] = p[s];
+    }
+  }
+  return out;
+}
+
+let presets = emptyPresets();
+let presetBase = 'original';
+let saveMode = false;
+let undoSnap = null;
+let undoTimer = 0;
+const flashing = new Map(); // button → transient label
+
+{
+  const stored = await store.get({ presets: null, presetBase: 'original', userDefaults: null });
+  presets = normalisePresets(stored.presets);
+  presetBase = isBase(stored.presetBase) ? stored.presetBase : 'original';
+  // Migration: the old single "set defaults" snapshot becomes slot A and the
+  // base, so John's room settings are still what a double-click returns to.
+  const legacy = stored.userDefaults;
+  if (legacy && typeof legacy === 'object') {
+    if (!presets.A) {
+      presets.A = { ...legacy };
+      presetBase = 'A';
+      await store.set({ presets, presetBase });
+      await store.remove('userDefaults');
+    } else {
+      console.warn('[panel] legacy userDefaults kept: slot A is already taken');
+    }
+  }
+}
+
+const slotFilled = (s) => !!presets[s];
+const baseValues = () =>
+  presetBase !== 'original' && slotFilled(presetBase) ? presets[presetBase] : null;
 
 function currentValues() {
   const out = {};
@@ -391,8 +627,26 @@ function currentValues() {
   return out;
 }
 
+// What a preset holds: every parameter except the A/B (PRESET_EXCLUDED).
+function presetValues() {
+  const out = currentValues();
+  for (const k of PRESET_EXCLUDED) delete out[k];
+  return out;
+}
+
+function applyValues(values) {
+  const out = {};
+  for (const def of DEFS) {
+    if (PRESET_EXCLUDED.includes(def.key) || !(def.key in values)) continue;
+    out[def.key] = values[def.key];
+    delete pending[def.key]; // a queued knob write must not land on top
+  }
+  store.set(out);
+  for (const [k, v] of Object.entries(out)) setUI(k, v);
+}
+
 function resetParam(key) {
-  const v = defaultFor(key, userDefaults);
+  const v = defaultFor(key, baseValues());
   if (v === undefined) return;
   queueWrite(key, v);
   setUI(key, v);
@@ -402,51 +656,148 @@ function resetParam(key) {
   row.classList.add('flash');
 }
 
-const btnRestore = document.getElementById('defaults');
-const btnSet = document.getElementById('setdefaults');
-const btnClear = document.getElementById('cleardefaults');
-
-function refreshDefaultsUI() {
-  const saved = !!userDefaults;
-  btnClear.hidden = !saved;
-  btnRestore.dataset.tip = saved
-    ? 'Put every parameter back to your saved defaults — the set you captured with "set defaults".'
-    : 'Put every parameter back to the built-in defaults compiled into the extension.';
-}
-
 function flash(button, text) {
-  const original = button.textContent;
-  button.textContent = text;
+  clearTimeout(button._flashTimer);
+  flashing.set(button, text);
   button.classList.add('done');
-  setTimeout(() => {
-    button.textContent = original;
+  renderPresets();
+  button._flashTimer = setTimeout(() => {
+    flashing.delete(button);
     button.classList.remove('done');
+    renderPresets();
   }, 900);
 }
 
-btnRestore.addEventListener('click', () => {
+const BASE_HINT = 'Marked as the base: double-clicking any row puts it back to this preset’s value.';
+
+function renderPresets() {
+  presetRow.classList.toggle('saving', saveMode);
+  btnOriginal.textContent = flashing.get(btnOriginal) ?? 'original';
+  btnOriginal.classList.toggle('base', presetBase === 'original');
+  btnOriginal.disabled = saveMode;
+  btnOriginal.dataset.hint =
+    presetBase === 'original' ? `${BASE_HINT} Undo appears for ten seconds after a restore.` : 'Undo appears for ten seconds afterwards.';
+
+  for (const s of PRESET_SLOTS) {
+    const el = slotEls[s];
+    const filled = slotFilled(s);
+    el.textContent = flashing.get(el) ?? (saveMode ? `save → ${s}` : s);
+    el.classList.toggle('empty', !filled && !saveMode);
+    el.classList.toggle('base', presetBase === s && filled);
+    if (saveMode) {
+      el.dataset.tip = filled
+        ? `Save the current settings into ${s}, replacing what is there.`
+        : `Save the current settings into the empty slot ${s}.`;
+      el.dataset.hint = 'Escape or a click elsewhere cancels.';
+    } else if (filled) {
+      el.dataset.tip = `Load preset ${s}: every setting jumps to what was saved here (the on/off switch stays put).`;
+      el.dataset.hint =
+        presetBase === s ? `${BASE_HINT} Undo appears for ten seconds after a load.` : 'Undo appears for ten seconds afterwards.';
+    } else {
+      el.dataset.tip = `Slot ${s} is empty. Click save…, then ${s}, to keep the current settings here.`;
+      el.dataset.hint = 'Nothing happens when an empty slot is clicked.';
+    }
+  }
+  btnSave.hidden = saveMode;
+  btnCancel.hidden = !saveMode;
+  btnUndo.hidden = !undoSnap || saveMode;
+}
+
+function setSaveMode(on) {
+  saveMode = on;
+  renderPresets();
+}
+
+function offerUndo(snap) {
+  undoSnap = snap;
+  clearTimeout(undoTimer);
+  undoTimer = setTimeout(() => {
+    undoSnap = null;
+    renderPresets();
+  }, UNDO_MS);
+  renderPresets();
+}
+
+function setBase(name) {
+  presetBase = name;
+  store.set({ presetBase });
+}
+
+function loadPreset(name) {
+  const button = name === 'original' ? btnOriginal : slotEls[name];
+  if (name !== 'original' && !slotFilled(name)) {
+    flash(button, 'empty');
+    return;
+  }
+  const snap = { values: presetValues(), base: presetBase };
+  const source = name === 'original' ? null : presets[name];
   const values = {};
-  for (const def of DEFS) values[def.key] = defaultFor(def.key, userDefaults);
-  store.set(values);
-  for (const def of DEFS) setUI(def.key, values[def.key]);
-});
+  for (const def of DEFS) values[def.key] = defaultFor(def.key, source);
+  applyValues(values);
+  setBase(name);
+  offerUndo(snap);
+  flash(button, name === 'original' ? 'restored' : 'loaded');
+}
 
-// Capture the room's settings without a recompile (John, 2026-08-20): the
-// live panel becomes the default set, which "restore defaults" and every
-// double-click then return to.
-btnSet.addEventListener('click', () => {
-  userDefaults = currentValues();
-  store.set({ userDefaults });
-  refreshDefaultsUI();
-  flash(btnSet, 'saved');
-});
+function saveTo(slot) {
+  presets = { ...presets, [slot]: presetValues() };
+  store.set({ presets });
+  setSaveMode(false);
+  flash(slotEls[slot], `saved to ${slot}`);
+}
 
-btnClear.addEventListener('click', () => {
-  userDefaults = null;
-  store.set({ userDefaults: null });
-  refreshDefaultsUI();
-  flash(btnClear, 'cleared');
+btnOriginal.addEventListener('click', () => {
+  if (!saveMode) loadPreset('original');
 });
+for (const [s, el] of Object.entries(slotEls)) {
+  el.addEventListener('click', () => (saveMode ? saveTo(s) : loadPreset(s)));
+}
+btnSave.addEventListener('click', () => setSaveMode(true));
+btnCancel.addEventListener('click', () => setSaveMode(false));
+btnUndo.addEventListener('click', () => {
+  if (!undoSnap) return;
+  const snap = undoSnap;
+  undoSnap = null;
+  clearTimeout(undoTimer);
+  applyValues(snap.values);
+  setBase(snap.base);
+  renderPresets();
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && saveMode) setSaveMode(false);
+});
+document.addEventListener(
+  'pointerdown',
+  (e) => {
+    if (saveMode && !presetRow.contains(e.target)) setSaveMode(false);
+  },
+  true
+);
+
+// --- The shortcuts line: the real bindings when Chrome will say ---
+// chrome.commands.getAll() reports what the user actually has (they can
+// rebind at chrome://extensions/shortcuts); outside the extension the
+// manifest's suggested keys stand in; failing both, the hardcoded line in
+// panel.html stays.
+(async () => {
+  const keysEl = document.getElementById('keys');
+  const keys = {};
+  try {
+    if (typeof chrome !== 'undefined' && chrome.commands?.getAll) {
+      for (const c of await chrome.commands.getAll()) keys[c.name] = c.shortcut || 'no key set';
+    } else {
+      const m = await (await fetch(new URL('../manifest.json', import.meta.url))).json();
+      for (const [name, c] of Object.entries(m.commands ?? {})) {
+        if (c.suggested_key?.default) keys[name] = c.suggested_key.default;
+      }
+    }
+  } catch {
+    return;
+  }
+  if (keys['toggle-effect'] && keys['open-panel']) {
+    keysEl.textContent = `${keys['toggle-effect']}  on/off   ·   ${keys['open-panel']}  this panel`;
+  }
+})();
 
 // --- Tooltips (John, 2026-08-20: everything explains itself on hover) ---
 
@@ -521,14 +872,17 @@ tipToggle.addEventListener('change', () => {
 
 const current = await store.get(DEFAULTS);
 for (const def of DEFS) setUI(def.key, current[def.key]);
-refreshDefaultsUI();
+renderPresets();
 setTooltips(tooltipsOn);
 
 store.onChanged((changes) => {
   for (const [key, { newValue }] of Object.entries(changes)) {
-    if (key === 'userDefaults') {
-      userDefaults = newValue ?? null;
-      refreshDefaultsUI();
+    if (key === 'presets') {
+      presets = normalisePresets(newValue);
+      renderPresets();
+    } else if (key === 'presetBase') {
+      presetBase = isBase(newValue) ? newValue : 'original';
+      renderPresets();
     } else if (key === 'tooltips') {
       setTooltips(newValue !== false);
     } else if (key in inputs) {
