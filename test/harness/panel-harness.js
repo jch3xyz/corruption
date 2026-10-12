@@ -1460,7 +1460,8 @@ async function tier2() {
 // --- Tier 3: the other homes' layouts (design review M9) --------------------
 // The same shipped panel in the shapes the homes give it: the strip
 // unfolded (panel.html?layout=strip, 1280 × 208), the strip at rest (the
-// rail, 1280 × 28) and Chrome's side panel at its narrowest (~320 px wide).
+// rail, 1280 × 28), the window dragged wide and tall (the layout follows
+// the shape, round 4b) and Chrome's side panel at its narrowest (~320 px).
 
 // Render every tip into the bubble exactly as the panel does (tip, hint,
 // key) and list the ones that exceed the bubble's budget: 340 px wide (the
@@ -1510,7 +1511,7 @@ async function tier3() {
     const rect = (el) => el.getBoundingClientRect();
     const vis = (el) => !!el && el.getClientRects().length > 0;
     check('the frame really is 1280 × 208', w.innerWidth === 1280 && w.innerHeight === 208);
-    check('?layout=strip switches the panel to the strip layout', d.documentElement.dataset.layout === 'strip');
+    check('the strip’s frame (?layout=strip) is always the mixer', d.documentElement.dataset.layout === 'mixer');
     const heads = SECTIONS.map((s) => d.getElementById(`section-${s.id}`));
     const hr = heads.map(rect);
     check(
@@ -1654,6 +1655,58 @@ async function tier3() {
     check('the rail’s A/B latches', w.__store.enabled === false && !q('#ab').classList.contains('on'));
     q('#ab').click();
     await sleep(90);
+    f.remove();
+  }
+
+  // -- the window: the layout follows its shape (round 4b) --
+  // No ?layout param: wide (≥ 900 px, ≥ 2:1) is the mixer, anything else
+  // the column, and a resize repaints it live — the engine disclosure moves
+  // up into the section header and back down into its group.
+  {
+    const layoutOf = (f) => f.contentWindow.document.documentElement.dataset.layout;
+    const where = (f) => {
+      const d = f.contentWindow.document;
+      const inHead = !!d.querySelector('#section-video .group-head.disclosure');
+      const inGroup = !!d.querySelector('.group.engine[data-section="video"] > .group-head.disclosure');
+      return inHead && !inGroup ? 'head' : inGroup && !inHead ? 'group' : 'both/neither';
+    };
+    const wide = await bootFrame('./panel-frame.html', 1000, 320);
+    check(
+      'a window booted wide (1000 × 320) is the mixer, its engine disclosure in the section header',
+      layoutOf(wide) === 'mixer' && where(wide) === 'head'
+    );
+    wide.remove();
+    const f = await bootFrame('./panel-frame.html', 700, 700);
+    check(
+      'a window booted square (700 × 700) is the column, its engine disclosure heading its group',
+      layoutOf(f) === undefined && where(f) === 'group'
+    );
+    const resize = async (w, h) => {
+      f.style.width = `${w}px`;
+      f.style.height = `${h}px`;
+      await sleep(100);
+    };
+    await resize(1000, 320);
+    check(
+      'dragged wide (700 × 700 → 1000 × 320), the same page turns mixer and the disclosure moves up',
+      layoutOf(f) === 'mixer' && where(f) === 'head'
+    );
+    await resize(700, 700);
+    check(
+      'dragged back (→ 700 × 700), it is the column again and the disclosure returns to its group',
+      layoutOf(f) === undefined && where(f) === 'group'
+    );
+    // The disclosure still works wherever it lives: unfold, fold, nothing lost.
+    const disc = f.contentWindow.document.getElementById('group-video-engine');
+    disc.click();
+    await sleep(60);
+    const opened = f.contentWindow.__store.engineOpen?.video === true;
+    disc.click();
+    await sleep(60);
+    check(
+      'after the round trip the disclosure still folds and unfolds its engine',
+      opened && f.contentWindow.__store.engineOpen?.video === false
+    );
     f.remove();
   }
 

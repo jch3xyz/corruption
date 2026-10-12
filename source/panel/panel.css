@@ -271,7 +271,7 @@ h2 {
 
 .group-rows[hidden] { display: none; }
 
-/* The engine rows' own caption: a strip-layout cell, nothing in the column. */
+/* The engine rows' own caption: a mixer-layout cell, nothing in the column. */
 .group-cap { display: none; }
 .group-head[hidden] { display: none; }
 
@@ -514,18 +514,20 @@ body:not(.midi-device) .midi { display: none; }
   .row { gap: 8px; }
 }
 
-/* --- The strip layout (design review M9; the default home since
-   2026-10-11): panel.html?layout=strip, hosted in an iframe along the
-   bottom of the page. Two heights, one stylesheet: at 208 px it is the
-   MIXER — the global block as a cluster at the left (A/B, the mediums, the
+/* --- The mixer layout (design review M9; round 4b): data-layout='mixer',
+   set by panel.js from the shape of the page, not from where it lives. The
+   strip's iframe (panel.html?layout=strip, along the bottom of the page) is
+   always the mixer; the window becomes it when dragged wide (at least
+   900 px and twice as wide as tall); the side panel never does. The
+   MIXER: the global block as a cluster at the left (A/B, the mediums, the
    presets, the prefs), then the four effect groups as columns — sort ·
    feedback · body · smear — all in view at 1280 px with no sideways scroll;
-   an unfolded engine adds a column. At 28 px (the media query below) it is
-   the RAIL: one line with the A/B, the chips, the presets and the fold
-   button. Same markup, same script — only placement. --- */
-:root[data-layout='strip'] body { flex-direction: row; height: 100vh; }
+   an unfolded engine adds a column. In the strip at 28 px (the media query
+   below) it is the RAIL: one line with the A/B, the chips, the presets and
+   the fold button. Same markup, same script — only placement. --- */
+:root[data-layout='mixer'] body { flex-direction: row; height: 100vh; }
 
-:root[data-layout='strip'] #scroll {
+:root[data-layout='mixer'] #scroll {
   position: relative;
   display: grid;
   grid-template-columns: 228px minmax(0, 1fr);
@@ -537,44 +539,44 @@ body:not(.midi-device) .midi { display: none; }
 }
 
 /* #globals dissolves so the A/B and the chips are cluster cells of their own. */
-:root[data-layout='strip'] #globals { display: contents; }
+:root[data-layout='mixer'] #globals { display: contents; }
 
-:root[data-layout='strip'] .masthead { grid-column: 1; grid-row: 1; margin: 0; }
-:root[data-layout='strip'] .ab-row { grid-column: 1; grid-row: 2; }
-:root[data-layout='strip'] .chips { grid-column: 1; grid-row: 3; margin: 0; gap: 5px; }
-:root[data-layout='strip'] #presets { grid-column: 1; grid-row: 4; margin: 0; align-self: start; gap: 4px; }
-:root[data-layout='strip'] #prefs { grid-column: 1; grid-row: 5; margin: 0; display: flex; gap: 10px; align-items: center; }
-:root[data-layout='strip'] .midi { grid-column: 1; grid-row: 6; margin: 0; padding: 0; border: none; align-self: start; }
-:root[data-layout='strip'] #controls { grid-column: 2; grid-row: 1 / -1; }
-:root[data-layout='strip'] #persist-note,
-:root[data-layout='strip'] .lede,
-:root[data-layout='strip'] .keys,
-:root[data-layout='strip'] .presets-head,
-:root[data-layout='strip'] .midi .hint { display: none; }
+:root[data-layout='mixer'] .masthead { grid-column: 1; grid-row: 1; margin: 0; }
+:root[data-layout='mixer'] .ab-row { grid-column: 1; grid-row: 2; }
+:root[data-layout='mixer'] .chips { grid-column: 1; grid-row: 3; margin: 0; gap: 5px; }
+:root[data-layout='mixer'] #presets { grid-column: 1; grid-row: 4; margin: 0; align-self: start; gap: 4px; }
+:root[data-layout='mixer'] #prefs { grid-column: 1; grid-row: 5; margin: 0; display: flex; gap: 10px; align-items: center; }
+:root[data-layout='mixer'] .midi { grid-column: 1; grid-row: 6; margin: 0; padding: 0; border: none; align-self: start; }
+:root[data-layout='mixer'] #controls { grid-column: 2; grid-row: 1 / -1; }
+:root[data-layout='mixer'] #persist-note,
+:root[data-layout='mixer'] .lede,
+:root[data-layout='mixer'] .keys,
+:root[data-layout='mixer'] .presets-head,
+:root[data-layout='mixer'] .midi .hint { display: none; }
 
-:root[data-layout='strip'] h1 { font-size: 11px; margin: 0; }
-:root[data-layout='strip'] .ab { min-height: 30px; padding: 4px 8px; border-radius: 4px; }
-:root[data-layout='strip'] .ab .ab-state { font-size: 14px; }
-:root[data-layout='strip'] .ab .ab-say { font-size: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-:root[data-layout='strip'] .chip { gap: 2px; }
-:root[data-layout='strip'] .chip-name { font-size: 9px; letter-spacing: 0.06em; }
-:root[data-layout='strip'] .chip-toggle { height: 20px; font-size: 10px; }
-:root[data-layout='strip'] .btn { padding: 4px 6px; font-size: 10px; }
-:root[data-layout='strip'] .btn.slot { min-width: 24px; padding: 4px 2px; }
+:root[data-layout='mixer'] h1 { font-size: 11px; margin: 0; }
+:root[data-layout='mixer'] .ab { min-height: 30px; padding: 4px 8px; border-radius: 4px; }
+:root[data-layout='mixer'] .ab .ab-state { font-size: 14px; }
+:root[data-layout='mixer'] .ab .ab-say { font-size: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+:root[data-layout='mixer'] .chip { gap: 2px; }
+:root[data-layout='mixer'] .chip-name { font-size: 9px; letter-spacing: 0.06em; }
+:root[data-layout='mixer'] .chip-toggle { height: 20px; font-size: 10px; }
+:root[data-layout='mixer'] .btn { padding: 4px 6px; font-size: 10px; }
+:root[data-layout='mixer'] .btn.slot { min-width: 24px; padding: 4px 2px; }
 
 /* The prefs as one compact line in the cluster. */
-:root[data-layout='strip'] #prefs .row,
-:root[data-layout='strip'] body:not(.midi-device) #prefs .row { display: flex; gap: 5px; align-items: center; margin: 0; padding: 0; font-size: 10px; }
-:root[data-layout='strip'] #prefs .row > .value,
-:root[data-layout='strip'] #prefs .row > :nth-child(4) { display: none; }
-:root[data-layout='strip'] #prefs .row > label { white-space: nowrap; }
-:root[data-layout='strip'] #prefs .row select { font-size: 10px; padding: 1px 2px; }
-:root[data-layout='strip'] #prefs input[type='checkbox'] { width: 13px; height: 13px; }
-:root[data-layout='strip'] .midi h2 { display: inline; margin: 0 6px 0 0; font-size: 9px; }
-:root[data-layout='strip'] #midi-status { display: inline; font-size: 10px; }
+:root[data-layout='mixer'] #prefs .row,
+:root[data-layout='mixer'] body:not(.midi-device) #prefs .row { display: flex; gap: 5px; align-items: center; margin: 0; padding: 0; font-size: 10px; }
+:root[data-layout='mixer'] #prefs .row > .value,
+:root[data-layout='mixer'] #prefs .row > :nth-child(4) { display: none; }
+:root[data-layout='mixer'] #prefs .row > label { white-space: nowrap; }
+:root[data-layout='mixer'] #prefs .row select { font-size: 10px; padding: 1px 2px; }
+:root[data-layout='mixer'] #prefs input[type='checkbox'] { width: 13px; height: 13px; }
+:root[data-layout='mixer'] .midi h2 { display: inline; margin: 0 6px 0 0; font-size: 9px; }
+:root[data-layout='mixer'] #midi-status { display: inline; font-size: 10px; }
 
 /* The fold button: top-right corner of the mixer, end of the rail. */
-:root[data-layout='strip'] .fold {
+:root[data-layout='mixer'] .fold {
   position: absolute;
   top: 6px;
   right: 10px;
@@ -590,8 +592,8 @@ body:not(.midi-device) .midi { display: none; }
   cursor: pointer;
 }
 
-:root[data-layout='strip'] .fold:hover { border-color: #8a8a40; color: #e8e864; }
-:root[data-layout='strip'] .fold[hidden] { display: none; }
+:root[data-layout='mixer'] .fold:hover { border-color: #8a8a40; color: #e8e864; }
+:root[data-layout='mixer'] .fold[hidden] { display: none; }
 
 /* The sections: one grid that fills top-to-bottom, eight cells to a column,
    then runs sideways (grid-auto-flow: column). Groups dissolve so every row
@@ -603,7 +605,7 @@ body:not(.midi-device) .midi { display: none; }
    a column of their own under the .group-cap caption. With the engines
    folded the four effect columns fit 1280 px; the lane scrolls sideways
    only when they are unfolded. */
-:root[data-layout='strip'] #controls {
+:root[data-layout='mixer'] #controls {
   display: grid;
   grid-auto-flow: column;
   grid-template-rows: repeat(8, 24px);
@@ -618,10 +620,10 @@ body:not(.midi-device) .midi { display: none; }
   scroll-behavior: smooth;
 }
 
-:root[data-layout='strip'] .group:not([hidden]),
-:root[data-layout='strip'] .group-rows:not([hidden]) { display: contents; }
+:root[data-layout='mixer'] .group:not([hidden]),
+:root[data-layout='mixer'] .group-rows:not([hidden]) { display: contents; }
 
-:root[data-layout='strip'] .section {
+:root[data-layout='mixer'] .section {
   grid-row: 1;
   margin: 0;
   padding: 0 0 0 8px;
@@ -631,11 +633,11 @@ body:not(.midi-device) .midi { display: none; }
   align-self: start;
 }
 
-:root[data-layout='strip'] .section[data-section='audio'] { grid-row: 1 / 3; }
-:root[data-layout='strip'] .section h2 { font-size: 10px; display: inline; }
-:root[data-layout='strip'] .section .group-head.disclosure { display: inline; margin: 0 0 0 10px; font-size: 9px; }
-:root[data-layout='strip'] .section .group-head.disclosure[hidden] { display: none; }
-:root[data-layout='strip'] .group.engine > .group-rows > .group-cap {
+:root[data-layout='mixer'] .section[data-section='audio'] { grid-row: 1 / 3; }
+:root[data-layout='mixer'] .section h2 { font-size: 10px; display: inline; }
+:root[data-layout='mixer'] .section .group-head.disclosure { display: inline; margin: 0 0 0 10px; font-size: 9px; }
+:root[data-layout='mixer'] .section .group-head.disclosure[hidden] { display: none; }
+:root[data-layout='mixer'] .group.engine > .group-rows > .group-cap {
   display: block;
   grid-row: 1;
   align-self: end;
@@ -645,26 +647,26 @@ body:not(.midi-device) .midi { display: none; }
   letter-spacing: 0.22em;
   text-transform: uppercase;
 }
-:root[data-layout='strip'] .section .status { margin: 2px 0 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-:root[data-layout='strip'] .section .off-note { margin: 2px 0 0; white-space: nowrap; }
-:root[data-layout='strip'] .group-head { margin: 0 0 2px; align-self: end; grid-row: 1; }
-:root[data-layout='strip'] .section + .group > .group-head { grid-row: 2; }
-:root[data-layout='strip'] .section[data-section='audio'] + .group > .group-head { grid-row: 3; }
-:root[data-layout='strip'] .row { margin: 0 -4px; padding: 0 4px; height: 24px; align-self: center; }
-:root[data-layout='strip'] .row select { padding: 1px 3px; }
+:root[data-layout='mixer'] .section .status { margin: 2px 0 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+:root[data-layout='mixer'] .section .off-note { margin: 2px 0 0; white-space: nowrap; }
+:root[data-layout='mixer'] .group-head { margin: 0 0 2px; align-self: end; grid-row: 1; }
+:root[data-layout='mixer'] .section + .group > .group-head { grid-row: 2; }
+:root[data-layout='mixer'] .section[data-section='audio'] + .group > .group-head { grid-row: 3; }
+:root[data-layout='mixer'] .row { margin: 0 -4px; padding: 0 4px; height: 24px; align-self: center; }
+:root[data-layout='mixer'] .row select { padding: 1px 3px; }
 
 /* Narrower cells than the column panel: the label column is the widest
    label in the table at this size, and the value field shrinks. */
-:root[data-layout='strip'] .row { grid-template-columns: 84px 1fr 46px 24px; gap: 6px; font-size: 11px; }
-:root[data-layout='strip'] body:not(.midi-device) .row { grid-template-columns: 84px 1fr 46px; }
-:root[data-layout='strip'] .row input.value.num { font-size: 10px; padding: 2px 3px; }
+:root[data-layout='mixer'] .row { grid-template-columns: 84px 1fr 46px 24px; gap: 6px; font-size: 11px; }
+:root[data-layout='mixer'] body:not(.midi-device) .row { grid-template-columns: 84px 1fr 46px; }
+:root[data-layout='mixer'] .row input.value.num { font-size: 10px; padding: 2px 3px; }
 
 /* --- The rail: the same page in a frame too short for anything but one
    line. The A/B, the four chips and the presets in a row, the fold button
    at the end; everything else out of sight. Hover help is suppressed here
    (panel.js): there is no room for a bubble. --- */
 @media (max-height: 60px) {
-  :root[data-layout='strip'] #scroll {
+  :root[data-layout='mixer'] #scroll {
     display: flex;
     align-items: center;
     gap: 14px;
@@ -672,20 +674,20 @@ body:not(.midi-device) .midi { display: none; }
     padding-right: 46px;
     overflow: hidden;
   }
-  :root[data-layout='strip'] #controls,
-  :root[data-layout='strip'] #prefs,
-  :root[data-layout='strip'] .midi,
-  :root[data-layout='strip'] .ab .ab-say,
-  :root[data-layout='strip'] .ab-row .learn,
-  :root[data-layout='strip'] .chip .learn { display: none; }
-  :root[data-layout='strip'] .masthead { flex: none; }
-  :root[data-layout='strip'] h1 { font-size: 10px; letter-spacing: 0.3em; }
-  :root[data-layout='strip'] .ab-row { flex: none; display: block; width: auto; }
-  :root[data-layout='strip'] .ab { min-height: 22px; height: 22px; padding: 0 10px; width: auto; }
-  :root[data-layout='strip'] .ab .ab-state { font-size: 11px; }
-  :root[data-layout='strip'] .chips { display: flex; flex: none; gap: 8px; }
-  :root[data-layout='strip'] .chip { flex-direction: row; align-items: center; gap: 4px; }
-  :root[data-layout='strip'] .chip-toggle { height: 20px; padding: 0 7px; }
-  :root[data-layout='strip'] #presets { flex: none; margin: 0; }
-  :root[data-layout='strip'] .fold { top: 4px; right: 10px; }
+  :root[data-layout='mixer'] #controls,
+  :root[data-layout='mixer'] #prefs,
+  :root[data-layout='mixer'] .midi,
+  :root[data-layout='mixer'] .ab .ab-say,
+  :root[data-layout='mixer'] .ab-row .learn,
+  :root[data-layout='mixer'] .chip .learn { display: none; }
+  :root[data-layout='mixer'] .masthead { flex: none; }
+  :root[data-layout='mixer'] h1 { font-size: 10px; letter-spacing: 0.3em; }
+  :root[data-layout='mixer'] .ab-row { flex: none; display: block; width: auto; }
+  :root[data-layout='mixer'] .ab { min-height: 22px; height: 22px; padding: 0 10px; width: auto; }
+  :root[data-layout='mixer'] .ab .ab-state { font-size: 11px; }
+  :root[data-layout='mixer'] .chips { display: flex; flex: none; gap: 8px; }
+  :root[data-layout='mixer'] .chip { flex-direction: row; align-items: center; gap: 4px; }
+  :root[data-layout='mixer'] .chip-toggle { height: 20px; padding: 0 7px; }
+  :root[data-layout='mixer'] #presets { flex: none; margin: 0; }
+  :root[data-layout='mixer'] .fold { top: 4px; right: 10px; }
 }

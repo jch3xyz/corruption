@@ -32,16 +32,23 @@ import {
 } from './defs.js';
 import { initMIDI } from './midi.js';
 
-// Layout (design review M9). The same markup serves three homes: the popup
-// window and Chrome's side panel use the default column (the side panel can
-// be as narrow as ~320 px; panel.css tolerates that), and the in-page strip
-// loads `panel.html?layout=strip`, which panel.css lays out horizontally —
-// the global block as a left cluster, the sections as columns that scroll
-// sideways, the hover copy in a column at the right.
-const LAYOUT = new URLSearchParams(location.search).get('layout') === 'strip' ? 'strip' : 'column';
-if (LAYOUT === 'strip') document.documentElement.dataset.layout = 'strip';
+// Layout (design review M9; round 4b): the layout follows the shape of the
+// page, not where it lives. The same markup serves three homes — the popup
+// window, Chrome's side panel and the in-page strip — and two layouts: the
+// default column, and the MIXER (data-layout='mixer'), which panel.css lays
+// out horizontally: the global block as a left cluster, the effect groups
+// as columns that scroll sideways. paintLayout() below picks between them.
+//
+// HOSTED: the strip's iframe (`panel.html?layout=strip`). Always the mixer;
+// it alone shows the fold button and posts `toggle`/`ready` up to the strip.
+const HOSTED = new URLSearchParams(location.search).get('layout') === 'strip';
+// Every other home is the mixer only while it is wide: at least 900 px and
+// twice as wide as tall. The side panel (narrow) and the window at its
+// opening 400 × 720 get the column; a window dragged wide gets the mixer.
+const MIXER = window.matchMedia('(min-width: 900px) and (min-aspect-ratio: 2/1)');
 // The strip's rail: the same page in a frame too short for anything but one
-// line (panel.css lays it out as a row; hover help is suppressed).
+// line (panel.css lays it out as a row; hover help is suppressed). Only
+// meaningful when HOSTED.
 const RAIL = window.matchMedia('(max-height: 60px)');
 
 const defByKey = Object.fromEntries(DEFS.map((d) => [d.key, d]));
@@ -347,9 +354,9 @@ function buildGroup(group, defs) {
   const rows = document.createElement('div');
   rows.className = 'group-rows';
   if (group.collapsible) {
-    // In the strip the disclosure moves up into the section header (so a
-    // folded engine costs no column), and this caption heads the rows'
-    // own column when they are unfolded. Hidden in the column layout.
+    // In the mixer the disclosure moves up into the section header (so a
+    // folded engine costs no column; paintLayout), and this caption heads
+    // the rows' own column when they are unfolded. Hidden in the column.
     const cap = document.createElement('div');
     cap.className = 'group-cap';
     cap.textContent = group.title;
@@ -364,7 +371,6 @@ function buildGroup(group, defs) {
   if (group.collapsible) {
     engineGroups[group.section] = { head, rows, title: group.title };
     paintEngine(group.section, false);
-    if (LAYOUT === 'strip') sectionEls[group.section]?.head.querySelector('h2')?.after(head);
   }
   return wrap;
 }
@@ -709,6 +715,24 @@ function flashEl(el) {
   globals.appendChild(buildChips());
   document.getElementById('prefs').append(buildTooltipRow(), buildPanelHomeRow());
 }
+
+// Column or mixer, painted now and again whenever the page changes shape (a
+// window dragged wide or tall). Besides the attribute panel.css keys on, the
+// one structural difference: in the mixer each engine's disclosure sits in
+// its section header after the h2, so a folded engine costs no column; in
+// the column it heads its own group again. setGroupShown hides the head
+// wherever it lives, so the move needs nothing else.
+function paintLayout() {
+  const mixer = HOSTED || MIXER.matches;
+  if (mixer) document.documentElement.dataset.layout = 'mixer';
+  else delete document.documentElement.dataset.layout;
+  for (const [id, g] of Object.entries(engineGroups)) {
+    if (mixer) sectionEls[id]?.head.querySelector('h2')?.after(g.head);
+    else groupEls[`${id}.engine`]?.wrap.prepend(g.head);
+  }
+}
+paintLayout();
+MIXER.addEventListener('change', paintLayout);
 
 function writeValueCell(def, v) {
   const el = valueEls[def.key];
@@ -1207,7 +1231,7 @@ function placeTip(anchor) {
 function renderTip() {
   const anchor = tipSay ? sayAnchor : tipShown;
   // No bubble in the rail: there is no room beside a 22 px control.
-  const show = tooltipsOn && !!anchor && anchor.isConnected && !(LAYOUT === 'strip' && RAIL.matches);
+  const show = tooltipsOn && !!anchor && anchor.isConnected && !(HOSTED && RAIL.matches);
   tipEl.hidden = !show;
   if (!show) return;
   tipEl.textContent = '';
@@ -1328,7 +1352,7 @@ homeSelect.addEventListener('change', () => {
 // frame is the rail or the mixer is read from its own height (RAIL), so no
 // state has to travel down.
 const foldBtn = document.getElementById('strip-fold');
-if (LAYOUT === 'strip') {
+if (HOSTED) {
   const tell = (op) => {
     try {
       if (window.parent !== window) window.parent.postMessage({ type: 'deflection:strip', op }, '*');
