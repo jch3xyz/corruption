@@ -6,11 +6,10 @@
 // decay (0.81) smearing through a half-blended FACET flow field (small
 // slow swirls, every element seeded its own) — over straight-sorted image
 // stills, with page-wide text scrambling ON at textMin 8, plus the audio
-// smear. The two visual feedback toggles share every shaping knob below.
+// smear. Images never animate (image feedback removed 2026-10-12, John).
 export const DEFAULTS = {
   enabled: true,
   feedbackVideo: true,  // temporal feedback on videos — the resting state
-  feedbackImage: false, // temporal feedback animates images; off = one-shot stills
   threshold: 0.05,   // luma above this is eligible; near-zero = the whole
                      // frame sorts but true black holds as a barrier
   passes: 64,        // sort passes per frame (~3.5 cycles of a 256→1 ladder)
@@ -33,8 +32,6 @@ export const DEFAULTS = {
   resetMaxS: 60,
   maxRes: 1920,      // processing resolution cap, long axis
   maxVideos: 12,     // concurrent video jobs, biggest visible first
-  imageFps: 6,       // animated image tick rate
-  imageAnimCap: 12,  // max concurrently animated images
   textScramble: true, // letters rearranged inside each word, page-wide —
                       // ON in the resting state (John's call, 2026-08-12)
   textMin: 8,        // shortest run of text that scrambles; short labels survive

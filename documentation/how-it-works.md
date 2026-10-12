@@ -346,11 +346,10 @@ ever swaps between two black rectangles.
 ### 2.9 Images specifically
 
 Straight-sort mode is deterministic, so a still image gets **one** render per
-source/params change and immediately releases its GPU bundle. Image feedback
-(`feedbackImage` — its own toggle since 2026-08-12, split from the video
-toggle `feedbackVideo`; the two share every shaping knob) animates images
-≥200 px from a registry-owned ticker at `imageFps`, capped at `imageAnimCap`
-biggest-visible — those jobs retain their bundles.
+source/params change and immediately releases its GPU bundle. Images never
+animate: image feedback and its registry-owned animation ticker were removed
+2026-10-12 (John's call, design review M6 — git history keeps them). The
+feedback knobs shape video only.
 
 ### 2.10 The text mode (optional, off by default)
 
@@ -654,9 +653,9 @@ with the next sound. The harness asserts bit-exact zeros on silent input.
 source/
 ├── content/bootstrap.js   classic script → dynamic import (content scripts can't be modules)
 │   ├── main.js            boot, params flow, tiny-iframe early-exit
-│   ├── registry.js        discovery, ranking, caps, sweep, image ticker
+│   ├── registry.js        discovery, ranking, caps, sweep
 │   ├── video-job.js       rVFC loop, DRM gate, CORS mirror, black probe, governor
-│   ├── image-job.js       3-route CORS resolution, one-shot stills, animation
+│   ├── image-job.js       3-route CORS resolution, one-shot stills
 │   ├── audio-job.js       playback-driven tap lifecycle, safety gate, bypass
 │   ├── text-scramble.js   optional text mode: letters rearranged inside words, page-wide
 │   ├── overlay.js         sibling canvas, object-fit replication

@@ -20,10 +20,11 @@ threshold 0.05 so true black still bars the sort, slow 30–60 s
 keyframes — over **straight-sorted image stills**, with **page-wide text
 scrambling ON at textMin 8** (the call the proposal deferred to the
 room: made), plus **the body engine continuously driven + a
-never-clearing audio smear** whose loop gain is its own decay. The two
-visual feedback toggles (`feedbackVideo` on, `feedbackImage` off) share
-every shaping knob; the audio smear is independent of both
-(`audioFeedback`), and since the detangle no visual slider reaches it.
+never-clearing audio smear** whose loop gain is its own decay. Visual
+feedback is video only (`feedbackVideo` on) and owns every shaping knob;
+images are always one-shot sorted stills (image feedback removed
+2026-10-12). The audio smear is independent (`audioFeedback`), and since
+the detangle no visual slider reaches it.
 
 Runs on a kiosk (Mac mini M4) for weeks unattended. Vanilla JS, Manifest V3,
 no build step — "Load unpacked" points at `source/`.
@@ -65,11 +66,10 @@ critics); body won on John's ears, and the losing timebase engine is tag
 see "The audio engine" in parameters.md.
 
 **John's live-chosen settings are now the DEFAULTS** (2026-08-11; sweet
-spot 2026-08-12): **video feedback on / image feedback off** (decay 0.81,
+spot 2026-08-12): **video feedback on** (images: one-shot stills) (decay 0.81,
 threshold 0.05, driftX −0.0025, driftY +0.0020, reset 30–60 s, flow at
 0.5 in **facets** mode, scale 2.5, speed 0.045, temperature and motion
-gate at 0, text scramble ON at textMin 8, imageFps 6 for when images
-join); audio fb on at fbDecay 0.999 with
+gate at 0, text scramble ON at textMin 8); audio fb on at fbDecay 0.999 with
 **clears off** (`audioFbClear` — his call: the smear's gain < 1 is its own
 decay, continuous sounds nicer; the video keyframe still clears), maxTaps 8,
 body at sustain 12 / drive 1.0 / continuous exciter.
@@ -168,6 +168,10 @@ balance are the open item below. The previous sound is exactly reachable at
   brighter-wins rule is now an open effects question (M5), as is a
   source-following audio apparatus (M8). Comb body and gated exciter are
   removal candidates pending a deliberate A/B, John's call.
+  **M6 landed 2026-10-12:** image feedback is gone — its toggle, the image
+  animation ticker and the two knobs only it read, the panel's Images
+  section, and the visual suite's two ticker checks. Images are one-shot
+  sorted stills; git history keeps the old path.
 
 For a full technical description of both pipelines — the GL sort/composite
 path and the resonant-body audio path, with the reasoning behind each —
@@ -184,9 +188,9 @@ source/
 │   ├── bootstrap.js               # classic script → dynamic import (content scripts can't be modules)
 │   ├── main.js                    # boot, params flow, tiny-iframe early-exit
 │   ├── params.js                  # DEFAULTS; chrome.storage.local is the single source of truth
-│   ├── registry.js                # discovery (video/img/audio), caps, sweep, image ticker, audio ranking
+│   ├── registry.js                # discovery (video/img/audio), caps, sweep, audio ranking
 │   ├── video-job.js               # rVFC → GL pipeline; DRM gate; black-output probe; governor
-│   ├── image-job.js               # 3-route CORS; one-shot stills; feedback-mode animation
+│   ├── image-job.js               # 3-route CORS; one-shot stills
 │   ├── audio-job.js               # playback-driven tap lifecycle; safety gate; bypass semantics
 │   ├── text-scramble.js           # optional text mode: letters rearranged inside words (off)
 │   ├── overlay.js                 # sibling canvas; object-fit/position replication

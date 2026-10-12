@@ -364,8 +364,8 @@ async function run() {
   // Boot the registry FIRST so all videos arrive via MutationObserver.
   // feedbackVideo:true (the default, pinned here anyway) so the trail test
   // exercises the temporal path; a later check flips it off and asserts
-  // straight sorting leaves no trail. feedbackImage stays off — the image
-  // tests are route/still tests, and the ticker check flips it itself.
+  // straight sorting leaves no trail. The image tests are route/still
+  // tests (images never animate).
   // maxVideos pinned to 4 so the cap/promotion tests stay meaningful.
   // textScramble pinned OFF: it defaults on now, and letting it run would
   // scramble this page's own PASS/FAIL output mid-suite.
@@ -476,18 +476,6 @@ async function run() {
     })
   );
   params.feedbackVideo = true;
-
-  // --- Split feedback toggles: the image ticker rides feedbackImage alone,
-  // regardless of the video toggle. (Pure timer state — pane-immune.)
-  params.feedbackImage = true;
-  registry.paramsChanged({ feedbackImage: true });
-  check('image ticker starts with image feedback', registry.imageTicker !== 0);
-  params.feedbackImage = false;
-  registry.paramsChanged({ feedbackImage: false });
-  check(
-    'image ticker ignores the video toggle',
-    registry.imageTicker === 0 && params.feedbackVideo === true
-  );
 
   // --- Images (Phase 4): route resolution + sorted stills ---
   // Direct route: a data-URL image (origin-clean by definition).

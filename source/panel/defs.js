@@ -3,11 +3,12 @@
 // harness can import the definitions and the pure value helpers without
 // booting the UI.
 //
-// Section membership is John's call (2026-08-20): four sections, and the
-// sort/feedback knobs that video and images genuinely SHARE live under
-// Video — so their tooltips say so rather than the layout lying about it.
+// Section membership is John's call (2026-08-20): the sort knobs that video
+// and images genuinely SHARE live under Video — so their tooltips say so
+// rather than the layout lying about it. The Images section went with image
+// feedback (removed 2026-10-12, John): stills have no knobs of their own.
 // `enabled` belongs to no section: it is the master switch and kills all
-// four at once, so it sits above the first divider.
+// three at once, so it sits above the first divider.
 
 import { DEFAULTS } from '../content/params.js';
 
@@ -15,12 +16,7 @@ export const SECTIONS = [
   {
     id: 'video',
     title: 'Video',
-    tip: 'Videos — and the sorting and smear grammar they share with images. Every knob under this divider except max videos also shapes what still images do.',
-  },
-  {
-    id: 'images',
-    title: 'Images',
-    tip: 'Still images: whether they animate, and how many at once. The sorting and smear knobs they obey live under Video.',
+    tip: 'Videos — and the sorting grammar they share with images. Still images are one-shot sorted stills: every sort and flow knob here shapes them too; the feedback knobs and max videos are video only.',
   },
   {
     id: 'text',
@@ -47,7 +43,7 @@ export const DEFS = [
     tip: 'Master switch for the whole piece — video, images, text and audio. Off restores every page untouched. Ctrl+Shift+D toggles it without the panel.',
   },
 
-  // --- Video (plus the sort/feedback grammar images share) ---
+  // --- Video (plus the sort grammar images share) ---
   {
     key: 'feedbackVideo',
     label: 'video feedback',
@@ -133,7 +129,7 @@ export const DEFS = [
     max: 0.999,
     step: 0.001,
     section: 'video',
-    tip: 'Feedback only. Accumulator retention per frame: higher = the smear lingers longer. Shared with image feedback.',
+    tip: 'Feedback only. Accumulator retention per frame: higher = the smear lingers longer.',
   },
   {
     key: 'driftX',
@@ -142,7 +138,7 @@ export const DEFS = [
     max: 0.01,
     step: 0.0005,
     section: 'video',
-    tip: 'Feedback only. Horizontal smear in UV units per frame; negative drifts leftward. Shared with image feedback.',
+    tip: 'Feedback only. Horizontal smear in UV units per frame; negative drifts leftward.',
   },
   {
     key: 'driftY',
@@ -151,7 +147,7 @@ export const DEFS = [
     max: 0.01,
     step: 0.0005,
     section: 'video',
-    tip: 'Feedback only. Vertical smear; positive drifts upward — the resting state climbs gently. Purely visual: the audio wobble this used to drive is now fb wobble. Shared with image feedback.',
+    tip: 'Feedback only. Vertical smear; positive drifts upward — the resting state climbs gently. Purely visual: the audio wobble this used to drive is now fb wobble.',
   },
   {
     key: 'resetMinS',
@@ -160,7 +156,7 @@ export const DEFS = [
     max: 30,
     step: 1,
     section: 'video',
-    tip: 'Feedback only. Floor of the keyframe window: the accumulator resets to a clean frame at a random interval in this range. Shared with image feedback.',
+    tip: 'Feedback only. Floor of the keyframe window: the accumulator resets to a clean frame at a random interval in this range.',
   },
   {
     key: 'resetMaxS',
@@ -169,7 +165,7 @@ export const DEFS = [
     max: 60,
     step: 1,
     section: 'video',
-    tip: 'Feedback only. Ceiling of the keyframe window. Slow by default — damage accumulates for half a minute or more before it clears. Shared with image feedback.',
+    tip: 'Feedback only. Ceiling of the keyframe window. Slow by default — damage accumulates for half a minute or more before it clears.',
   },
   {
     key: 'motionGate',
@@ -178,7 +174,7 @@ export const DEFS = [
     max: 1,
     step: 0.01,
     section: 'video',
-    tip: 'Feedback only. A pair trades only where the motion trail clears this, so damage stays inside what the transmission itself is changing: action smears, stillness holds and heals. Shared with image feedback.',
+    tip: 'Feedback only. A pair trades only where the motion trail clears this, so damage stays inside what the transmission itself is changing: action smears, stillness holds and heals.',
   },
   {
     key: 'maxRes',
@@ -197,33 +193,6 @@ export const DEFS = [
     step: 1,
     section: 'video',
     tip: 'Concurrent video jobs, biggest visible first. Paused videos count — they get a one-shot sorted still, since the frame callback never fires for them.',
-  },
-
-  // --- Images ---
-  {
-    key: 'feedbackImage',
-    label: 'image feedback',
-    type: 'toggle',
-    section: 'images',
-    tip: 'Temporal feedback on images: big stills animate at image fps and accumulate the same smear as video. Off = one-shot sorted stills, the resting state.',
-  },
-  {
-    key: 'imageFps',
-    label: 'image fps',
-    min: 1,
-    max: 30,
-    step: 1,
-    section: 'images',
-    tip: 'Image feedback only. Tick rate for animated images. Straight-sort stills do not animate at all.',
-  },
-  {
-    key: 'imageAnimCap',
-    label: 'image anim cap',
-    min: 0,
-    max: 24,
-    step: 1,
-    section: 'images',
-    tip: 'Image feedback only. How many images may animate at once (at least 200 px a side, biggest visible first); the rest stay stills.',
   },
 
   // --- Text ---

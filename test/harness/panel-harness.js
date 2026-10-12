@@ -1,4 +1,4 @@
-// Panel harness. The panel grew real logic on 2026-08-20 — four sections,
+// Panel harness. The panel grew real logic on 2026-08-20 — sections,
 // value fields you can type into, a saved default set, per-row restore, and
 // a tooltip layer — so it gets a suite like every other part of the piece.
 //
@@ -194,7 +194,7 @@ async function tier2() {
   // -- sections --
   const heads = [...doc.querySelectorAll('#controls .section')];
   check(
-    'the four sections render in order',
+    'the sections render in order',
     heads.map((h) => h.querySelector('h2').textContent).join(',') ===
       SECTIONS.map((s) => s.title).join(',')
   );

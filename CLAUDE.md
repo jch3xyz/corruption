@@ -53,8 +53,8 @@ Quick facts:
   use the panel's "restore defaults" after changing DEFAULTS. If John has
   pressed **"set defaults"**, his saved snapshot (`userDefaults`) outranks
   both: hit "clear saved" first, then "restore defaults".
-- The panel is an instrument, not a form (rebuilt 2026-08-20): four sections
-  behind dividers, shared sort/feedback knobs filed under **Video** (John's
+- The panel is an instrument, not a form (rebuilt 2026-08-20): three sections
+  behind dividers, sort and feedback knobs filed under **Video** (John's
   call), typed values that clamp and snap, double-click a row to restore one
   parameter, and a tooltip on everything. Rows and hover copy live in
   `source/panel/defs.js`; **add a row there when you add a param** — the

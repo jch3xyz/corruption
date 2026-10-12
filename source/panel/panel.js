@@ -23,14 +23,12 @@ import { initMIDI } from './midi.js';
 const defByKey = Object.fromEntries(DEFS.map((d) => [d.key, d]));
 const isNumeric = (def) => def.type !== 'toggle' && def.type !== 'select';
 
-// The shaping knobs are shared by both feedback modes: live while either
-// toggle is on. The image-animation knobs belong to image feedback alone
-// (straight-sort stills are static, so the ticker params are moot).
+// The feedback shaping knobs are live only while video feedback is on
+// (images are one-shot stills; there is no image feedback).
 // motionGate lives here: it judges motion via the alpha trail, which only
 // exists where a composite runs — without a feedback mode it has nothing
 // to read. temperature is NOT here: it bites in straight sort too.
 const FEEDBACK_SHARED = ['decay', 'driftX', 'driftY', 'resetMinS', 'resetMaxS', 'motionGate'];
-const IMAGE_FEEDBACK_ONLY = ['imageFps', 'imageAnimCap'];
 
 // Audio rows gray out when the audio master toggle is off; the smear rows
 // additionally require their own toggles.
@@ -234,7 +232,7 @@ function buildTooltipRow() {
   return row;
 }
 
-// `enabled` carries no section — it is the master switch for all four, so
+// `enabled` carries no section — it is the master switch for all three, so
 // it goes in the global block rather than inside any one of them.
 {
   const bySection = new Map(SECTIONS.map((s) => [s.id, []]));
@@ -319,7 +317,7 @@ function setUI(key, v) {
 }
 
 function syncFor(key) {
-  if (key === 'feedbackVideo' || key === 'feedbackImage') syncFeedbackUI();
+  if (key === 'feedbackVideo') syncFeedbackUI();
   else if (key === 'flowAmount') syncFlowUI();
   else if (key === 'textScramble') syncTextUI(inputs.textScramble.checked);
   else if (AUDIO_TRIGGERS.includes(key)) syncAudioUI();
@@ -334,9 +332,7 @@ function setInert(key, inert) {
 
 function syncFeedbackUI() {
   const video = inputs.feedbackVideo.checked;
-  const image = inputs.feedbackImage.checked;
-  for (const key of FEEDBACK_SHARED) setInert(key, !video && !image);
-  for (const key of IMAGE_FEEDBACK_ONLY) setInert(key, !image);
+  for (const key of FEEDBACK_SHARED) setInert(key, !video);
 }
 
 function syncFlowUI() {
