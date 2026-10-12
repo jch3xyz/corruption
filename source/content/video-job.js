@@ -351,6 +351,9 @@ export class VideoJob {
       {
         temperature: params.temperature ?? 0,
         motionGate: params.motionGate ?? 0,
+        edgeGate: params.edgeGate ?? 0,
+        span: params.span ?? 0,
+        soft: params.barrierSoft ?? 0,
         flow: flowAmount > 0,
         facets: params.flowMode === 'facets',
         key: sortKeyIndex(params.sortKey),

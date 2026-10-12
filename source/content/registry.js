@@ -228,7 +228,7 @@ export class Registry {
     }
     // feedbackVideo is absent by design: it shapes the rVFC path only, and
     // re-rendering every still because the video toggle moved would be waste.
-    const effectKeys = ['threshold', 'sortKey', 'angle', 'passes', 'streak', 'temperature', 'flowAmount', 'flowMode', 'flowScale', 'flowSpeed', 'maxRes'];
+    const effectKeys = ['threshold', 'sortKey', 'angle', 'passes', 'streak', 'temperature', 'edgeGate', 'span', 'barrierSoft', 'flowAmount', 'flowMode', 'flowScale', 'flowSpeed', 'maxRes'];
     if (Object.keys(changed).some((k) => effectKeys.includes(k))) {
       clearTimeout(this.imageDirtyTimer);
       this.imageDirtyTimer = setTimeout(() => {

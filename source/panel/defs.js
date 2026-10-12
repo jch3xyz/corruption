@@ -20,7 +20,7 @@ export const SECTIONS = [
   {
     id: 'video',
     title: 'Video',
-    tip: 'Videos, and the sorting they share with images. Sort is what you see, Feedback is the trail it leaves, Engine is setup and fine shape, folded away. Still images take every sort knob and the flow’s shape; feedback, its clear timing and max videos are video only.',
+    tip: 'Videos, and the sorting they share with images. Sort is what you see, Feedback is the trail it leaves, Where is where the sort may happen, Engine is setup and fine shape, folded away. Still images take every sort knob and the flow’s shape; feedback, its clear timing and max videos are video only.',
   },
   {
     id: 'audio',
@@ -48,7 +48,13 @@ export const GROUPS = [
     id: 'feedback',
     section: 'video',
     title: 'feedback',
-    tip: 'The trail: each frame laid over the last, so damage builds, drifts and fades. Its switch, then how long it lingers, which way it slides, whether the sort follows motion, and how the trail meets the new frame. Video only.',
+    tip: 'The trail: each frame laid over the last, so damage builds, drifts and fades. Its switch, then how long it lingers, which way it slides, and how the trail meets the new frame. Video only.',
+  },
+  {
+    id: 'gate',
+    section: 'video',
+    title: 'where',
+    tip: 'Where the sort may happen. Each gate is a condition both pixels must meet before they trade; they stack.',
   },
   {
     id: 'engine',
@@ -228,16 +234,6 @@ export const DEFS = [
     tip: 'The trail slides up or down. Positive = up; the resting state climbs gently. Fractions of the frame per frame, picture only — it never moves the sound.',
   },
   {
-    key: 'motionGate',
-    label: 'follow motion',
-    min: 0,
-    max: 1,
-    step: 0.01,
-    section: 'video',
-    group: 'feedback',
-    tip: 'How closely the sort follows motion. 0 = the whole picture sorts; 1 = only what moves. Pixels trade only where the motion trail clears this, so action smears and stillness heals. Reads the feedback trail.',
-  },
-  {
     key: 'feedbackBlend',
     label: 'blend',
     type: 'select',
@@ -257,11 +253,59 @@ export const DEFS = [
     tip: 'How much of the trail survives against the new frame. 0 = every frame fresh; 1 = the full trail. Video only.',
   },
 
+  // --- Video · where: the gates (round 8 part 3, John 2026-10-12) ---
+  // Each is a condition both members of a pair must meet before they trade,
+  // computed identically by both, so every pass stays a permutation; they
+  // stack. follow motion moved here from feedback (it still reads the
+  // trail, so it still hides with feedback off); the other three shape
+  // images too. All inert at 0: the resting picture is bit-identical.
+  {
+    key: 'motionGate',
+    label: 'follow motion',
+    min: 0,
+    max: 1,
+    step: 0.01,
+    section: 'video',
+    group: 'gate',
+    tip: 'How closely the sort follows motion. 0 = the whole picture sorts; 1 = only what moves. Pixels trade only where the motion trail clears this, so action smears and stillness heals. Reads the feedback trail.',
+  },
+  {
+    key: 'edgeGate',
+    label: 'edges',
+    min: -1,
+    max: 1,
+    step: 0.01,
+    section: 'video',
+    group: 'gate',
+    tip: 'Where the sort may happen, by the picture’s own edges. Left of centre = only flat regions tear and outlines hold; right = only edges shred and fills hold; centre = everywhere. Stacks with follow motion. Shapes images too.',
+  },
+  {
+    key: 'span',
+    label: 'span',
+    min: 0,
+    max: 512,
+    step: 8,
+    section: 'video',
+    group: 'gate',
+    tip: 'Extra walls every so many pixels along the sort direction. 0 = none. Short = fine banding of small sorted cells; long = whole-frame tears. Ribbons is how far a pixel jumps per frame; span is how far a run may ever reach.',
+  },
+  {
+    key: 'barrierSoft',
+    label: 'soft barrier',
+    min: 0,
+    max: 0.5,
+    step: 0.01,
+    section: 'video',
+    group: 'gate',
+    tip: 'Frays the ends of ribbons: pixels just under the dark barrier trade now and then instead of never. 0 = a hard cut. Shapes images too.',
+  },
+
   // --- Video · engine: the clear button, setup, the shape of the flow, the clear rhythm ---
   // A trigger, not a value (round 8, John: "a clear buffer button under the
   // feedback tab" — a utility, not a headline handle). It sits first in the
-  // engine because the feedback column is full at its eight lane cells; the
-  // feedback switch's tip points here. Stored as a counter the panel
+  // engine because the feedback column was full at its eight lane cells
+  // when it came (follow motion has since moved to where); the feedback
+  // switch's tip points here. Stored as a counter the panel
   // increments (`keyframe`); gated with the feedback keys; excluded from
   // presets (PRESET_EXCLUDED); a MIDI CC fires it once per rise through 64.
   {

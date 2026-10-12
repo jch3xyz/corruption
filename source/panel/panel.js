@@ -68,7 +68,8 @@ const storedOf = (key) => fromView(defByKey[key], Number(inputs[key].value));
 // (images are one-shot stills; there is no image feedback).
 // motionGate lives here: it judges motion via the alpha trail, which only
 // exists where a composite runs — without a feedback mode it has nothing
-// to read. temperature is NOT here: it bites in straight sort too. The
+// to read (its row sits in the where group since round 8 part 3, but its
+// gate is still the feedback switch's). temperature is NOT here: it bites in straight sort too. The
 // clear timings (resetMinS/resetMaxS) sit in the engine since the handles
 // round but still answer to the feedback switch, as do the blend and its
 // amount (design review M5): they shape only the composite. So does the
@@ -120,7 +121,9 @@ const AUDIO_TRIGGERS = ['audioEnabled', 'audioFeedback', 'audioFbClear', 'audioB
 // answers to the medium (and the flow shape to flow, FLOW_ONLY). The other
 // engine rows (passes, max res, max videos) are not gated row by row; the
 // engine group hides with the mediums.
-const SORT_KEYS = ['threshold', 'sortKey', 'angle', 'flowAmount', 'temperature', 'streak', 'flowMode', 'flowScale', 'flowSpeed'];
+// The where group's other gates (edges, span, soft barrier; round 8 part 3)
+// shape images too, so they answer to the mediums like any sort key.
+const SORT_KEYS = ['threshold', 'sortKey', 'angle', 'flowAmount', 'temperature', 'streak', 'edgeGate', 'span', 'barrierSoft', 'flowMode', 'flowScale', 'flowSpeed'];
 const FEEDBACK_KEYS = ['feedbackVideo', ...FEEDBACK_SHARED];
 const MEDIUM_TRIGGERS = ['video', 'images', 'feedbackVideo', 'flowAmount', 'angle'];
 
@@ -1326,6 +1329,9 @@ function syncVideoUI() {
   }
   setGroupShown('video', 'sort', anyMedium);
   setGroupShown('video', 'feedback', video);
+  // where: follow motion answers to feedback, the other three to a medium,
+  // so the group shows whenever either medium is on.
+  setGroupShown('video', 'gate', anyMedium);
   setGroupShown('video', 'engine', anyMedium);
   setSectionOff('video', anyMedium ? null : SECTION_OFF.medium);
 }

@@ -593,10 +593,12 @@ body:not(.midi-device) .midi { display: none; }
    always the mixer; the window becomes it when dragged wide (at least
    900 px and twice as wide as tall); the side panel never does. The
    MIXER: the global block as a cluster at the left (A/B, the mediums, the
-   presets, the prefs), then the four effect groups as columns — sort ·
-   feedback · body · smear — all in view from 1280 px with no sideways
-   scroll, each column spreading from 220 to 340 px as the width allows;
-   an unfolded engine adds a column. In the strip at rest (the media query
+   presets, the prefs), then the five effect groups as columns — sort ·
+   feedback · where · body · smear — all in view from 1440 px with no
+   sideways scroll, each column spreading from 204 to 340 px as the width
+   allows; at 1280 the lane scrolls sideways (round 8 part 3: where took a
+   column of its own, and 1280 is not a typical laptop); an unfolded engine
+   adds a column. In the strip at rest (the media query
    below) it is the RAIL: one line with the A/B, the chips, the presets and
    the fold button. Same markup, same script — only placement. --- */
 :root[data-layout='mixer'] body { flex-direction: row; height: 100vh; }
@@ -680,13 +682,15 @@ body:not(.midi-device) .midi { display: none; }
    1). A folded engine costs no column: its disclosure sits in the section
    header line (panel.js moves it there), and its rows, when unfolded, head
    a column of their own under the .group-cap caption. With the engines
-   folded the four effect columns fit 1280 px; the lane scrolls sideways
-   only when they are unfolded. */
+   folded the five effect columns fit 1440 px (cluster 260 + 5 × 204 + the
+   gaps and the fold button's 40); the lane scrolls sideways below that, or
+   when an engine is unfolded. 204 rather than 220 is what buys 1440: the
+   slider gives up the width, the label and value cells keep theirs. */
 :root[data-layout='mixer'] #controls {
   display: grid;
   grid-auto-flow: column;
   grid-template-rows: repeat(8, 28px);
-  grid-auto-columns: minmax(220px, 340px);
+  grid-auto-columns: minmax(204px, 340px);
   column-gap: 14px;
   align-content: start;
   height: 100%;
@@ -743,8 +747,8 @@ body:not(.midi-device) .midi { display: none; }
 :root[data-layout='mixer'] #controls .row > label { white-space: nowrap; }
 :root[data-layout='mixer'] .row input.value.num { font-size: 12px; padding: 2px 2px; }
 
-/* A lane column at its narrowest (about 1280 px wide, the cluster taking
-   its 260) tightens its selects. Each lane row is its own size container;
+/* A lane column at its narrowest (1440 px wide and under, the cluster
+   taking its 260) tightens its selects. Each lane row is its own size container;
    the prefs rows are not (they size from their content). */
 :root[data-layout='mixer'] #controls .row { container-type: inline-size; }
 @container (max-width: 250px) {

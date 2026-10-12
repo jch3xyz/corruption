@@ -29,6 +29,19 @@ export const DEFAULTS = {
                      // simmers at its equilibrium instead of settling into it
   motionGate: 0,     // feedback modes: a pair trades only when both members'
                      // motion trail clears this; 0 = sort regardless of motion
+  edgeGate: 0,       // where the sort may happen, by the clean frame's own
+                     // edges (round 8 part 3), −1…1: > 0 = a pair trades
+                     // only where both members' edge strength reaches it
+                     // (outlines shred, fills hold); < 0 = only where both
+                     // sit at or under 1 + it (fills tear, outlines hold);
+                     // 0 = everywhere, and no edge pass runs
+  span: 0,           // walls every `span` pixels along the sort direction
+                     // (round 8 part 3): no pair trades across one, so no
+                     // run ever reaches past its cell. 0 = no walls
+  barrierSoft: 0,    // the luma barrier as a band (round 8 part 3): a pixel
+                     // up to this far under threshold passes with odds
+                     // rising toward it, one draw per pair per pass, so
+                     // ribbon ends fray. 0 = the hard cut, bit for bit
   flowAmount: 0.5,   // the resting state flows: half-blend toward the field
                      // (0 = classic vertical columns, 1 = full field)
   flowMode: 'facets', // John's resting pick: 8 fixed sectors, straight runs

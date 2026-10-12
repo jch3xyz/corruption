@@ -79,7 +79,8 @@ const LAYOUT = {
     loose: [],
     groups: [
       ['sort', ['threshold', 'sortKey', 'angle', 'flowAmount', 'temperature', 'streak']],
-      ['feedback', ['feedbackVideo', 'decay', 'driftX', 'driftY', 'motionGate', 'feedbackBlend', 'feedbackMix']],
+      ['feedback', ['feedbackVideo', 'decay', 'driftX', 'driftY', 'feedbackBlend', 'feedbackMix']],
+      ['gate', ['motionGate', 'edgeGate', 'span', 'barrierSoft']],
       ['engine', ['keyframe', 'passes', 'maxRes', 'maxVideos', 'flowMode', 'flowScale', 'flowSpeed', 'resetMinS', 'resetMaxS']],
     ],
   },
@@ -102,6 +103,7 @@ const LABELS = {
   threshold: 'amount', sortKey: 'sort by', angle: 'direction', flowAmount: 'flow', temperature: 'jitter', streak: 'ribbons',
   feedbackVideo: 'feedback', decay: 'trail', driftX: 'drift', driftY: 'drift', motionGate: 'follow motion',
   feedbackBlend: 'blend', feedbackMix: 'blend amount',
+  edgeGate: 'edges', span: 'span', barrierSoft: 'soft barrier',
   keyframe: 'clear buffer', passes: 'sort passes', maxRes: 'max res', maxVideos: 'max videos',
   flowMode: 'flow mode', flowScale: 'flow scale', flowSpeed: 'flow speed',
   resetMinS: 'clear min s', resetMaxS: 'clear max s',
@@ -778,9 +780,9 @@ async function tier2() {
     );
   }
   check(
-    'each group shows a small caption: sort · feedback · engine, body · smear · engine',
+    'each group shows a small caption: sort · feedback · where · engine, body · smear · engine',
     [...doc.querySelectorAll('#controls .group-head')].map((h) => text(h).replace(/\s*[▸▾]$/, '')).join() ===
-      'sort,feedback,engine,body,smear,engine'
+      'sort,feedback,where,engine,body,smear,engine'
   );
   {
     const engineRows = (sec) =>
@@ -1303,11 +1305,11 @@ async function tier2() {
       '#controls .row[data-key="driftX"], #controls .row[data-key="driftY"], #controls .row[data-keys~="driftX"], #controls .row[data-keys~="driftY"]'
     );
     check(
-      'driftX and driftY render as ONE row, labelled drift, in the feedback group between trail and follow motion',
+      'driftX and driftY render as ONE row, labelled drift, in the feedback group between trail and blend',
       pairRows.length === 1 && padRow === row('driftY') && padRow.classList.contains('pad-row') &&
         text(padRow.querySelector('label')) === 'drift' &&
         padRow.closest('.group')?.dataset.group === 'feedback' &&
-        padRow.previousElementSibling === row('decay') && padRow.nextElementSibling === row('motionGate')
+        padRow.previousElementSibling === row('decay') && padRow.nextElementSibling === row('feedbackBlend')
     );
     const holders = [...pad.querySelectorAll('input[type=range]')];
     check(
@@ -2102,6 +2104,13 @@ async function tier2() {
     ['motionGate', 'decay', 'driftX', 'driftY', 'resetMinS', 'resetMaxS', 'feedbackBlend', 'feedbackMix'].every((k) => gateSays(k, 'feedback')) &&
       shown(row('feedbackVideo')) && groupShown('video', 'feedback')
   );
+  // Round 8 part 3: follow motion sits in where but still reads the trail;
+  // the other three gates read the frame, so they stay.
+  check(
+    'feedback off: in where, follow motion hides (its gate is still feedback) while edges, span and soft barrier stay',
+    gateSays('motionGate', 'feedback') && ['edgeGate', 'span', 'barrierSoft'].every((k) => shown(row(k)) && !row(k).hidden) &&
+      groupShown('video', 'gate') && text(doc.querySelector('#controls .group[data-section="video"][data-group="gate"] .group-head')) === 'where'
+  );
   await setToggle('feedbackVideo', true);
   // The clear timings live in the engine: gated by feedback all the same,
   // and handed back (ungated) when it returns, however the engine folds.
@@ -2138,6 +2147,7 @@ async function tier2() {
   const SORT_ENGINE = ['flowMode', 'flowScale', 'flowSpeed'];
   const FEEDBACK = ['feedbackVideo', 'decay', 'driftX', 'driftY', 'motionGate', 'feedbackBlend', 'feedbackMix'];
   const FEEDBACK_ENGINE = ['resetMinS', 'resetMaxS'];
+  const WHERE = ['edgeGate', 'span', 'barrierSoft'];
   chip('video').querySelector('.chip-toggle').click();
   await sleep(60);
   check(
@@ -2146,12 +2156,16 @@ async function tier2() {
       SORT.every((k) => shown(row(k))) && SORT_ENGINE.every(ungated) &&
       groupShown('video', 'sort') && !shown(offNote('video'))
   );
+  check(
+    'video off (images on): where stays for the stills — edges, span and soft barrier shown, follow motion hidden by the video gate',
+    groupShown('video', 'gate') && WHERE.every((k) => shown(row(k))) && gateSays('motionGate', 'video')
+  );
   chip('images').querySelector('.chip-toggle').click();
   await sleep(60);
   check(
     'video and images both off: every Video group hides and the section says which chips bring it back',
-    [...SORT, ...SORT_ENGINE].every((k) => gateSays(k, 'video or images')) &&
-      ['sort', 'feedback', 'engine'].every((g) => !groupShown('video', g)) &&
+    [...SORT, ...SORT_ENGINE, ...WHERE].every((k) => gateSays(k, 'video or images')) && gateSays('motionGate', 'video') &&
+      ['sort', 'feedback', 'gate', 'engine'].every((g) => !groupShown('video', g)) &&
       shown(offNote('video')) && text(offNote('video')) === 'off — switch video or images on above' &&
       shown($('#section-video h2'))
   );
@@ -2159,7 +2173,7 @@ async function tier2() {
   await sleep(60);
   check(
     'video back on (images still off): sort and feedback return, the note goes',
-    [...SORT, ...FEEDBACK].every((k) => shown(row(k))) && [...SORT_ENGINE, ...FEEDBACK_ENGINE].every(ungated) &&
+    [...SORT, ...FEEDBACK, ...WHERE].every((k) => shown(row(k))) && [...SORT_ENGINE, ...FEEDBACK_ENGINE].every(ungated) &&
       !shown(offNote('video'))
   );
   chip('images').querySelector('.chip-toggle').click();
@@ -2231,6 +2245,12 @@ function clusterCrossing(d) {
 // Laptop to desktop: the strip is checked at each (John, 2026-10-12: 1280
 // is not a typical laptop).
 const WIDTHS = [1280, 1440, 1512, 1728, 1920];
+// The five effect columns since round 8 part 3 (where joined between
+// feedback and the Audio section): all in view with no sideways scroll from
+// FIT_WIDTH up; below it (1280) the lane may scroll sideways, but every
+// column is still there and nothing is cut vertically.
+const EFFECT_GROUPS = [['video', 'sort'], ['video', 'feedback'], ['video', 'gate'], ['audio', 'body'], ['audio', 'smear']];
+const FIT_WIDTH = 1440;
 
 async function tier3() {
   tier('tier 3 — the strip and side-panel layouts (M9)');
@@ -2273,19 +2293,28 @@ async function tier3() {
         ['video', 'audio'].every((sec) => vis(engineBtn(sec)) && Math.abs(rect(engineBtn(sec)).top - rect(q(`#section-${sec} h2`)).top) < 6)
       );
     }
+    if (width >= FIT_WIDTH) {
+      check(
+        `at ${width} px the five effect groups — sort · feedback · where · body · smear — are all in view with no sideways scroll`,
+        c.scrollWidth <= c.clientWidth + 1 && c.scrollLeft === 0 &&
+          EFFECT_GROUPS.every(([sec, g]) => {
+            const r = rect(groupHead(sec, g));
+            return vis(groupHead(sec, g)) && r.left >= cr.left - 1 && r.right <= cr.right + 1;
+          })
+      );
+    } else {
+      // The trade-off of round 8 part 3: five columns do not fit a 1280
+      // lane, so here the lane scrolls sideways — but every column is laid
+      // out, and the first ones start in view.
+      check(
+        `at ${width} px the five effect groups are all laid out; the lane may scroll sideways (${c.scrollWidth} in ${c.clientWidth} px), sort and feedback start in view`,
+        EFFECT_GROUPS.every(([sec, g]) => vis(groupHead(sec, g))) && c.scrollLeft === 0 &&
+          [['video', 'sort'], ['video', 'feedback']].every(([sec, g]) => rect(groupHead(sec, g)).right <= cr.right + 1)
+      );
+    }
     check(
-      `at ${width} px the four effect groups — sort · feedback · body · smear — are all in view with no sideways scroll`,
-      c.scrollWidth <= c.clientWidth + 1 && c.scrollLeft === 0 &&
-        [['video', 'sort'], ['video', 'feedback'], ['audio', 'body'], ['audio', 'smear']].every(([sec, g]) => {
-          const r = rect(groupHead(sec, g));
-          return vis(groupHead(sec, g)) && r.left >= cr.left - 1 && r.right <= cr.right + 1;
-        })
-    );
-    check(
-      `at ${width} px each effect group is its own column: feedback right of sort, body right of feedback, smear right of body`,
-      rect(groupHead('video', 'feedback')).left > rect(groupHead('video', 'sort')).right &&
-        rect(groupHead('audio', 'body')).left > rect(groupHead('video', 'feedback')).right &&
-        rect(groupHead('audio', 'smear')).left > rect(groupHead('audio', 'body')).right
+      `at ${width} px each effect group is its own column: feedback right of sort, where right of feedback, body right of where, smear right of body`,
+      EFFECT_GROUPS.every(([sec, g], i) => i === 0 || rect(groupHead(sec, g)).left > rect(groupHead(...EFFECT_GROUPS[i - 1])).right)
     );
     check(
       `at ${width} px the lane never scrolls vertically, and every visible row fits its height (no row cut off)`,
@@ -2293,22 +2322,22 @@ async function tier3() {
         [...c.querySelectorAll('.section, .row, .group-head')].filter(vis).every((el) => rect(el).top >= cr.top - 1 && rect(el).bottom <= cr.bottom + 1)
     );
     {
-      // The drift pad takes two lane cells: trail above it, follow motion
-      // below, all in the feedback column; then blend and blend amount, and
-      // nothing after blend amount (the next thing in the lane, the Audio
-      // header, starts a new column). Caption, switch, trail, pad (2),
-      // follow motion, blend, blend amount: exactly the eight cells.
+      // The drift pad takes two lane cells: trail above it, blend below,
+      // all in the feedback column; then blend amount, and nothing after it
+      // (the next thing in the lane, the where caption, starts a new
+      // column). Caption, switch, trail, pad (2), blend, blend amount: seven
+      // of the eight cells since follow motion moved to where.
       const pr = q('.row.pad-row');
       const p = rect(pr);
       const above = rect(q('.row[data-key="decay"]'));
-      const below = rect(q('.row[data-key="motionGate"]'));
+      const below = rect(q('.row[data-key="feedbackBlend"]'));
       const sq = rect(pr.querySelector('.pad'));
       const fbCol = [...c.querySelectorAll('.section, .row, .group-head, .group-cap')]
         .filter(vis)
         .filter((el) => Math.abs(rect(el).left - p.left) < 2 || (rect(el).left < p.left + 1 && rect(el).right > p.left + 1));
       const last = fbCol.reduce((a, el) => (rect(el).bottom > rect(a).bottom ? el : a), fbCol[0]);
       check(
-        `at ${width} px the drift pad spans two lane rows (${Math.round(p.height)} px, square ${Math.round(sq.width)} px) between trail and follow motion, in the same column, and blend amount ends it`,
+        `at ${width} px the drift pad spans two lane rows (${Math.round(p.height)} px, square ${Math.round(sq.width)} px) between trail and blend, in the same column, and blend amount ends it`,
         vis(pr) && Math.abs(p.height - 56) < 1 && Math.abs(sq.width - 50) < 1 && Math.abs(sq.height - 50) < 1 &&
           Math.abs(p.left - above.left) < 1 && Math.abs(p.left - below.left) < 1 &&
           p.top >= above.bottom - 1 && below.top >= p.bottom - 1 && below.bottom <= cr.bottom + 1 &&
@@ -2318,7 +2347,7 @@ async function tier3() {
       // Every effect column fits its eight lane cells: had one spilled, its
       // last rows would sit in the next column. So each group's visible rows
       // share its caption's column.
-      const spilled = [['video', 'sort'], ['video', 'feedback'], ['audio', 'body'], ['audio', 'smear']]
+      const spilled = EFFECT_GROUPS
         .filter(([sec, g]) => {
           const left = rect(groupHead(sec, g)).left;
           const rows = [...q(`#controls .group[data-section="${sec}"][data-group="${g}"]`).querySelectorAll('.row')].filter(vis);
@@ -2348,6 +2377,22 @@ async function tier3() {
           tops.every((t, i) => i === 0 || t > tops[i - 1]) && rect(cap).bottom <= tops[0] + 1 &&
           rect(sortRows[5]).bottom <= cr.bottom + 1 &&
           Math.abs(dial.width - 24) < 1 && Math.abs(dial.height - 24) < 1 && dial.top >= ar.top - 0.5 && dial.bottom <= ar.bottom + 0.5
+      );
+    }
+    {
+      // The where column (round 8 part 3): its caption, then follow motion,
+      // edges, span and soft barrier, top to bottom in one column — five of
+      // the eight cells.
+      const keys = ['motionGate', 'edgeGate', 'span', 'barrierSoft'];
+      const rows = keys.map((k) => q(`.row[data-key="${k}"]`));
+      const cap = groupHead('video', 'gate');
+      const tops = rows.map((el) => rect(el).top);
+      check(
+        `at ${width} px the where column is its caption and four rows (follow motion · edges · span · soft barrier), in one column`,
+        vis(cap) && cap.textContent === 'where' && rows.every(vis) &&
+          rows.every((el) => Math.abs(rect(el).left + 4 - rect(cap).left) <= 6) &&
+          rect(cap).bottom <= tops[0] + 1 && tops.every((t, i) => i === 0 || t > tops[i - 1]) &&
+          rect(rows[3]).bottom <= cr.bottom + 1
       );
     }
     {
@@ -2403,14 +2448,24 @@ async function tier3() {
     }
     c.dispatchEvent(new w.MouseEvent('mouseover', { bubbles: true }));
     await sleep(320);
-    // The chip captions still jump; with everything in view that is a flash, not a scroll.
+    // The chip captions still jump. At 1280 the lane may scroll sideways
+    // (five columns, round 8 part 3), so the jump brings Audio into view if
+    // it is not, and flashes it where it lands.
     d.querySelector('.chip[data-key="audioEnabled"] .chip-name').click();
     let flashed = false;
-    for (let i = 0; i < 40 && !flashed; i++) {
+    for (let i = 0; i < 60 && !flashed; i++) {
       await sleep(30);
       flashed = d.getElementById('section-audio').classList.contains('flash');
     }
-    check('the audio chip’s caption lands on Audio (already in view, so it flashes rather than scrolls)', c.scrollLeft === 0 && flashed);
+    {
+      const ah = rect(q('#section-audio'));
+      check(
+        `the audio chip’s caption lands on Audio: its header in the lane’s view (lane scrolled ${Math.round(c.scrollLeft)} px), flashing`,
+        flashed && ah.left >= cr.left - 1 && ah.right <= cr.right + 1 && d.documentElement.scrollLeft === 0
+      );
+    }
+    c.scrollLeft = 0;
+    await sleep(60);
     engineBtn('video').click();
     await sleep(60);
     check(
