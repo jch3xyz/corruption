@@ -52,6 +52,7 @@ rather than steers.
 | **Audio · body** | | | | |
 | `audioMix` | mix | 1 | 0–1 | Wet/dry for the whole sound, in the tap graph after everything else (30 ms ramps). 0 = the internet as transmitted, 1 = all apparatus. Leads the body group since round 3: it is the first level a player reaches for. Distinct from `audioDirect`, which is inside the DSP. |
 | `audioBodyMix` | body amount | **1** | 0–2 | Resonant part against the direct path — the identity dial. Up for more fixed voice, down for more of the video. Making the bank a filter costs lattice salience (25 → ~7 measured, raw audio being 5.6); this is the knob that buys some back. |
+| `audioFollow` | follow | **0** | 0–1 | The source-following body (design review M8): how far the chord retunes toward the source's own pitch. **0 = the fixed chord**, bit for bit, and the pitch follower never runs. **1** = the chord's lowest note sits on the source's pitch, folded into 55–110 Hz, so a talking head and a music video ring different chords. Geometric in between (½ = halfway in pitch). Only the tuning moves — the stretch, each mode's ring and the levels stay — and it glides (~200 ms), home to the fixed chord whenever the follower is unsure (noise, silence, dense mixes). Both engines. |
 | `audioSustain` | ring time | **12** | 2–12 | T60 at the lowest string (55 Hz), seconds. Higher modes always die faster ((55/f)^0.7) — the ring-length knob. |
 | `audioDrive` | drive | **1.0** | 0–1 | Strike force into the resonators. Per-mode caps bound runaway, so drive shapes attack more than loudness. |
 | **Audio · smear** | | | | |
@@ -104,8 +105,54 @@ is a peer with a different character — tube/pipe/spring — not a broken modal
 bank. It rings harder (lattice salience ~12 against the filtered modal bank's
 ~6.6) and costs about a tenth as much per sample.
 
-Identity lives in the apparatus: tuning is fixed in source and never on a knob.
+Identity lives in the apparatus: the tuning is fixed in source, and the one
+knob that moves it (`audioFollow`, below) moves it only toward the source.
 Latency ≈ 0 — the sound coincides with the visual event.
+
+**Following the source (`audioFollow`, design review M8).** A fixed chord is
+why the piece could sound the same all night: every source excites the same
+48 modes, and the only way to make one video differ from another was to let
+the direct signal back in, which defeats the point once it is intelligible.
+With `audioFollow` up, the chord's tuning follows what is playing.
+
+- *What it measures.* `PitchFollower` (dsp.js, pure) listens to the shell's
+  mono feed: a 2048-point Hann FFT every 1024 samples, the strongest peak
+  between 55 and 1000 Hz, interpolated on the log magnitude. A peak counts
+  only if it stands 8× over the band's median magnitude (a tone, not noise)
+  and the window is above −55 dBFS (the presence floor); otherwise the
+  follower is *unsure*. When a 2nd or 3rd harmonic outweighs the
+  fundamental — voices, brass — a subharmonic check takes the lowest of
+  peak/3, peak/2 that also peaks (not a harmonic product spectrum, which
+  cannot tell a plain sine from the octave below it). The reading is
+  smoothed on log-frequency (~300 ms) and held through ~1 s of unsure blocks,
+  so a pause between words does not send the chord home.
+- *The octave fold.* The pitch is folded into the chord's lowest octave:
+  `r = hz / 55`, halved or doubled into [1, 2) — 220 Hz → 1, 330 Hz → 1.5,
+  54 Hz → 1.96. Octave errors therefore cost nothing. The fold is sticky by a
+  semitone: a voice wandering 108 → 112 Hz straddles the 110 Hz edge, and a
+  plain fold would throw the chord most of an octave (1.96 → 1.02) each time
+  it crossed, so the previous octave is kept until the pitch is clearly past
+  the edge. The lowest note moves within an octave plus that semitone.
+- *The geometric interpolation.* The applied ratio is `r^follow`: 0 is
+  exactly 1 for any pitch (the fixed chord, the follower idle — the resting
+  state costs nothing), 1 is the fold, ½ the geometric mean.
+- *The glide.* A one-pole on log(ratio), ~200 ms; unsure → glide home to 1.
+  Both engines retune per block, and only once the ratio has moved 0.2 %:
+  the modal bank moves only its pole angles (radii, gains and the ringing
+  state stay, so each mode keeps its T60 and a ringing partial glides
+  rather than clicks); the comb re-derives each line's delay and loop gain
+  (the delays are fractional already — no rounding).
+- *Why it is still a process, not a synth.* The source passes through
+  untouched — with follow 1 and `bodyMix` 0 the apparatus is still a wire
+  (harness-asserted) — and the follower decides only where the body rings,
+  never what is heard. Measured (plucked 220 and 330 Hz notes, the real
+  worklet offline): on the body alone the two outputs' spectral correlation
+  falls 0.029 → 0.017 (modal) and 0.178 → 0.151 (comb), and energy on the
+  moved chord's new 123.75 Hz string rises ×950 (modal); in the shipped mix
+  the body is quiet beside the direct path, so the difference there is
+  modest (0.171 → 0.159), and each output keeps envelope correlation 0.94
+  with its own source. The risk is the one the A/B names, coherence over a
+  long session; the fallback is still a fixed transmission colour.
 
 The losing **timebase** engine (a 45 s reservoir read by lag-controlled
 heads) is preserved at tag `audio-bakeoff` with its harness checks — judged
@@ -273,7 +320,8 @@ shapes rather than steers is filed in the engine:
   flow's shape: flow mode, flow scale, flow speed, shown while flow is
   above 0; the clear rhythm: clear min s, clear max s).
 - **Audio** — **body** (mix, the whole-sound wet/dry, then body amount,
-  the identity dial, ring time, drive), **smear** (its own switch, tail,
+  the identity dial, follow, how far the chord retunes toward the source,
+  ring time, drive), **smear** (its own switch, tail,
   level, wobble), **engine** (body type, dry, max sources, exciter, comb
   damp, smear clear, clear fade s, clear min/max s). Mix leads body and dry
   sits in the engine since round 3: mix is the level a player reaches for;
@@ -282,9 +330,9 @@ shapes rather than steers is filed in the engine:
 - **Text** has no section: it is the chip and nothing else.
 
 In the mixer the effect columns fit their eight lane cells (sort 6,
-feedback 8 — exactly full since the blend, body 7, smear 5); the engines
-are 8 and 9 rows, so an unfolded engine spills into a second column and
-the lane scrolls sideways only then.
+feedback 8 — exactly full since the blend, body 8 — exactly full since
+follow, smear 5); the engines are 8 and 9 rows, so an unfolded engine
+spills into a second column and the lane scrolls sideways only then.
 
 Both **engine** groups start folded behind a disclosure (`engine ▸`; click
 for `engine ▾`). The folded rows still exist — presets, MIDI and storage

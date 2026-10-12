@@ -110,7 +110,11 @@ balance are the open item below. The previous sound is exactly reachable at
   the fixed chord that unified eight hours is largely gone. If it stops
   cohering, the fallback is a fixed transmission colour (a permanent EQ
   signature — resonant peak, notch, band limit) which adds identity at no cost
-  to specificity because it ignores content entirely. Log the verdict here.
+  to specificity because it ignores content entirely. Since round 7
+  `audioFollow` is a third axis on the same question: it buys specificity
+  by retuning the chord to each source, which spends exactly the coherence
+  this item worries about — so judge it in the same long listen. Log the
+  verdict here.
 - **Phase 5 — text mode**: built, harness-verified, and **decided**:
   `textScramble` defaults ON (John, 2026-08-12 — the call the proposal
   deferred to the room). **The `textMin` slider is gone (John, 2026-10-11,
@@ -332,18 +336,46 @@ balance are the open item below. The previous sound is exactly reachable at
   52/52, text 35/35, audio 34/34. **Next layer: the source-following
   audio body (M8).**
 
+  **Round 7 — the source-following body (M8, 2026-10-12).** The second
+  layer John accepted after the handles. Design review M8: the body is a
+  fixed chord, so every source excites the same metal and the piece sounds
+  the same all night; re-admitting the direct signal was the only way to
+  make videos differ. One param, `audioFollow` (*follow*, 0–1, rest 0),
+  after body amount in the body column (now exactly its eight lane cells).
+  A pure `PitchFollower` in `dsp.js` (2048-pt Hann FFT every 1024 samples,
+  peak in 55–1000 Hz, gated at 8× the band median and −55 dBFS, a
+  subharmonic check rather than HPS, ~300 ms log smoothing, ~1 s hold)
+  feeds the shell, which folds the pitch into the chord's lowest octave
+  (`hz/55` into [1, 2), sticky by a semitone so a voice near 110 Hz does
+  not flip the chord across the edge), applies `r^follow` and glides on
+  log(ratio) (~200 ms), home when unsure. Both engines take
+  `setTuning(ratio)` per block past 0.2 %: modal moves only its pole angles
+  (ring, gains and state kept); the comb re-derives delay and loop gain
+  (`CombLine.setFreq`). At follow 0 nothing runs and the sound is the fixed
+  chord bit for bit (verified against the pre-follow worklet). Still a
+  process: follow 1 at body amount 0 is a wire. Measured on 220 vs 330 Hz
+  plucks: spectral correlation on the body alone 0.029 → 0.017 (modal),
+  0.178 → 0.151 (comb); in the shipped mix 0.171 → 0.159 (modal; the comb's
+  resonant part is too quiet there to resolve); the moved chord's new
+  string ×950 (modal body); envelope correlation with each source 0.94.
+  Trade-off: specificity against the fixed chord's coherence — the risk
+  the A/B names. Two commits: `52e5c49` the layer (audio 55/55, 34 before;
+  panel 350/350) and these docs. Suites (headless): audio 55/55, panel
+  350/350, strip 52/52, text 35/35. **Next layer: the performance ramp.**
+
   **Open items John holds (2026-10-11; (2) reinstated 2026-10-12; revised
   after round 5):** (1) the in-page first-run mark, the remaining half of
   the seam; (2) which home is the default — after both are judged on real
   use; (3) ~~threshold shown inverted as an *amount*~~ — done, round 5;
   (4) an intensity macro; (5) headline knobs that ship at the rail (ring
   time, drive, tail); (6) **the next layers, in the order John accepted
-  (2026-10-12): ~~the feedback blend (M5)~~ — done, round 6; the
-  source-following audio body (M8) next, then the performance ramp, then
-  the CSS-scramble toggle (which needs its feasibility read first)**;
-  whether brighter stays the resting blend is his to judge on real
-  footage; (7) the comb body / gated
-  exciter A/B; (8) the controls themselves — the handles half answered by
+  (2026-10-12): ~~the feedback blend (M5)~~ — done, round 6;
+  ~~the source-following audio body (M8)~~ — done, round 7; the
+  performance ramp next, then the CSS-scramble toggle (which needs its
+  feasibility read first)**; whether brighter stays the resting blend is
+  his to judge on real footage; (7) the comb body / gated exciter A/B,
+  and with it the long-session coherence listen, now with follow as a
+  third axis (how far up follow can go before the night stops cohering); (8) the controls themselves — the handles half answered by
   round 5; the question of *which* controls a player needs *when* rides
   with (4) and (5); (9) the outside-the-box forms — a keyboard-summoned
   overlay that survives fullscreen, and handles on the media itself —
@@ -555,6 +587,12 @@ waits `HARNESS_WAIT_MS` (default 1500) and shoots.
   read over light material where brighter hid it; add should burn toward
   white with blend amount as the leash, and true black should still hold;
   try mix below 1 (an echo) and at 1 (a freeze-fade pulse).
+- **The source-following body:** follow at 1 on a talking head, then on a
+  music video — does each ring its own? The chord should settle on the
+  voice and hold through pauses, sit on the music's tonal centre or bass,
+  glide rather than click, and go home on noise or dense mixes. Then ride
+  body amount up (where follow is heard most) and leave it running across
+  several videos: does the night still cohere?
 - Audio plumbing: page mute/volume through the chain; a cross-origin-audio
   site stays untouched w/ console log; MIDI sweep.
 - Visual: fullscreen/theater tracking, 5× SPA navigation canvas-leak check,

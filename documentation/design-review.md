@@ -959,3 +959,96 @@ identical in every rule at amounts 1, 0.35 and 0; determinism. Panel
 tier-3 checks extended — blend amount now ends the feedback column at
 every strip width), strip 52/52, text 35/35, audio 34/34. Screenshots of
 the mixer checked by eye at 1280 and 1920.
+
+# Round 7: source-following body (M8)
+
+## What landed
+
+The second of the layers John accepted after the handles: **the
+source-following body**, answering M8 (the body is a fixed chord, so every
+source excites the same metal and the piece sounds the same all night; the
+only way to make it differ was to re-admit the direct signal, which defeats
+the point once intelligible). One param, `audioFollow` (**follow**, 0–1),
+in the body column after body amount, so the column reads mix · body
+amount · follow · ring time · drive — with the caption, exactly the eight
+lane cells a mixer column has.
+
+A pitch follower listens to the source (2048-point FFT every 1024 samples,
+peak in 55–1000 Hz, gated at 8× the band's median and −55 dBFS, a
+subharmonic check for voices whose 2nd or 3rd harmonic outweighs the
+fundamental, smoothed ~300 ms, held ~1 s). Its pitch is folded into the
+chord's lowest octave (220 Hz → ×1, 330 Hz → ×1.5), sticky by a semitone so
+a voice around 110 Hz does not throw the chord across the fold's edge; the
+chord moves `ratio^follow` of the way there, gliding (~200 ms), and home
+whenever the follower is unsure. Only the pitches move: the stretch, each
+mode's ring and the levels stay, in both engines. Commits `52e5c49` (the
+layer and its checks) and these docs.
+
+**The defaults are unchanged.** follow rests at 0, where the follower is
+never built and nothing retunes: the resting sound is the fixed chord, bit
+for bit — verified sample for sample against the pre-follow worklet on both
+engines, continuous and gated, with and without wobble and clears.
+
+## What to listen for
+
+- **A talking head, then a music video, at follow 1.** The point of the
+  layer: each should ring its own chord. On speech the chord should settle
+  around the speaker's pitch and hold through the pauses between words; on
+  music it should sit on the tune's tonal centre or bass. Ride follow from 0
+  to 1 on each and listen for the chord leaving the fixed voice.
+- **Where it does not engage.** Dense mixes, noise, applause and drums give
+  the follower no clear peak, so the chord stays (or glides back) home.
+  That is by design — unsure means the fixed chord — but it means some
+  videos will not move it at all.
+- **The glide.** Pitch changes should be heard as the body sliding, never
+  a click or a jump. A voice crossing ~110, 220 or 440 Hz may now and then
+  refold, a slide of most of an octave; the semitone of stickiness should
+  make that rare.
+- **Coherence over a long session.** The build plan has named this risk
+  since the rework: the fixed chord was what unified eight hours of
+  unrelated audio, and follow 1 gives that up by design. Whether the piece
+  still reads as one apparatus across a night of videos at follow 1, or
+  somewhere below it, is a listen, not a measurement. If it stops cohering,
+  the fallback is still a fixed transmission colour (a permanent EQ
+  signature), which adds identity without following anything.
+
+## Trade-offs, stated
+
+- **Specificity against coherence.** The layer exists to make sources
+  differ; the more it succeeds, the less the fixed chord binds them. The
+  knob is continuous so John can find the point between.
+- **Modest in the shipped mix.** The body is quiet beside the direct path
+  at the defaults (direct 1, body amount 1), so the measured difference is
+  small there (spectral correlation 0.171 → 0.159) and large on the body
+  alone (0.029 → 0.017; the moved chord's new string ×950). Body amount up
+  is where follow is heard most.
+- **The comb follows too, but the default mix hides it.** On the body
+  alone the comb's chord moves (0.178 → 0.151, ×47 on the new string); in
+  the mix its resonant part is too quiet for the spectral measure to
+  resolve (0.193 → 0.194). The comb/gated A/B is still John's.
+- **The body column is now full.** The next body handle has to displace one
+  or go to the engine.
+- **The tip is trimmed.** The agreed copy ended "the chord's lowest note
+  moves within one octave; the ring and the partials stay"; at 158 px it
+  overran the bubble's 150 px budget, so it ends "Only the pitch moves,
+  within an octave".
+
+## Verification
+
+Headless Chrome. Audio **55/55** (34 before): tier 1 gains the follower (a
+220 Hz sine reads 220.3; 110 Hz under a stronger 2nd or a dominant 3rd
+harmonic reads 109.6, not 220 or 330; noise, silence and a −83 dBFS tone
+read unsure; the hold and release; NaN, odd blocks and empty input), the
+fold (220 → 1, 330 → 1.5, 55 → 1, 54 → 1.964; every pitch in [1, 2); the
+sticky fold), follow 0 → exactly 1 for any pitch, the mode table at ratio
+1 bit for bit and ×1.5 with every ring kept, a retuned comb line's period,
+and the detangle made exhaustive (no non-audio stored key moves the
+worklet's params; follow arrives). Tier 2 gains, on both engines: follow 0
+bit-identical to no follow; follow 1 at body amount 0 still a wire (corr
+0.9999, level 1.000); specificity on 220 vs 330 Hz plucks (above), with
+each output keeping envelope correlation 0.94–0.95 with its own source;
+and the chord moved (energy at 123.75 Hz and its 3rd partial ×949.6 on
+the modal body alone, ×1.47 in the mix; ×47.3 on the comb alone). Panel
+**350/350** (+1: the follow row's range, rest, place and tip; the audio-off
+gating check extended to it; the tier-3 column check, unchanged, holds with
+follow in the body column at every strip width), strip 52/52, text 35/35.

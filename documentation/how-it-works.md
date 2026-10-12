@@ -580,6 +580,89 @@ disperses near Nyquist and does nothing across 55–1500 Hz. So the comb engine
 (§3.3b) is a peer with a different character, not a modal bank with a bug.
 Don't re-try allpass stretch on it.
 
+#### Following the source (`audioFollow`, design review M8)
+
+The one permanent voice has a cost the room named: every source excites the
+same chord, so the piece sounds the same all night, and the only way to make
+one video differ from the next was to let the direct signal back in — which
+defeats the point once it is intelligible. So something in the apparatus has
+to follow the source, without the source becoming a control signal for a
+synth. The answer that landed (round 7, 2026-10-12) is the body's *tuning*
+tracking the source's dominant pitch, by an amount the player sets.
+
+```
+hz      = PitchFollower(mono)                 0 when unsure
+r       = hz / 55 · 2^−k,  r ∈ [1, 2)          the octave fold (sticky by a semitone)
+target  = r^follow                             geometric: follow 0 → exactly 1
+ratio  += (target − ratio) on log, τ ≈ 200 ms  per block; unsure → target 1
+f_mode  = ratio · k · f₀ · √(1 + 4e-4·k²)      every mode, both engines
+```
+
+**The follower** (`PitchFollower` in `dsp.js` — pure, chrome-free, tier-1
+tested like the onset detector) keeps a 2048-sample ring of the mono feed
+and every 1024 samples takes a Hann-windowed FFT, finds the strongest local
+peak between 55 and 1000 Hz and interpolates it on the log magnitude (a Hann
+main lobe is near-Gaussian, so the log-parabola is the accurate form). Two
+gates make it say *unsure* rather than guess: the peak must stand 8× over
+the band's median magnitude, and the window must be above −55 dBFS, the
+shell's presence floor. White noise never passes the first (0 confident
+blocks in 60 s measured); silence and a −83 dBFS tone never pass the second.
+When a voice's or a horn's 2nd or 3rd harmonic outweighs its fundamental,
+a subharmonic check takes the lowest of peak/3, peak/2 that is itself a
+peak at ≥ 0.1 of the main one. A harmonic product spectrum was the obvious
+alternative and was not used: it scores a plain sine no higher at its own
+pitch than an octave below, so it would fail the simplest case. The /2 case
+barely matters after the fold; the /3 case would put the chord a fifth off,
+so it does. The reading is smoothed with a one-pole on log2(Hz) (~300 ms)
+and the last confident value is held through ~1 s of unsure blocks before
+the follower lets go.
+
+**The fold** puts the source's pitch class on the chord's lowest note. Two
+side effects are deliberate: octave errors cost nothing (110 and 220 Hz land
+on the same ratio), and the chord moves at most an octave, so it stays in
+the register it was voiced for. The fold is *sticky*: a male voice lives
+around 110 Hz, exactly on the fold's edge, and a plain fold would throw the
+chord most of an octave (108 Hz → 1.96, 112 Hz → 1.02) every time the voice
+crossed it. With the previous octave remembered, the ratio may stray a
+semitone past either edge before it refolds.
+
+**Retuning** happens per block, never per sample, and only once the glided
+ratio has moved 0.2 % since the last retune (or to land exactly on 1, so the
+resting chord is the same doubles as ever). In the modal bank only the pole
+angles move: `a1 = 2r·cos(2π·f·ratio/sr)`; the radii `r`, and with them each
+mode's T60, the gains and the `y1/y2` state are untouched, so a ringing
+partial glides to its new pitch instead of clicking. `modeTable` takes the
+ratio as an optional third argument and computes the damping law on the
+untuned frequency, which is the same statement: following the source moves
+the pitches and nothing else. The comb (§3.3b) re-derives each line's delay
+and loop gain (`CombLine.setFreq`); its read is already fractional, so there
+is no whole-sample rounding, and its rings are allocated for half the base
+pitch so retuning can never read past them.
+
+**Why this is still a process, not a synth.** Nothing about the output sum
+changes: it is still `direct·x + bodyMix·resonant`, the source still passes
+through untouched, and with `bodyMix` 0 the apparatus is still a wire at
+follow 1 (harness-asserted, both engines). The source does become a control
+signal here — but for *where the body rings*, not for what is heard. That is
+the line between this and the rejected designs: `audio-v1` re-sorted the
+source's spectrum and `audio-bakeoff` re-read it in time; this leaves the
+signal alone and moves the object it passes through.
+
+**What it costs and buys.** At follow 0 the follower is never built and no
+retune runs, so the resting state costs nothing and is bit-identical to the
+fixed chord (verified sample for sample against the pre-follow worklet). At
+follow 1, two plucked sources a fifth apart (220 and 330 Hz) come out less
+alike: spectral correlation on the body alone 0.029 → 0.017 (modal) and
+0.178 → 0.151 (comb), energy on the moved chord's new 123.75 Hz string ×950
+(modal) — while each output keeps envelope correlation 0.94 with its own
+source. In the shipped mix the body is quiet beside the direct path, so the
+difference there is modest (0.171 → 0.159). And the pair is conservative:
+220 Hz folds to ratio 1, and 330 Hz to 1.5, whose root is the fixed chord's
+own 82.5 Hz string. The open question is the old one from §3.3's
+correction: whether eight hours still cohere as one apparatus when the
+apparatus retunes to every video. The fallback is unchanged — a fixed
+transmission colour, which adds identity without following anything.
+
 ### 3.3b The comb engine
 
 Three recirculating lines on the same fundamentals, added as a peer 2026-08-13

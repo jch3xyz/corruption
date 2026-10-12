@@ -24,7 +24,10 @@ engines output `direct·x + bodyMix·resonant`, so the source passes *through*
 the apparatus — before this the output was `sum(modes)` alone and never
 contained the input, which measured as −0.01 envelope correlation on speech.
 The smear's tail (`audioFbDecay`) and level (`audioFbReturn`) are now separate
-knobs; merged, the wash sat ~20× over the direct sound. `audioBody` selects
+knobs; merged, the wash sat ~20× over the direct sound. `audioFollow`
+(design review M8; 0 at rest = the fixed chord, bit-identical, follower
+idle) retunes the chord toward the source's own pitch — only where the
+body rings moves, the source still passes through. `audioBody` selects
 **modal** (48 stretched partials, struck metal) or **comb** (three
 recirculating lines, exactly harmonic, tube/spring) — **the A/B is open and is
 John's call**; don't argue it in code. Two rejected designs live in tags —
@@ -67,7 +70,7 @@ Quick facts:
   group holds only its handles** (John's handles round, 2026-10-12): sort
   = amount · flow · jitter · ribbons; feedback = the switch · trail · drift
   pad · follow motion · blend · blend amount (`feedbackBlend`/`feedbackMix`);
-  body = mix · body amount · ring time · drive; smear = the switch · tail ·
+  body = mix · body amount · follow · ring time · drive; smear = the switch · tail ·
   level · wobble. Everything that shapes rather than
   steers is in the **engines**, folded by default (Video: sort passes, max
   res, max videos, the flow's shape, the clear rhythm; Audio: body type,
