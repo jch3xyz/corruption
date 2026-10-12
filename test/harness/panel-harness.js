@@ -1623,7 +1623,7 @@ async function tier3() {
         return r.right <= sc.getBoundingClientRect().right + 0.5;
       });
     const atRest = fits();
-    d.getElementById('preset-original').click(); // brings out undo
+    d.getElementById('preset-default').click(); // brings out undo
     await sleep(60);
     d.getElementById('preset-save').click(); // save mode: the widest preset row
     await sleep(60);

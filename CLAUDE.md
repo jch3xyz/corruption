@@ -49,6 +49,8 @@ Quick facts:
   text suite at `/test/harness/text.html` (pure DOM, deterministic), panel
   suite at `/test/harness/panel.html` (pure DOM; drives the shipped panel in
   an iframe against a stubbed chrome.storage).
+  Strip suite at `/test/harness/strip.html` (mock video page; mounts the
+  in-page bottom strip directly, no extension needed).
 - Params live in chrome.storage.local; stored values beat code defaults —
   press the panel's **default** preset after changing DEFAULTS (it is never stored).
   Presets A/B/C (`presets`) are snapshots; a row double-click returns to the last-loaded one (`presetBase`).

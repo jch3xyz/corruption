@@ -542,11 +542,11 @@ body:not(.midi-device) .midi-hint { display: none; }
    the sections are columns that scroll sideways, MIDI and the panel prefs
    sit beside them, and the hover copy is a column at the right instead of
    a strip under everything. Same markup, same script — only placement. --- */
-:root[data-layout='strip'] body { flex-direction: row; height: 100vh; }
+:root[data-layout='strip'] body { flex-direction: row; height: 100vh; padding-bottom: 0; }
 
 :root[data-layout='strip'] #scroll {
   display: grid;
-  grid-template-columns: 228px minmax(0, 1fr) 168px;
+  grid-template-columns: 228px minmax(0, 1fr) 200px;
   grid-template-rows: auto auto auto auto minmax(0, 1fr);
   column-gap: 16px;
   row-gap: 5px;
@@ -569,6 +569,7 @@ body:not(.midi-device) .midi-hint { display: none; }
 :root[data-layout='strip'] h1 { font-size: 11px; margin: 0; }
 :root[data-layout='strip'] .lede,
 :root[data-layout='strip'] .keys,
+:root[data-layout='strip'] .presets-head,
 :root[data-layout='strip'] .midi .hint { display: none; }
 
 :root[data-layout='strip'] .ab { min-height: 30px; padding: 4px 8px; border-radius: 4px; }
@@ -623,18 +624,37 @@ body:not(.midi-device) .midi-hint { display: none; }
 :root[data-layout='strip'] body:not(.midi-device) .row { grid-template-columns: 84px 1fr 48px; }
 :root[data-layout='strip'] .row input.value.num { font-size: 10px; padding: 2px 3px; }
 :root[data-layout='strip'] #prefs .row,
-:root[data-layout='strip'] body:not(.midi-device) #prefs .row { grid-template-columns: 1fr auto; margin: 2px 0; padding: 0; }
+:root[data-layout='strip'] body:not(.midi-device) #prefs .row { grid-template-columns: auto minmax(0, 1fr); column-gap: 8px; margin: 2px 0; padding: 0; }
 :root[data-layout='strip'] #prefs .row > .value,
 :root[data-layout='strip'] #prefs .row > :nth-child(4) { display: none; }
-:root[data-layout='strip'] #prefs .row > .knob { grid-column: 2; }
+:root[data-layout='strip'] #prefs .row > .knob { grid-column: 2; justify-self: end; }
+:root[data-layout='strip'] #prefs .row > label { white-space: nowrap; }
+:root[data-layout='strip'] #prefs .row select { font-size: 10px; padding: 1px 2px; width: 100%; min-width: 0; }
 :root[data-layout='strip'] .midi h2 { margin: 0 0 2px; font-size: 10px; }
 :root[data-layout='strip'] #midi-status { font-size: 10px; }
 
-/* The hover copy: a column at the right edge, full height. */
+/* The hover copy: a column at the right edge, full height. The column
+   panel's overlay (round 3: one line at rest, growing upward over the rows)
+   does not apply here — the column is a flex item beside #scroll, always
+   the strip's full height, and shows the legend at rest and the hovered tip
+   in place: no growth, no overlay, nothing covered. */
 :root[data-layout='strip'] #tooltip {
+  position: static;
+  flex: 0 0 340px;
   width: 340px;
   height: auto;
+  min-height: 0;
+  max-height: none;
+  transition: none;
+  box-shadow: none;
   border-top: none;
   border-left: 1px solid #34343c;
   padding: 6px 12px;
+}
+
+/* The legend and a `say` line wrap in the column instead of ellipsing. */
+:root[data-layout='strip'] #tooltip.idle,
+:root[data-layout='strip'] #tooltip.say {
+  display: block;
+  white-space: normal;
 }

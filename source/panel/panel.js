@@ -1122,8 +1122,13 @@ function tipLine(text) {
 }
 
 // Grow or shrink to fit the content, between one line and TIP_MAX. The
-// height is set in px so the change can transition.
+// height is set in px so the change can transition. In the strip layout the
+// help copy is a full-height column (panel.css), so it never grows.
 function sizeStrip() {
+  if (LAYOUT === 'strip') {
+    tipEl.style.height = '';
+    return;
+  }
   const from = tipEl.offsetHeight;
   tipEl.style.height = 'auto';
   const want = Math.min(TIP_MAX, tipEl.offsetHeight);
