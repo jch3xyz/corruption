@@ -367,6 +367,67 @@ input[type='range']::-webkit-slider-thumb {
   border: none;
 }
 
+/* A pad (handles round): two keys as one 2-D surface — push the point and
+   the trail goes that way. The square is the knob cell; faint axes cross at
+   zero (--zx/--zy, set by panel.js), the dot is the current pair, the two
+   typed fields stand x above y in the value cell with their axis letter in
+   the gap beside them, and the ⊙ pair stacks the same way. */
+.row.pad-row { margin-top: 8px; margin-bottom: 8px; }
+
+.pad.knob {
+  position: relative;
+  justify-self: start;
+  width: 72px;
+  height: 72px;
+  background: #1a1a1f;
+  border: 1px solid #2e2e36;
+  border-radius: 3px;
+  cursor: crosshair;
+  touch-action: none;
+  outline: none;
+}
+
+.pad.knob:hover { border-color: #3d3d48; }
+.pad.knob:focus-visible { border-color: #e8e864; }
+
+.pad.knob::before,
+.pad.knob::after {
+  content: '';
+  position: absolute;
+  background: #2c2c35;
+  pointer-events: none;
+}
+
+.pad.knob::before { left: var(--zx, 50%); top: 0; bottom: 0; width: 1px; }
+.pad.knob::after { top: var(--zy, 50%); left: 0; right: 0; height: 1px; }
+
+.pad-dot {
+  position: absolute;
+  z-index: 1;
+  width: 10px;
+  height: 10px;
+  margin: -5px 0 0 -5px;
+  border-radius: 50%;
+  background: #e8e864;
+  pointer-events: none;
+}
+
+.pad-fields { display: flex; flex-direction: column; gap: 6px; }
+
+.pad-field { position: relative; display: block; }
+
+.pad-field::before {
+  content: attr(data-axis);
+  position: absolute;
+  right: calc(100% + 4px);
+  top: 50%;
+  transform: translateY(-50%);
+  color: #6c6c76;
+  font-size: 10px;
+}
+
+.pad-learn { display: flex; flex-direction: column; gap: 6px; }
+
 input[type='checkbox'] {
   width: 16px;
   height: 16px;
@@ -660,6 +721,15 @@ body:not(.midi-device) .midi { display: none; }
   :root[data-layout='mixer'] #controls .row select { font-size: 11px; padding: 2px 1px; }
 }
 :root[data-layout='mixer'] .row input[type='range'] { height: 6px; border-radius: 3px; }
+
+/* A pad takes two lane cells (the two rows it replaced): 56 px, its square
+   50 px, its fields and ⊙ stacked small. */
+:root[data-layout='mixer'] .row.pad-row { grid-row: span 2; height: 56px; margin: 0 -4px; }
+:root[data-layout='mixer'] .pad.knob { width: 50px; height: 50px; }
+:root[data-layout='mixer'] .pad-fields,
+:root[data-layout='mixer'] .pad-learn { gap: 3px; }
+:root[data-layout='mixer'] .row .pad-fields input.value.num { font-size: 11px; padding: 1px 2px; }
+:root[data-layout='mixer'] .pad-learn .learn { height: 20px; }
 :root[data-layout='mixer'] .row input[type='range']::-webkit-slider-thumb { width: 16px; height: 16px; }
 
 /* --- The rail: the same page in a frame too short for anything but one

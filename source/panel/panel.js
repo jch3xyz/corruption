@@ -21,6 +21,7 @@ import {
   SECTIONS,
   GROUPS,
   DEFS,
+  PADS,
   ROW_HINT,
   NUM_HINT,
   quantize,
@@ -286,6 +287,200 @@ function buildRow(def) {
   return row;
 }
 
+// --- Pads (handles round, 2026-10-12): two keys played as one 2-D surface ---
+// One row stands in for both keys' rows. Each key keeps a hidden range
+// input as its state holder (inputs[key], holding the view like any
+// slider), and the row element is registered as rowEls for both, so setUI,
+// currentValues, presets, MIDI, resetParam, setGated and the storage
+// subscriber treat the pair exactly as two sliders. The value cell holds
+// one small typed field per key (x above y), the learn cell one ⊙ per key.
+// The dot repaints from the holders whenever either key renders.
+const PAD_HINT =
+  'Drag the point; focused, arrows nudge it (shift ×10). Double-click the name or the pad to put both back to the marked preset.';
+
+function buildPadRow(pad) {
+  const dx = defByKey[pad.x];
+  const dy = defByKey[pad.y];
+  const axes = [
+    ['x', dx],
+    ['y', dy],
+  ];
+  const row = document.createElement('div');
+  row.className = 'row pad-row';
+  row.dataset.key = dx.key; // the gate and the first key
+  row.dataset.keys = `${dx.key} ${dy.key}`;
+  row.dataset.tip = pad.tip;
+  row.dataset.hint = ROW_HINT;
+  row.dataset.param = `${dx.key} · ${dy.key}`;
+
+  const label = document.createElement('label');
+  label.textContent = pad.label;
+
+  const surface = document.createElement('div');
+  surface.className = 'pad knob';
+  surface.setAttribute('role', 'group');
+  surface.setAttribute('aria-label', pad.label);
+  surface.tabIndex = 0;
+  surface.dataset.tip = pad.tip;
+  surface.dataset.hint = PAD_HINT;
+  surface.dataset.param = row.dataset.param;
+  const dot = document.createElement('span');
+  dot.className = 'pad-dot';
+  surface.appendChild(dot);
+
+  // Where each axis is in its range, 0..1, from a view value.
+  const frac = (def, view) => (view - def.min) / (def.max - def.min);
+  const clamp01 = (n) => Math.min(1, Math.max(0, n));
+  // The cross marks zero on each axis (the middle, for a symmetric range).
+  const zero = (def) => (def.min <= 0 && def.max >= 0 ? frac(def, toView(def, 0)) : 0.5);
+  surface.style.setProperty('--zx', `${zero(dx) * 100}%`);
+  surface.style.setProperty('--zy', `${(1 - zero(dy)) * 100}%`);
+
+  const holders = {};
+  for (const [, def] of axes) {
+    const h = document.createElement('input');
+    h.type = 'range';
+    h.hidden = true;
+    h.tabIndex = -1;
+    h.min = def.min;
+    h.max = def.max;
+    h.step = def.step;
+    h.dataset.for = def.key;
+    surface.appendChild(h);
+    holders[def.key] = h;
+    inputs[def.key] = h;
+  }
+
+  const fields = document.createElement('div');
+  fields.className = 'value pad-fields';
+  for (const [axis, def] of axes) {
+    const wrap = document.createElement('span');
+    wrap.className = 'pad-field';
+    wrap.dataset.axis = axis;
+    const f = document.createElement('input');
+    f.type = 'text';
+    f.className = 'value num';
+    f.inputMode = 'decimal';
+    f.spellcheck = false;
+    f.setAttribute('aria-label', `${pad.label} ${axis}`);
+    f.dataset.tip = def.tip;
+    f.dataset.hint = NUM_HINT;
+    f.dataset.param = def.key;
+    attachNumberField(def, f, holders[def.key]);
+    wrap.appendChild(f);
+    fields.appendChild(wrap);
+    valueEls[def.key] = f;
+  }
+
+  const learns = document.createElement('div');
+  learns.className = 'pad-learn';
+  for (const [, def] of axes) {
+    const b = document.createElement('button');
+    b.className = 'learn';
+    b.textContent = '⊙';
+    b.dataset.param = def.key; // the tooltip's key line says which axis
+    b.addEventListener('click', () => armLearn(def.key));
+    learns.appendChild(b);
+    learnEls[def.key] = b;
+  }
+
+  const paint = () => {
+    const fx = clamp01(frac(dx, Number(holders[dx.key].value)));
+    const fy = clamp01(frac(dy, Number(holders[dy.key].value)));
+    dot.style.left = `${fx * 100}%`;
+    dot.style.top = `${(1 - fy) * 100}%`;
+  };
+  onRender(dx.key, paint);
+  onRender(dy.key, paint);
+
+  // A view value onto one axis: snapped on the stored grid, written, shown.
+  const put = (def, view) => {
+    const v = quantize(def, fromView(def, view));
+    queueWrite(def.key, v);
+    setUI(def.key, v);
+  };
+
+  // x left → right is min → max; y bottom → top, so up is up. Measured
+  // inside the border, where the dot travels.
+  const fromPointer = (e) => {
+    const r = surface.getBoundingClientRect();
+    const fx = clamp01((e.clientX - r.left - surface.clientLeft) / surface.clientWidth);
+    const fy = clamp01(1 - (e.clientY - r.top - surface.clientTop) / surface.clientHeight);
+    put(dx, dx.min + fx * (dx.max - dx.min));
+    put(dy, dy.min + fy * (dy.max - dy.min));
+  };
+  let dragging = null;
+  surface.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0 || dragging !== null) return;
+    dragging = e.pointerId;
+    try {
+      surface.setPointerCapture(e.pointerId);
+    } catch {
+      // a synthetic or already-gone pointer: the moves still reach the pad
+    }
+    surface.focus({ preventScroll: true });
+    fromPointer(e);
+  });
+  surface.addEventListener('pointermove', (e) => {
+    if (e.pointerId === dragging) fromPointer(e);
+  });
+  const release = (e) => {
+    if (e.pointerId !== dragging) return;
+    dragging = null;
+    try {
+      surface.releasePointerCapture(e.pointerId);
+    } catch {
+      // never captured
+    }
+  };
+  surface.addEventListener('pointerup', release);
+  surface.addEventListener('pointercancel', release);
+
+  // Arrows nudge one step on their own axis (shift ×10).
+  const NUDGE = {
+    ArrowLeft: [dx, -1],
+    ArrowRight: [dx, 1],
+    ArrowDown: [dy, -1],
+    ArrowUp: [dy, 1],
+  };
+  surface.addEventListener('keydown', (e) => {
+    const nudge = NUDGE[e.key];
+    if (!nudge) return;
+    e.preventDefault();
+    const [def, sign] = nudge;
+    const step = (Number(def.step) || 1) * (e.shiftKey ? 10 : 1);
+    put(def, Number(holders[def.key].value) + sign * step);
+  });
+
+  // Double-click the name or the pad: both keys back to the marked preset.
+  // The typed fields keep double-click for selecting their text.
+  row.addEventListener('dblclick', (e) => {
+    if (e.target.closest('input.value.num, .learn')) return;
+    for (const [, def] of axes) resetParam(def.key);
+  });
+
+  row.append(label, surface, fields, learns);
+  row.addEventListener('animationend', () => row.classList.remove('flash'));
+  rowEls[dx.key] = row;
+  rowEls[dy.key] = row;
+  return row;
+}
+
+// The row a def renders as: its own, or — for a pad's keys — the pad's,
+// built once where the pad's first key sits; the second key gets null.
+const builtPads = new Set();
+function rowFor(def) {
+  if (!def.pad) return buildRow(def);
+  const pad = PADS[def.pad];
+  if (!pad || (pad.x !== def.key && pad.y !== def.key)) {
+    console.warn('[panel] unknown pad', def.pad, def.key);
+    return buildRow(def); // never lose a row to a typo
+  }
+  if (builtPads.has(def.pad)) return null;
+  builtPads.add(def.pad);
+  return buildPadRow(pad);
+}
+
 function buildSection(section) {
   const head = document.createElement('div');
   head.className = 'section';
@@ -361,7 +556,10 @@ function buildGroup(group, defs) {
     cap.dataset.tip = group.tip;
     rows.appendChild(cap);
   }
-  for (const def of defs) rows.appendChild(buildRow(def));
+  for (const def of defs) {
+    const r = rowFor(def);
+    if (r) rows.appendChild(r);
+  }
   wrap.append(head, rows);
   wrap.classList.toggle('engine', !!group.collapsible);
   groupEls[`${group.section}.${group.id}`] = { wrap, head };
@@ -698,7 +896,10 @@ function flashEl(el) {
     const defs = bySection.get(section.id);
     // Ungrouped rows (none at present) come first, then each group in
     // GROUPS order with its rows in DEFS order.
-    for (const def of defs.filter((d) => !d.group)) controls.appendChild(buildRow(def));
+    for (const def of defs.filter((d) => !d.group)) {
+      const r = rowFor(def);
+      if (r) controls.appendChild(r);
+    }
     for (const group of GROUPS.filter((g) => g.section === section.id)) {
       const members = defs.filter((d) => d.group === group.id);
       if (members.length) controls.appendChild(buildGroup(group, members));
@@ -707,7 +908,8 @@ function flashEl(el) {
       (d) => d.group && !GROUPS.some((g) => g.section === section.id && g.id === d.group)
     )) {
       console.warn('[panel] unknown group', def.group, def.key);
-      controls.appendChild(buildRow(def)); // never lose a row to a typo
+      const r = rowFor(def); // never lose a row to a typo
+      if (r) controls.appendChild(r);
     }
   }
   globals.appendChild(buildChips());

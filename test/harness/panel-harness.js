@@ -34,6 +34,7 @@ import { DEFAULTS } from '../../source/content/params.js';
 import { RAIL_HEIGHT, STRIP_HEIGHT } from '../../source/content/strip.js';
 import {
   DEFS,
+  PADS,
   SECTIONS,
   GROUPS,
   quantize,
@@ -87,8 +88,8 @@ const LAYOUT = {
 const LABELS = {
   threshold: 'amount', flowAmount: 'flow', flowMode: 'flow mode', flowScale: 'flow scale',
   flowSpeed: 'flow speed', temperature: 'jitter',
-  feedbackVideo: 'feedback', motionGate: 'motion gate', decay: 'decay', driftX: 'drift x',
-  driftY: 'drift y', resetMinS: 'clear min s', resetMaxS: 'clear max s',
+  feedbackVideo: 'feedback', motionGate: 'motion gate', decay: 'decay', driftX: 'drift',
+  driftY: 'drift', resetMinS: 'clear min s', resetMaxS: 'clear max s',
   passes: 'sort passes', streak: 'streak', maxRes: 'max res', maxVideos: 'max videos',
   audioBodyMix: 'body amount', audioBody: 'body type', audioSustain: 'ring time',
   audioDrive: 'drive', audioDirect: 'dry',
@@ -201,6 +202,34 @@ function tier1() {
       byKey.audioDirect.tip.startsWith('The untouched source mixed back in. Up = intelligible again, which defeats the piece; kept for comparison.') &&
       byKey.audioMix.tip.startsWith('Wet/dry for the whole sound. 0 = the sound exactly as transmitted, 1 = all apparatus.')
   );
+  // -- pads: two numeric keys played as one 2-D surface --
+  {
+    const padKeys = DEFS.filter((d) => d.pad);
+    const pad = PADS.drift;
+    check(
+      'the drift pad is declared: driftX and driftY both carry pad "drift", PADS.drift names them x and y, labelled drift',
+      padKeys.map((d) => `${d.key}:${d.pad}`).join() === 'driftX:drift,driftY:drift' &&
+        pad?.x === 'driftX' && pad.y === 'driftY' && pad.label === 'drift' &&
+        byKey.driftX.label === 'drift' && byKey.driftY.label === 'drift'
+    );
+    check(
+      'a pad’s two keys are numeric, share one range and step, and sit next to each other in DEFS',
+      Object.values(PADS).every((p) => {
+        const [a, b] = [byKey[p.x], byKey[p.y]];
+        const i = DEFS.indexOf(a);
+        return (
+          numeric.includes(a) && numeric.includes(b) && a.min === b.min && a.max === b.max && a.step === b.step &&
+          DEFS[i + 1] === b && a.pad === b.pad && PADS[a.pad] === p
+        );
+      })
+    );
+    check(
+      'every pad leads with what you see, carries no changelog, and its keys keep their own tips (they feed the two fields)',
+      Object.values(PADS).every(
+        (p) => p.tip.length > 20 && !CHANGELOG.test(p.tip) && byKey[p.x].tip !== p.tip && byKey[p.y].tip !== p.tip
+      ) && PADS.drift.tip.startsWith('Which way the trail slides') && /up on the picture/i.test(PADS.drift.tip)
+    );
+  }
   check('no row carries slider-end captions (threshold’s "more · less" went 2026-10-12, John)', DEFS.every((d) => !d.ends));
   check(
     'presets are three slots and never capture the A/B',
@@ -356,9 +385,13 @@ let doc;
 let store;
 
 const $ = (sel) => doc.querySelector(sel);
-const row = (key) => doc.querySelector(`.row[data-key="${key}"]`);
-const slider = (key) => row(key).querySelector('input[type=range]');
-const field = (key) => row(key).querySelector('input.value.num');
+// A pad row stands for two keys (data-keys="driftX driftY"); its state
+// holders are hidden ranges marked data-for, its fields data-param.
+const row = (key) => doc.querySelector(`.row[data-key="${key}"], .row[data-keys~="${key}"]`);
+const slider = (key) =>
+  row(key).querySelector(`input[type=range][data-for="${key}"]`) ?? row(key).querySelector('input[type=range]');
+const field = (key) => row(key).querySelector(`input.value.num[data-param="${key}"]`);
+const keysOf = (r) => (r.dataset.keys ?? r.dataset.key).split(' ');
 
 function type(key, text) {
   const el = field(key);
@@ -472,11 +505,14 @@ async function tier2() {
       !!$('.ab-row .learn')
   );
   check(
-    'the A/B dominates: taller than any other control in the panel',
+    'the A/B dominates: taller than any other one-line control in the panel, and bigger than the drift pad',
     (() => {
-      const h = ab.getBoundingClientRect().height;
-      return [...doc.querySelectorAll('.btn, .chip-toggle, .row')].every(
-        (el) => el.getBoundingClientRect().height * 1.6 < h
+      const r = ab.getBoundingClientRect();
+      const p = $('.pad').getBoundingClientRect();
+      return (
+        [...doc.querySelectorAll('.btn, .chip-toggle, .row:not(.pad-row)')].every(
+          (el) => el.getBoundingClientRect().height * 1.6 < r.height
+        ) && r.width * r.height > 3 * p.width * p.height
       );
     })()
   );
@@ -616,7 +652,7 @@ async function tier2() {
       const rowsAfter = [...doc.querySelectorAll('#controls .section, #controls .row')];
       const from = rowsAfter.indexOf(head);
       const until = rowsAfter.findIndex((el, i) => i > from && el.classList.contains('section'));
-      const inSection = rowsAfter.slice(from + 1, until < 0 ? undefined : until).map((r) => r.dataset.key);
+      const inSection = rowsAfter.slice(from + 1, until < 0 ? undefined : until).flatMap(keysOf);
       const want = [...l.loose, ...l.groups.flatMap(([, keys]) => keys)];
       if (inSection.join() !== want.join()) misgrouped.push(`${sectionId} order`);
       const loose = inSection.filter((k) => !row(k).closest('.group'));
@@ -627,7 +663,7 @@ async function tier2() {
       }
       for (const [gid, keys] of l.groups) {
         const g = groupEls.find((el) => el.dataset.group === gid);
-        const have = g ? [...g.querySelectorAll('.row')].map((r) => r.dataset.key) : [];
+        const have = g ? [...g.querySelectorAll('.row')].flatMap(keysOf) : [];
         if (have.join() !== keys.join()) misgrouped.push(`${sectionId}.${gid}`);
       }
     }
@@ -1068,6 +1104,174 @@ async function tier2() {
   fire(row('flowSpeed'), 'dblclick');
   await sleep(60);
 
+  // -- the drift pad: driftX and driftY as one 2-D surface --
+  {
+    const padRow = row('driftX');
+    const pad = padRow.querySelector('.pad');
+    const dot = pad.querySelector('.pad-dot');
+    const dX = byKey.driftX;
+    const dY = byKey.driftY;
+    const frac = (def, v) => (v - def.min) / (def.max - def.min);
+    // Where the dot's centre sits, as fractions of the pad's inner box: x
+    // from the left, y from the BOTTOM (up is up).
+    const dotAt = () => {
+      const r = pad.getBoundingClientRect();
+      const d = dot.getBoundingClientRect();
+      return {
+        fx: (d.left + d.width / 2 - r.left - pad.clientLeft) / pad.clientWidth,
+        fy: 1 - (d.top + d.height / 2 - r.top - pad.clientTop) / pad.clientHeight,
+      };
+    };
+    const dotIs = (x, y) => {
+      const { fx, fy } = dotAt();
+      const tol = 1.5 / pad.clientWidth; // within a pixel and a half
+      return Math.abs(fx - frac(dX, x)) <= tol && Math.abs(fy - frac(dY, y)) <= tol;
+    };
+    // A point on the pad's inner box, by fraction (fy from the bottom).
+    const at = (fx, fy) => {
+      const r = pad.getBoundingClientRect();
+      return {
+        clientX: r.left + pad.clientLeft + fx * pad.clientWidth,
+        clientY: r.top + pad.clientTop + (1 - fy) * pad.clientHeight,
+      };
+    };
+    const pairRows = doc.querySelectorAll(
+      '#controls .row[data-key="driftX"], #controls .row[data-key="driftY"], #controls .row[data-keys~="driftX"], #controls .row[data-keys~="driftY"]'
+    );
+    check(
+      'driftX and driftY render as ONE row, labelled drift, in the feedback group between decay and clear min s',
+      pairRows.length === 1 && padRow === row('driftY') && padRow.classList.contains('pad-row') &&
+        text(padRow.querySelector('label')) === 'drift' &&
+        padRow.closest('.group')?.dataset.group === 'feedback' &&
+        padRow.previousElementSibling === row('decay') && padRow.nextElementSibling === row('resetMinS')
+    );
+    const holders = [...pad.querySelectorAll('input[type=range]')];
+    check(
+      'the knob cell is a focusable 2-D surface with a dot; the keys’ state lives in hidden ranges; two fields stand x above y, two ⊙ beside them',
+      pad.getAttribute('role') === 'group' && pad.tabIndex === 0 && !!dot && shown(pad) &&
+        holders.map((h) => h.dataset.for).join() === 'driftX,driftY' && holders.every((h) => !shown(h)) &&
+        [...padRow.querySelectorAll('.pad-field')].map((f) => f.dataset.axis).join() === 'x,y' &&
+        field('driftX').getBoundingClientRect().bottom <= field('driftY').getBoundingClientRect().top + 0.5 &&
+        [...padRow.querySelectorAll('.learn')].map((b) => b.dataset.param).join() === 'driftX,driftY'
+    );
+    {
+      const pr = pad.getBoundingClientRect();
+      const rr = padRow.getBoundingClientRect();
+      const inRow = [...padRow.querySelectorAll('*')]
+        .filter((el) => el.getClientRects().length)
+        .every((el) => {
+          const r = el.getBoundingClientRect();
+          return r.left >= rr.left - 0.5 && r.right <= rr.right + 0.5;
+        });
+      check(
+        `in the column the pad is a ~72 px square and everything in its row stays inside it (${Math.round(pr.width)} × ${Math.round(pr.height)} px)`,
+        Math.abs(pr.width - 72) < 1 && Math.abs(pr.height - 72) < 1 && inRow &&
+          doc.documentElement.scrollWidth <= win.innerWidth && $('#scroll').scrollWidth <= $('#scroll').clientWidth
+      );
+    }
+
+    fire(padRow.querySelector('label'), 'dblclick'); // from the clamp test above: back to the defaults
+    await sleep(90);
+    check(
+      'at the defaults the dot sits where they put it: x a fraction (−0.0025 − min)/(max − min) across, y measured up from the bottom',
+      store.driftX === DEFAULTS.driftX && store.driftY === DEFAULTS.driftY && dotIs(DEFAULTS.driftX, DEFAULTS.driftY)
+    );
+    check(
+      'the cross marks (0, 0): the middle of a symmetric pad',
+      win.getComputedStyle(pad).getPropertyValue('--zx').trim() === '50%' &&
+        win.getComputedStyle(pad).getPropertyValue('--zy').trim() === '50%'
+    );
+
+    const r = pad.getBoundingClientRect();
+    pointer(pad, 'pointerdown', { clientX: r.right - 0.5, clientY: r.top + 0.5 });
+    pointer(pad, 'pointerup', { clientX: r.right - 0.5, clientY: r.top + 0.5 });
+    await sleep(90);
+    check(
+      'a press at the pad’s top-right corner stores driftX 0.01 and driftY 0.01, and the dot and both fields follow',
+      store.driftX === 0.01 && store.driftY === 0.01 && dotIs(0.01, 0.01) &&
+        field('driftX').value === '0.0100' && field('driftY').value === '0.0100'
+    );
+    pointer(pad, 'pointerdown', at(0.5, 0.5));
+    await sleep(60);
+    const atCross = store.driftX === 0 && store.driftY === 0;
+    pointer(pad, 'pointermove', at(0.25, 0.25));
+    await sleep(60);
+    const dragged = store.driftX === -0.005 && store.driftY === -0.005 && dotIs(-0.005, -0.005);
+    pointer(pad, 'pointerup', at(0.25, 0.25));
+    pointer(pad, 'pointermove', at(0.9, 0.9));
+    await sleep(60);
+    check(
+      'a drag follows the pointer (down at the cross = 0, 0; to the lower-left quarter = −0.005, −0.005), and stops at release',
+      atCross && dragged && store.driftX === -0.005 && store.driftY === -0.005
+    );
+
+    pad.focus();
+    press(pad, 'ArrowRight');
+    await sleep(60);
+    const right = store.driftX === -0.0045 && store.driftY === -0.005;
+    press(pad, 'ArrowUp', { shiftKey: true });
+    await sleep(60);
+    check(
+      'arrows on the focused pad nudge their own axis one step (→ moves x only; shift+↑ moves y ten steps)',
+      right && store.driftX === -0.0045 && store.driftY === 0 && dotIs(-0.0045, 0)
+    );
+    pad.blur();
+
+    type('driftY', '-0.008');
+    await sleep(60);
+    check('typing in the y field moves the dot (x stays)', store.driftY === -0.008 && store.driftX === -0.0045 && dotIs(-0.0045, -0.008));
+    field('driftY').blur();
+
+    win.chrome.storage.local.set({ driftX: 0.004 });
+    await sleep(60);
+    check(
+      'a drift change from elsewhere (MIDI, the other window) moves the dot and the x field',
+      dotIs(0.004, -0.008) && field('driftX').value === '0.0040'
+    );
+
+    await sleep(600); // let any flash finish
+    fire(padRow.querySelector('label'), 'dblclick');
+    await sleep(90);
+    check(
+      'double-clicking the name restores BOTH keys to the marked preset, and the dot goes home',
+      store.driftX === DEFAULTS.driftX && store.driftY === DEFAULTS.driftY && dotIs(DEFAULTS.driftX, DEFAULTS.driftY) &&
+        padRow.classList.contains('flash')
+    );
+    type('driftY', '0.005');
+    field('driftY').blur();
+    await sleep(60);
+    fire(field('driftY'), 'dblclick');
+    await sleep(60);
+    const fieldKept = store.driftY === 0.005;
+    fire(pad, 'dblclick');
+    await sleep(60);
+    check(
+      'double-clicking a field keeps its text selectable (no reset); double-clicking the pad resets both',
+      fieldKept && store.driftY === DEFAULTS.driftY
+    );
+
+    const fb = row('feedbackVideo').querySelector('input');
+    fb.checked = false;
+    fb.dispatchEvent(new win.Event('input', { bubbles: true }));
+    await sleep(60);
+    check(
+      'feedback off hides the pad row and disables both keys’ holders and fields',
+      !shown(padRow) && padRow.hidden && padRow.dataset.gate === 'feedback' &&
+        slider('driftX').disabled && slider('driftY').disabled && field('driftX').disabled && field('driftY').disabled
+    );
+    fb.checked = true;
+    fb.dispatchEvent(new win.Event('input', { bubbles: true }));
+    await sleep(60);
+    check('feedback on brings the pad back, live', shown(padRow) && !slider('driftX').disabled && !field('driftY').disabled);
+
+    // Leave a non-default pair for the presets below to capture.
+    pad.focus();
+    press(pad, 'ArrowLeft', { shiftKey: true });
+    press(pad, 'ArrowUp');
+    pad.blur();
+    await sleep(60);
+  }
+
   // -- presets --
   const btnDefault = $('#preset-default');
   const slot = (x) => $(`#presets .slot[data-slot="${x}"]`);
@@ -1134,6 +1338,8 @@ async function tier2() {
       store.presets.A.threshold === 0.58 &&
       store.presets.A.passes === 30 &&
       !('enabled' in store.presets.A) &&
+      store.presets.A.driftX === -0.0075 &&
+      store.presets.A.driftY === 0.0025 &&
       Object.keys(store.presets.A).length === DEFS.length - PRESET_EXCLUDED.length &&
       store.presets.B === null
   );
@@ -1349,6 +1555,22 @@ async function tier2() {
         'a MIDI CC sweeps the amount: 127 stores threshold 0 (amount 1), 0 stores threshold 1 (amount 0)',
         bound && top && s2.threshold === 1 && wd.querySelector('.row[data-key="threshold"] input[type=range]').value === '0'
       );
+      // The pad's two ⊙: learning one binds that key alone.
+      const padLearns = [...wd.querySelectorAll('.row.pad-row .learn')];
+      const vis2 = (el) => !!el && el.getClientRects().length > 0;
+      const x0 = s2.driftX ?? DEFAULTS.driftX;
+      padLearns[1].click();
+      cc(22, 64);
+      await sleep(60);
+      cc(22, 127);
+      await sleep(90);
+      check(
+        'with a controller both of the pad’s ⊙ show, and learning y binds driftY alone (CC 127 → 0.01; x untouched)',
+        padLearns.length === 2 && padLearns.every(vis2) &&
+          s2.midiMap[22] === 'driftY' && !Object.values(s2.midiMap).includes('driftX') &&
+          s2.driftY === 0.01 && (s2.driftX ?? DEFAULTS.driftX) === x0 &&
+          padLearns[1].textContent === '22' && padLearns[0].textContent === '⊙'
+      );
     }
     f.remove();
   }
@@ -1447,7 +1669,7 @@ async function tier2() {
   // -- everything explains itself --
   const bare = [];
   for (const el of doc.querySelectorAll(
-    'h1, .lede, .keys, .ab, .chip-name, .chip-toggle, #persist-note, .section, .row, .row input.value.num, .learn, .btn, .midi h2, #midi-status, .midi .hint, .group-head, #audio-status'
+    'h1, .lede, .keys, .ab, .chip-name, .chip-toggle, #persist-note, .section, .row, .row input.value.num, .pad, .learn, .btn, .midi h2, #midi-status, .midi .hint, .group-head, #audio-status'
   )) {
     if (el.hidden) continue;
     if (!el.dataset.tip || el.dataset.tip.length < 20) bare.push(el.className || el.tagName);
@@ -1679,6 +1901,22 @@ async function tier3() {
       c.scrollHeight <= c.clientHeight + 1 &&
         [...c.querySelectorAll('.section, .row, .group-head')].filter(vis).every((el) => rect(el).top >= cr.top - 1 && rect(el).bottom <= cr.bottom + 1)
     );
+    {
+      // The drift pad takes the two lane cells its two rows used to: decay
+      // above it, clear min s below, all in the feedback column.
+      const pr = q('.row.pad-row');
+      const p = rect(pr);
+      const above = rect(q('.row[data-key="decay"]'));
+      const below = rect(q('.row[data-key="resetMinS"]'));
+      const sq = rect(pr.querySelector('.pad'));
+      check(
+        `at ${width} px the drift pad spans two lane rows (${Math.round(p.height)} px, square ${Math.round(sq.width)} px) between decay and clear min s, in the same column`,
+        vis(pr) && Math.abs(p.height - 56) < 1 && Math.abs(sq.width - 50) < 1 && Math.abs(sq.height - 50) < 1 &&
+          Math.abs(p.left - above.left) < 1 && Math.abs(p.left - below.left) < 1 &&
+          p.top >= above.bottom - 1 && below.top >= p.bottom - 1 && p.bottom <= cr.bottom + 1 &&
+          sq.top >= p.top - 0.5 && sq.bottom <= p.bottom + 0.5
+      );
+    }
     check(
       `at ${width} px the Audio header and its status line share the column top without colliding with the body caption`,
       rect(groupHead('audio', 'body')).top >= rect(q('#section-audio')).bottom - 1

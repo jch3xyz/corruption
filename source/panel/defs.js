@@ -200,7 +200,8 @@ export const DEFS = [
   },
   {
     key: 'driftX',
-    label: 'drift x',
+    label: 'drift',
+    pad: 'drift', // played as one 2-D pad with driftY (PADS below); x axis
     min: -0.01,
     max: 0.01,
     step: 0.0005,
@@ -210,7 +211,8 @@ export const DEFS = [
   },
   {
     key: 'driftY',
-    label: 'drift y',
+    label: 'drift',
+    pad: 'drift', // y axis of the drift pad
     min: -0.01,
     max: 0.01,
     step: 0.0005,
@@ -464,6 +466,21 @@ export const DEFS = [
     tip: 'Longest wait, in seconds, before the wash wipes clean. Its own rhythm, separate from the picture’s.',
   },
 ];
+
+// Pads: two numeric keys played as one 2-D surface (handles round,
+// 2026-10-12). Each key keeps its own def, storage, preset slot, MIDI
+// binding and tip (the tips feed the pad's two small fields); a def names
+// its pad with `pad`, and the pad renders where the first of its keys sits
+// in DEFS. x runs left → right from min to max, y bottom → top, so up on the
+// pad is up on the picture.
+export const PADS = {
+  drift: {
+    x: 'driftX',
+    y: 'driftY',
+    label: 'drift',
+    tip: 'Which way the trail slides: push the point and the trail moves that way, faster the further out; at the cross it holds still. Up on the pad is up on the picture.',
+  },
+};
 
 // --- Pure value helpers (shared with the panel harness) ---
 
