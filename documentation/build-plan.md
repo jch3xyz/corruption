@@ -364,6 +364,31 @@ balance are the open item below. The previous sound is exactly reachable at
   panel 350/350) and these docs. Suites (headless): audio 55/55, panel
   350/350, strip 52/52, text 35/35. **Next layer: the performance ramp.**
 
+  **Round 8 — the visual round, part 1 (John's notes, 2026-10-12).** Three
+  decided changes, logged in design-review.md: (1) `44bb169` **the window
+  is the default home** — `PANEL_HOME.default`, the service worker's
+  `DEFAULT_HOME` and `initStrip`'s default all read `window` (window first
+  in *panel lives in*), and the harness checks the three agree; the strip
+  stays opt-in because of the two problems it showed on real pages; (2)
+  `94512e1` **the strip asks for MIDI only on demand** — hosted, the panel
+  no longer calls `requestMIDIAccess()` on load (every site's permissions
+  policy answered with a console violation or a prompt); a **MIDI…** button
+  in the mixer's prefs line asks once, steps aside when granted, flashes
+  *refused* when the page says no; the window and side panel still ask at
+  boot; (3) **clear buffer** — a new param `keyframe`, a counter rather
+  than a value, and the panel's first **trigger** row (`type: 'trigger'`):
+  first in the Video engine (the feedback column is full at eight cells;
+  the feedback switch's tip points to it), a **clear** button that writes
+  the counter up by one, gated with feedback, excluded from presets, a
+  MIDI CC firing it once per rise through 64; each video job answers a
+  larger counter by taking the keyframe branch on its next tick
+  (`lastKeyframe` taken from the params it is built with, so a stored
+  counter never fires on load; `resets` counts every keyframe for the
+  harness). Still open from John's notes: the strip's **frame error**, to
+  be diagnosed from the console text. Suites (headless): panel 365/365
+  (350 before), strip 52/52, text 35/35, visual 62/62 (60 before), audio
+  55/55.
+
   **Open items John holds (2026-10-11; (2) reinstated 2026-10-12; revised
   after round 5):** (1) the in-page first-run mark, the remaining half of
   the seam; (2) ~~which home is the default~~ — decided 2026-10-12: the
@@ -590,6 +615,11 @@ waits `HARNESS_WAIT_MS` (default 1500) and shoots.
 - Visual suite re-run in real Chrome (the embedded pane starves rVFC and
   can't adjudicate it — verified identical at baseline; headless Chrome
   runs it green since round 6, on SwiftShader rather than your GPU).
+- **Clear buffer** on a playing video with feedback on: unfold the Video
+  engine, click **clear** — the trail wipes to a clean frame at once on
+  every video on the page, and builds again; bind a MIDI button to it and
+  tap a rhythm (a held button fires once). Reload the page: nothing clears
+  on load.
 - **The feedback blend** on a bright moving video: feedback on, switch
   blend to screen and then add, and ride blend amount — the trail should
   read over light material where brighter hid it; add should burn toward

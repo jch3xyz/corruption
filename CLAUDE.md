@@ -72,8 +72,10 @@ Quick facts:
   pad · follow motion · blend · blend amount (`feedbackBlend`/`feedbackMix`);
   body = mix · body amount · follow · ring time · drive; smear = the switch · tail ·
   level · wobble. Everything that shapes rather than
-  steers is in the **engines**, folded by default (Video: sort passes, max
-  res, max videos, the flow's shape, the clear rhythm; Audio: body type,
+  steers is in the **engines**, folded by default (Video: clear buffer —
+  `keyframe`, a **trigger** row, a counter the button writes up by one,
+  never in a preset — then sort passes, max res, max videos, the flow's
+  shape, the clear rhythm; Audio: body type,
   dry, max sources, exciter, comb damp, the smear clears). Gates are keyed,
   not grouped. **Two control forms the table drives:** **amount** is
   `threshold` shown inverted (`invert: true`, `toView`/`fromView`; the

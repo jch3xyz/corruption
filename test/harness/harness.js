@@ -523,6 +523,8 @@ async function run() {
   // decay/flowAmount pinned to the classic grammar: the trail assertions
   // are calibrated against decay 0.906 and vertical sorting. DEFAULTS
   // follow John's taste and will keep moving; tier 0 owns the new knobs.
+  // keyframe (the clear-buffer counter) boots at 41, as if left in storage
+  // by an earlier session: no job may take that as a request to clear.
   const params = {
     ...DEFAULTS,
     enabled: true,
@@ -531,6 +533,7 @@ async function run() {
     textScramble: false,
     decay: 0.906,
     flowAmount: 0,
+    keyframe: 41,
   };
   const registry = new Registry(params);
   registry.start();
@@ -627,6 +630,34 @@ async function run() {
     })
   );
   params.feedbackVideo = true;
+
+  // --- The clear-buffer trigger (round 8): `keyframe` is a counter. A value
+  // larger than a job has answered sends it down the keyframe branch on its
+  // next tick, the reset the random clock (resetMinS..resetMaxS) takes, and
+  // a job never answers the counter it was built with.
+  {
+    const jobs = activeJobs();
+    check(
+      'clear buffer: every video job starts level with the counter it was built with (41), so a stored counter never fires on load',
+      jobs.length > 0 && [...registry.jobs.values()].filter((j) => j.kind === 'video').every((j) => j.lastKeyframe === 41)
+    );
+    // Stay clear of the random clock: one coming due in the next 3 s would
+    // muddy the count, so let it pass first (it reschedules 30–60 s out).
+    if (jobs.some((j) => j.nextResetAt - performance.now() < 3000)) await sleep(3500);
+    const before = jobs.map((j) => j.resets);
+    params.keyframe = 42;
+    registry.paramsChanged({ keyframe: 42 });
+    const fired = await waitFor(() => jobs.every((j, i) => j.resets > before[i]), 3000, 20);
+    await sleep(400); // more ticks, no second reset
+    registry.paramsChanged({ keyframe: 42 }); // the same value again: nothing
+    await sleep(200);
+    const minS = params.resetMinS;
+    check(
+      'clear buffer: a new counter value resets every active video job’s trail on its next tick, exactly once, and the random clock reschedules',
+      fired &&
+        jobs.every((j, i) => j.resets === before[i] + 1 && j.lastKeyframe === 42 && j.nextResetAt > performance.now() + 1000 * (minS - 2))
+    );
+  }
 
   // --- Images (Phase 4): route resolution + sorted stills ---
   // Direct route: a data-URL image (origin-clean by definition).

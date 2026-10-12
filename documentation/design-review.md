@@ -1052,3 +1052,95 @@ the modal body alone, ×1.47 in the mix; ×47.3 on the comb alone). Panel
 **350/350** (+1: the follow row's range, rest, place and tip; the audio-off
 gating check extended to it; the tier-3 column check, unchanged, holds with
 follow in the body column at every strip width), strip 52/52, text 35/35.
+
+# Round 8: the visual round — part 1 (2026-10-12)
+
+John's notes after living with both homes and the strip on real pages.
+Three changes he decided, each its own commit, and one item still open.
+
+## What landed
+
+1. **The window is the default home** (`44bb169`). Decided after both homes
+   were built: the detached window lays itself out to its own shape (the
+   column when tall, the mixer when dragged wide), remembers its bounds and
+   sits apart from the page — on a second screen, out of reach of a page's
+   fullscreen. The strip stays one choice away under *panel lives in*. It
+   stayed opt-in because of the two problems it showed on real pages, the
+   next item and the open one below. The default lives in three places
+   (`PANEL_HOME.default`, the service worker's `DEFAULT_HOME`, the default
+   `initStrip` reads); all three moved, and the panel harness now checks
+   that they agree. A profile that already stored a home keeps it.
+2. **The strip asks for MIDI only on demand** (`94512e1`). The reason: John
+   saw permission errors from site after site. The strip's iframe booted
+   the panel, which called `requestMIDIAccess()` at once, and every host
+   page's permissions policy answered — a console violation or a prompt,
+   on pages where nobody wanted MIDI. Hosted, the panel no longer asks at
+   boot; a small **MIDI…** button in the mixer's prefs line makes the one
+   request when clicked, steps aside when granted (the MIDI line takes
+   over once a device is there) and flashes *refused* when the page says
+   no. The iframe keeps `allow="midi"`, which is what lets the on-demand
+   request succeed where a page permits it. The window and side panel, the
+   extension's own pages, still ask at boot.
+3. **Clear buffer** (this round's third commit). John asked for "a clear
+   buffer button under the feedback tab": a utility, not a headline handle
+   — a way to wipe the trail now rather than waiting out the 30–60 s
+   random clock, and with MIDI, to wipe it in rhythm. It is the panel's
+   first **trigger** row: `keyframe`, a counter the **clear** button writes
+   up by one; every video job answers a larger value by taking the
+   keyframe branch on its next tick, and the random clock keeps running.
+
+## Still open
+
+- **The strip's frame error**, which John reported alongside the MIDI
+  errors. It is not yet diagnosed: the next step is the console text from
+  a page where it happens (the message, the frame it names, and whether it
+  arrives at load or when the strip unfolds). Nothing was changed for it
+  on a guess.
+
+## Trade-offs, stated
+
+- **The default home.** The window costs a second surface to place and is
+  a window away from the page it plays; the strip is always under the
+  picture but covers 40 px of every page and had to ask every page for
+  MIDI. John chose the window; the strip's problems are why it stays
+  opt-in rather than co-default.
+- **MIDI in the strip is one click per page load.** The grant persists per
+  extension origin, so there is no second prompt; the click buys no
+  console noise and no prompt on pages where nobody wanted MIDI (error
+  prevention, user control). The performer's home, the window, still asks
+  at boot.
+- **Clear buffer is under engine, not feedback.** John said "under the
+  feedback tab", but the feedback column is full at its eight lane cells;
+  a ninth would spill and break the column (the harness's spill check
+  forbids it). So it heads the Video engine, a fold away, and the feedback
+  switch's tip says where it is ("clear buffer, under engine, wipes the
+  trail now") — recognition costs a click, which fits a utility rather
+  than a handle. The unfolded Video engine is now 9 rows, so its second
+  column holds two.
+- **A counter, not a toggle.** A stored boolean would need resetting and
+  would fire again on reload; a counter that only ever moves up is an
+  event every tab can see once, and each job answers only a value larger
+  than the one it was built with, so nothing clears on load. Presets never
+  capture or load it, and double-click has nothing to restore.
+- **The feedback switch's tip was trimmed** to fit the pointer inside the
+  bubble's 150 px budget ("The trail wipes to a clean frame at slow random
+  moments" became "It wipes clean at slow random moments").
+
+## Verification
+
+Headless Chrome, `node test/headless.mjs panel strip text index audio`:
+panel **365/365** (350 before: +1 for the home defaults agreeing across the
+three files; +4 for MIDI on demand — no request and no device class in a
+hosted boot, one request on the click with the button stepping aside and
+a second click asking nothing, a refusing page, no button outside the
+strip; +10 for clear buffer — the def, presets excluding it, the row and
+its button at the head of the Video engine, each click +1 with a flash,
+double-click inert, a counter written elsewhere counted from, gated with
+feedback, *default* and a preset carrying a counter leaving it alone, and a
+learned CC firing on each rise through 64 only, counting from a stored 7);
+visual **62/62** (60 before: every job starts level with a booted counter
+of 41; a new value resets every active job's trail on its next tick
+exactly once and the random clock reschedules); strip 52/52, text 35/35,
+audio 55/55 unchanged. Not verified without a real Chrome: the MIDI…
+request inside a real page's frame (allowed or refused), and the clear on
+real footage — both on the manual checklist in build-plan.md.

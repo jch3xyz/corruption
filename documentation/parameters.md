@@ -40,6 +40,7 @@ rather than steers.
 | `feedbackBlend` | blend | **brighter** | brighter · mix · screen · add | *Video feedback only.* How the trail meets the new frame (design review M5). **brighter** = `max(history·decay, incoming)`, the codec-faithful rule and the resting state: the trail shows only where it outshines the frame, so it hides over bright moving footage. **mix** = a straight crossfade with history (blend amount *is* the crossfade; at 1 the picture freezes, fades and snaps back where the trail drops under the barrier). **screen** = the trail lightens the frame, visible over light material without clipping. **add** = the trail piles on and burns out: on still footage at trail 0.81 any channel above ~0.19 saturates to white. True black still holds as a barrier in every rule. |
 | `feedbackMix` | blend amount | **1** | 0–1 | *Video feedback only.* How much of the trail survives against the new frame: for brighter, screen and add, the composite lerps from the incoming frame (0, every frame fresh) to the full rule (1); for mix it is the crossfade itself. At brighter and 1 the composite is the pre-blend shader bit for bit. |
 | **Video · engine (folded)** | | | | |
+| `keyframe` | clear buffer (a button) | **0** | a counter | *Video feedback only.* **A trigger, not a value** (round 8, John: a clear-buffer button, a utility rather than a headline handle). The row's **clear** button writes the counter up by one; every video job that sees a larger value than it last answered takes the keyframe branch on its next tick — the trail wiped to a clean frame, exactly as the random `resetMinS`/`resetMaxS` clock does, and the clock keeps running. A job starts level with the counter it is built with, so a value left in storage never fires on load. Presets never capture or load it, *default* and a double-click leave it alone, and a learned MIDI CC fires it once per rise through 64 (bind a button for a rhythm). First in the engine because the feedback column is full; the feedback switch's tip points to it. |
 | `passes` | sort passes | **64** | 0–64 | Sort passes per frame. A full 256→1 stride ladder is 18 passes, so 64 runs ~3.5 settling cycles. |
 | `maxRes` | max res | 1920 | 480–1920 | Processing resolution cap, long axis. Lower it on weak GPUs; output upscales through the overlay. |
 | `maxVideos` | max videos | **12** | 1–16 | Concurrent video jobs, biggest visible first. Paused videos count too — they get a one-shot sorted still (rVFC never fires for them). Raised from 8 for grid feeds (Instagram explore) where a dozen previews are on screen at once. |
@@ -316,8 +317,8 @@ shapes rather than steers is filed in the engine:
 - **Video** — **sort** (amount, flow, jitter, ribbons), **feedback** (its
   own switch, then trail, the drift pad, follow motion — which reads the
   feedback trail — then blend and blend amount, how the trail meets the
-  new frame), **engine** (sort passes, max res, max videos; the
-  flow's shape: flow mode, flow scale, flow speed, shown while flow is
+  new frame), **engine** (clear buffer, a button that wipes the trail
+  now; sort passes, max res, max videos; the flow's shape: flow mode, flow scale, flow speed, shown while flow is
   above 0; the clear rhythm: clear min s, clear max s).
 - **Audio** — **body** (mix, the whole-sound wet/dry, then body amount,
   the identity dial, follow, how far the chord retunes toward the source,
@@ -331,8 +332,9 @@ shapes rather than steers is filed in the engine:
 
 In the mixer the effect columns fit their eight lane cells (sort 6,
 feedback 8 — exactly full since the blend, body 8 — exactly full since
-follow, smear 5); the engines are 8 and 9 rows, so an unfolded engine
-spills into a second column and the lane scrolls sideways only then.
+follow, smear 5); the engines are 9 rows each (the Video engine since
+clear buffer), so an unfolded engine spills into a second column and the
+lane scrolls sideways only then.
 
 Both **engine** groups start folded behind a disclosure (`engine ▸`; click
 for `engine ▾`). The folded rows still exist — presets, MIDI and storage
@@ -366,6 +368,17 @@ panel furniture outside `DEFAULTS` like `tooltips`.
   is a 72 px square; in the mixer it spans two lane rows (56 px, a 50 px
   square), the two cells its two rows used to take.
 
+**Trigger rows** (round 8). A def with `type: 'trigger'` is a button that
+fires rather than a value that is set — so far one, `keyframe`, *clear
+buffer*. The knob cell is a **clear** button and the value cell stays
+empty; the key stores a counter, a click writes it up by one (from the
+stored value, so two panels never collide) and flashes the row, and the
+content side acts once per increase. A trigger is excluded from presets
+(`PRESET_EXCLUDED`), a double-click does nothing (its hint says so: there
+is nothing to put back), it hides with its gate like any row, and a MIDI
+CC fires it once per rise through 64, so a held button or a knob parked
+high fires once.
+
 **Audio status line.** One muted line under the Audio header says what the
 tab you are looking at is putting through the body: *3 sources through the
 body*, *2 sources on this page, none reaching the body* (paused, past the
@@ -383,8 +396,8 @@ a failure only stops the reporter.
 **Gated rows hide, they do not grey** (John, 2026-10-11: a control that
 waits on another switch should not be visible until that switch is on).
 Feedback off hides every feedback knob beneath the *feedback* switch, which
-stays as the group's header, and the clear timings in the engine with
-them; flow at 0 hides the three flow-shape knobs in the engine (a
+stays as the group's header, and the clear timings and clear buffer in
+the engine with them; flow at 0 hides the three flow-shape knobs in the engine (a
 demoted row can be hidden twice, by the fold and by its gate);
 smear off hides tail, level, wobble and smear clear under the *smear*
 switch; clear off hides the clear timings; a modal body hides comb damp.
@@ -433,7 +446,9 @@ default):
 - **Saving over a filled slot** offers the same ten-second **undo**, which
   puts the slot's previous contents back (the knobs are left as they are).
 - Presets never capture or load the A/B (`enabled`): loading a look while
-  comparing must not switch the page back on.
+  comparing must not switch the page back on. Nor the clear-buffer counter
+  (`keyframe`): it is an event, not part of a look, and loading a preset
+  must never fire it or wind it back.
 
 Storage: one key `presets` (`{A, B, C}`, each a values object or null) and
 `presetBase`, both outside `DEFAULTS`, so no content script sees them. The
@@ -716,12 +731,15 @@ right.
    highlighted), move a knob — that CC is now bound and the button shows
    its number. Folded engine rows have theirs too: unfold the engine first. Mappings persist in
    storage; re-learn to change, one CC per param.
-3. Toggle params (`enabled`, the A/B) treat CC value ≥64 as on.
+3. Toggle params (`enabled`, the A/B) treat CC value ≥64 as on. A trigger
+   (`keyframe`, *clear buffer*) fires once each time its CC rises through
+   64: bind a pad or a button and tap it in rhythm; holding it, or parking
+   a knob high, fires once.
 
 Any class-compliant controller works. Suggested performance set (panel
 labels in brackets): `threshold` (amount — the CC sweeps amount, so up is
 more), `decay` (trail), `driftY` (the drift pad's y axis), `passes` (sort
-passes). For audio: `audioMix` (mix), `audioSustain` (ring time),
+passes), and `keyframe` (clear buffer) on a button. For audio: `audioMix` (mix), `audioSustain` (ring time),
 `audioBodyMix` (body amount) and `audioFbReturn` (level) — the two that
 move the balance between the apparatus and the video — `audioFbDecay`
 (tail), `audioFbWobble` (wobble).

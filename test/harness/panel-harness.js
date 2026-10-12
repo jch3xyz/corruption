@@ -79,7 +79,7 @@ const LAYOUT = {
     groups: [
       ['sort', ['threshold', 'flowAmount', 'temperature', 'streak']],
       ['feedback', ['feedbackVideo', 'decay', 'driftX', 'driftY', 'motionGate', 'feedbackBlend', 'feedbackMix']],
-      ['engine', ['passes', 'maxRes', 'maxVideos', 'flowMode', 'flowScale', 'flowSpeed', 'resetMinS', 'resetMaxS']],
+      ['engine', ['keyframe', 'passes', 'maxRes', 'maxVideos', 'flowMode', 'flowScale', 'flowSpeed', 'resetMinS', 'resetMaxS']],
     ],
   },
   audio: {
@@ -101,7 +101,7 @@ const LABELS = {
   threshold: 'amount', flowAmount: 'flow', temperature: 'jitter', streak: 'ribbons',
   feedbackVideo: 'feedback', decay: 'trail', driftX: 'drift', driftY: 'drift', motionGate: 'follow motion',
   feedbackBlend: 'blend', feedbackMix: 'blend amount',
-  passes: 'sort passes', maxRes: 'max res', maxVideos: 'max videos',
+  keyframe: 'clear buffer', passes: 'sort passes', maxRes: 'max res', maxVideos: 'max videos',
   flowMode: 'flow mode', flowScale: 'flow scale', flowSpeed: 'flow speed',
   resetMinS: 'clear min s', resetMaxS: 'clear max s',
   audioMix: 'mix', audioBodyMix: 'body amount', audioFollow: 'follow', audioSustain: 'ring time', audioDrive: 'drive',
@@ -131,7 +131,7 @@ function check(name, ok) {
 
 const tier = (name) => line(name, 'tier');
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const numeric = DEFS.filter((d) => d.type !== 'toggle' && d.type !== 'select');
+const numeric = DEFS.filter((d) => d.type !== 'toggle' && d.type !== 'select' && d.type !== 'trigger');
 const byKey = Object.fromEntries(DEFS.map((d) => [d.key, d]));
 
 // --- Tier 1: the control table and the value helpers -----------------------
@@ -245,9 +245,9 @@ function tier1() {
   // What left the effect columns for the engines, in order: the engines
   // hold setup plus everything demoted, and nothing else.
   check(
-    'the engines hold exactly their setup plus the demoted keys, in order (flow shape and clear rhythm; body type first)',
+    'the engines hold exactly their setup plus the demoted keys, in order (the clear button first; flow shape and clear rhythm; body type first)',
     DEFS.filter((d) => d.section === 'video' && d.group === 'engine').map((d) => d.key).join() ===
-      'passes,maxRes,maxVideos,flowMode,flowScale,flowSpeed,resetMinS,resetMaxS' &&
+      'keyframe,passes,maxRes,maxVideos,flowMode,flowScale,flowSpeed,resetMinS,resetMaxS' &&
       DEFS.filter((d) => d.section === 'audio' && d.group === 'engine').map((d) => d.key).join() ===
         'audioBody,audioDirect,audioMaxTaps,audioExciter,audioCombDamp,audioFbClear,audioFbClearS,audioFbClearMinS,audioFbClearMaxS'
   );
@@ -279,6 +279,18 @@ function tier1() {
       ) && PADS.drift.tip.startsWith('Which way the trail slides') && /up on the picture/i.test(PADS.drift.tip)
     );
   }
+  // The clear-buffer trigger (round 8): a counter at 0, a trigger row first
+  // in the Video engine, never in a preset; the feedback switch points to it.
+  check(
+    'clear buffer: keyframe is a trigger (a counter resting at 0) first in the Video engine, labelled clear buffer, tip leading with what you see',
+    DEFAULTS.keyframe === 0 && byKey.keyframe?.type === 'trigger' && byKey.keyframe.label === 'clear buffer' &&
+      byKey.keyframe.section === 'video' && byKey.keyframe.group === 'engine' &&
+      DEFS.find((d) => d.section === 'video' && d.group === 'engine') === byKey.keyframe &&
+      byKey.keyframe.tip.startsWith('Wipe the trail to a clean frame right now, on every video.') &&
+      /MIDI button/.test(byKey.keyframe.tip) && /clear buffer, under engine, wipes the trail now/.test(byKey.feedbackVideo.tip) &&
+      fmtValue(byKey.keyframe, 3) === '' && !numeric.includes(byKey.keyframe)
+  );
+  check('presets never capture or load the clear-buffer counter', PRESET_EXCLUDED.includes('keyframe'));
   check('no row carries slider-end captions (threshold’s "more · less" went 2026-10-12, John)', DEFS.every((d) => !d.ends));
   check(
     'presets are three slots and never capture the A/B',
@@ -741,7 +753,7 @@ async function tier2() {
       [...doc.querySelectorAll(`#controls .group.engine[data-section="${sec}"] .group-rows > .row`)].flatMap(keysOf);
     check(
       'the rendered engines hold exactly the setup and the demoted keys, in order, beneath their caption',
-      engineRows('video').join() === 'passes,maxRes,maxVideos,flowMode,flowScale,flowSpeed,resetMinS,resetMaxS' &&
+      engineRows('video').join() === 'keyframe,passes,maxRes,maxVideos,flowMode,flowScale,flowSpeed,resetMinS,resetMaxS' &&
         engineRows('audio').join() ===
           'audioBody,audioDirect,audioMaxTaps,audioExciter,audioCombDamp,audioFbClear,audioFbClearS,audioFbClearMinS,audioFbClearMaxS' &&
         ['video', 'audio'].every(
@@ -812,6 +824,48 @@ async function tier2() {
     'an engineOpen change from elsewhere (the other panel window) is followed',
     text(engineHead('video')) === 'engine ▾' && live(ENGINE_KEYS.video).every((k) => shown(row(k)))
   );
+
+  // -- the clear-buffer trigger (round 8): a button that fires, not a value --
+  {
+    const kr = row('keyframe');
+    const kb = kr?.querySelector('button.knob');
+    const firstEngineRow = doc.querySelector('#controls .group.engine[data-section="video"] .group-rows > .row');
+    check(
+      'the clear-buffer row heads the Video engine and its knob cell is a "clear" button: no slider, no number field, an empty value cell',
+      firstEngineRow === kr && text(kr.querySelector('label')) === 'clear buffer' &&
+        kb?.tagName === 'BUTTON' && kb.classList.contains('btn') && text(kb) === 'clear' && shown(kb) &&
+        !kr.querySelector('input') && text(kr.querySelector('.value')) === '' && kr.dataset.param === 'keyframe' &&
+        /leave it alone/.test(kr.dataset.hint)
+    );
+    const k0 = store.keyframe ?? 0;
+    kb.click();
+    await sleep(60);
+    const one = store.keyframe === k0 + 1 && kr.classList.contains('flash');
+    kb.click();
+    await sleep(60);
+    check('each click writes the counter up by exactly one, and the row flashes', one && store.keyframe === k0 + 2);
+    fire(kr.querySelector('label'), 'dblclick');
+    fire(kr, 'dblclick');
+    await sleep(60);
+    check('a double-click on the row does nothing: there is nothing to put back', store.keyframe === k0 + 2);
+    win.chrome.storage.local.set({ keyframe: 40 });
+    await sleep(40);
+    kb.click();
+    await sleep(60);
+    check('a counter written elsewhere (the other panel window) is where the next click counts from', store.keyframe === 41);
+    const fbBox = row('feedbackVideo').querySelector('input');
+    fbBox.checked = false;
+    fbBox.dispatchEvent(new win.Event('input', { bubbles: true }));
+    await sleep(60);
+    const hiddenOff = !shown(kr) && kr.hidden && kr.dataset.gate === 'feedback' && kb.disabled;
+    fbBox.checked = true;
+    fbBox.dispatchEvent(new win.Event('input', { bubbles: true }));
+    await sleep(60);
+    check(
+      'feedback off hides it with the feedback knobs (it clears a trail that is not there); feedback on brings it back, live',
+      hiddenOff && shown(kr) && !kr.hidden && !kb.disabled
+    );
+  }
 
   // -- the audio status line --
   check(
@@ -1414,6 +1468,7 @@ async function tier2() {
       store.presets.A.threshold === 0.58 &&
       store.presets.A.passes === 30 &&
       !('enabled' in store.presets.A) &&
+      !('keyframe' in store.presets.A) &&
       store.presets.A.driftX === -0.0075 &&
       store.presets.A.driftY === 0.0025 &&
       Object.keys(store.presets.A).length === DEFS.length - PRESET_EXCLUDED.length &&
@@ -1481,6 +1536,7 @@ async function tier2() {
       field('passes').value === fmtNumber(byKey.passes, DEFAULTS.passes)
   );
   check('"default" leaves the A/B alone', store.enabled === false);
+  check('"default" leaves the clear-buffer counter alone (it is an event, not part of a look)', store.keyframe === 41);
   check('"default" flashes "restored" and offers undo', text(btnDefault) === 'restored' && !btnUndo.hidden);
   check(
     'with the piece OFF, the A/B face says "switch ON to see it", then lets go of it',
@@ -1526,6 +1582,24 @@ async function tier2() {
     'undo after a load reinstates the previous values and the previous base',
     store.threshold === 0.3 && store.presetBase === 'default' && btnDefault.classList.contains('base')
   );
+  {
+    // A preset that does carry a counter (hand-edited, or from another
+    // build) still never fires or winds it back.
+    const kBefore = store.keyframe;
+    win.chrome.storage.local.set({ presets: { ...store.presets, C: { ...store.presets.A, keyframe: 3 } } });
+    await sleep(40);
+    slot('C').click();
+    await sleep(90);
+    const keptOnLoad = store.keyframe === kBefore && store.threshold === store.presets.C.threshold;
+    btnUndo.click();
+    await sleep(90);
+    win.chrome.storage.local.set({ presets: { ...store.presets, C: null } });
+    await sleep(40);
+    check(
+      'loading a preset never touches the clear-buffer counter, even one that carries it; undo leaves it too',
+      keptOnLoad && store.keyframe === kBefore && store.presetBase === 'default'
+    );
+  }
 
   slot('A').click();
   await sleep(90);
@@ -1574,6 +1648,7 @@ async function tier2() {
       threshold: 0.6,
       presets: { A: null, B: { threshold: 0.21 }, C: null },
       engineOpen: { audio: true },
+      keyframe: 7, // a counter left from an earlier session
     };
     const f = await bootFrame(`./panel-frame.html?midi=1&seed=${encodeURIComponent(JSON.stringify(seed))}`);
     const w = f.contentWindow;
@@ -1647,6 +1722,30 @@ async function tier2() {
           s2.midiMap[22] === 'driftY' && !Object.values(s2.midiMap).includes('driftX') &&
           s2.driftY === 0.01 && (s2.driftX ?? DEFAULTS.driftX) === x0 &&
           padLearns[1].textContent === '22' && padLearns[0].textContent === '⊙'
+      );
+      // A learned trigger fires once per rise through 64: a held button, or a
+      // knob parked high, does not fire on every message.
+      const kRow = wd.querySelector('.row[data-key="keyframe"]');
+      kRow.querySelector('.learn').click();
+      cc(23, 64);
+      await sleep(60);
+      const kBound = s2.midiMap[23] === 'keyframe' && s2.keyframe === 7;
+      cc(23, 127);
+      await sleep(60);
+      const first = s2.keyframe === 8;
+      cc(23, 127);
+      await sleep(60);
+      cc(23, 100);
+      await sleep(60);
+      const held = s2.keyframe === 8;
+      cc(23, 0);
+      await sleep(60);
+      const low = s2.keyframe === 8;
+      cc(23, 127);
+      await sleep(60);
+      check(
+        'MIDI on the clear button counts from the stored counter (7): 127 fires once, 127 again and 100 do not, 0 then 127 fires again',
+        kBound && first && held && low && s2.keyframe === 9 && kRow.querySelector('.learn').textContent === '23'
       );
     }
     f.remove();

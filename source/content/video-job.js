@@ -106,6 +106,11 @@ export class VideoJob {
     this.fitRect = null;
     this.governor = new FrameGovernor();
     this.nextResetAt = 0;
+    // The clear-buffer trigger (params.keyframe, a counter): the value this
+    // job has already answered. Taken from the params it is built with, so a
+    // counter left in storage from a previous session never fires on load.
+    this.lastKeyframe = Number(params.keyframe) || 0;
+    this.resets = 0; // keyframe resets taken (random clock or trigger); for the harness
     // Per-CONTENT flow seed. Keyed to the source, not the element: YouTube
     // reuses one <video> across navigations, and "each video I click gets
     // its own pattern" (John) means a new stream must reroll. Not in any
@@ -294,6 +299,16 @@ export class VideoJob {
     const p = glc.pipeline;
     p.uploadFrame(b, source);
 
+    // The clear-buffer trigger: a larger counter than this job has seen is
+    // a request to take the keyframe branch below now, as if the random
+    // clock had come due. Params are the registry's object by reference
+    // (main.js assigns storage changes into it), so the new value is here.
+    const keyframe = Number(params.keyframe) || 0;
+    if (keyframe !== this.lastKeyframe) {
+      if (keyframe > this.lastKeyframe) this.nextResetAt = 0;
+      this.lastKeyframe = keyframe;
+    }
+
     if (!params.feedbackVideo) {
       // Straight pixel sorting: every frame starts from a clean copy of
       // itself — no history, no drift, no keyframe rhythm. All the motion
@@ -307,6 +322,7 @@ export class VideoJob {
       const minS = params.resetMinS ?? 4;
       const maxS = Math.max(minS, params.resetMaxS ?? 10);
       this.nextResetAt = now + 1000 * (minS + Math.random() * (maxS - minS));
+      this.resets++;
     } else {
       p.runComposite(b, {
         driftX: params.driftX ?? 0,

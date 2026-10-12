@@ -23,6 +23,7 @@ import {
   DEFS,
   PADS,
   ROW_HINT,
+  TRIGGER_HINT,
   NUM_HINT,
   quantize,
   fmtValue,
@@ -57,7 +58,7 @@ const MIXER = window.matchMedia('(min-width: 900px) and (min-aspect-ratio: 2/1)'
 const RAIL = window.matchMedia('(max-height: 60px)');
 
 const defByKey = Object.fromEntries(DEFS.map((d) => [d.key, d]));
-const isNumeric = (def) => def.type !== 'toggle' && def.type !== 'select';
+const isNumeric = (def) => def.type !== 'toggle' && def.type !== 'select' && def.type !== 'trigger';
 // A numeric input holds the VIEW (defs.js toView: an inverted def shows
 // max − (v − min)); this reads it back in the stored sense.
 const storedOf = (key) => fromView(defByKey[key], Number(inputs[key].value));
@@ -69,8 +70,10 @@ const storedOf = (key) => fromView(defByKey[key], Number(inputs[key].value));
 // to read. temperature is NOT here: it bites in straight sort too. The
 // clear timings (resetMinS/resetMaxS) sit in the engine since the handles
 // round but still answer to the feedback switch, as do the blend and its
-// amount (design review M5): they shape only the composite.
-const FEEDBACK_SHARED = ['decay', 'driftX', 'driftY', 'resetMinS', 'resetMaxS', 'motionGate', 'feedbackBlend', 'feedbackMix'];
+// amount (design review M5): they shape only the composite. So does the
+// clear-buffer trigger (`keyframe`, round 8): it clears a trail that does
+// not exist while feedback is off.
+const FEEDBACK_SHARED = ['decay', 'driftX', 'driftY', 'resetMinS', 'resetMaxS', 'motionGate', 'feedbackBlend', 'feedbackMix', 'keyframe'];
 
 // Audio rows gray out when the audio master toggle is off; the smear rows
 // additionally require their own toggles.
@@ -209,6 +212,7 @@ const renderers = {};
 const onRender = (key, fn) => (renderers[key] ??= []).push(fn);
 
 function buildRow(def) {
+  if (def.type === 'trigger') return buildTriggerRow(def);
   const row = document.createElement('div');
   row.className = 'row';
   row.dataset.key = def.key;
@@ -296,6 +300,60 @@ function buildRow(def) {
   learnEls[def.key] = learn;
   rowEls[def.key] = row;
   return row;
+}
+
+// --- Triggers (round 8): a button that fires, not a value that is set ---
+// The key stores a counter; a click (or a MIDI CC rising through 64) writes
+// counter + 1, and every content script that sees it larger than the last
+// one it answered acts once (`keyframe`: every video job wipes its trail on
+// its next tick). The knob cell is the button, the value cell stays empty,
+// and inputs[key] is a plain holder ({ value, button }) that setUI keeps
+// level with storage, so the next click counts from the stored value even
+// when another panel fired last. Presets neither capture nor load it
+// (PRESET_EXCLUDED) and a double-click does nothing: there is nothing to
+// put back.
+function buildTriggerRow(def) {
+  const row = document.createElement('div');
+  row.className = 'row trigger-row';
+  row.dataset.key = def.key;
+  row.dataset.tip = def.tip;
+  row.dataset.hint = TRIGGER_HINT;
+  row.dataset.param = def.key;
+
+  const label = document.createElement('label');
+  label.textContent = def.label;
+
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'btn knob trigger';
+  button.textContent = 'clear';
+  button.dataset.tip = def.tip;
+  button.dataset.hint = TRIGGER_HINT;
+  button.dataset.param = def.key;
+  button.addEventListener('click', () => fireTrigger(def.key));
+
+  const value = document.createElement('span');
+  value.className = 'value';
+
+  const learn = document.createElement('button');
+  learn.className = 'learn';
+  learn.textContent = '⊙';
+  learn.addEventListener('click', () => armLearn(def.key));
+
+  row.append(label, button, value, learn);
+  row.addEventListener('animationend', () => row.classList.remove('flash'));
+  inputs[def.key] = { value: 0, button };
+  valueEls[def.key] = value;
+  learnEls[def.key] = learn;
+  rowEls[def.key] = row;
+  return row;
+}
+
+function fireTrigger(key) {
+  const n = (Number(inputs[key].value) || 0) + 1;
+  queueWrite(key, n);
+  setUI(key, n);
+  flashRow(key); // the only sign it fired: the trail itself is on the page
 }
 
 // --- Pads (handles round, 2026-10-12): two keys played as one 2-D surface ---
@@ -1027,6 +1085,10 @@ function attachNumberField(def, el, slider) {
 function setUI(key, v) {
   const def = defByKey[key];
   if (def === undefined || v === undefined) return;
+  if (def.type === 'trigger') {
+    inputs[key].value = Number(v) || 0; // the counter; nothing to paint
+    return;
+  }
   if (def.type === 'toggle') {
     inputs[key].checked = !!v;
   } else if (def.type === 'select') {
@@ -1054,6 +1116,7 @@ function syncFor(key) {
 function setGated(key, gate) {
   const gated = !!gate;
   inputs[key].disabled = gated;
+  if (inputs[key].button) inputs[key].button.disabled = gated; // a trigger's face
   const value = valueEls[key];
   if (value.tagName === 'INPUT') value.disabled = gated;
   const row = rowEls[key];
@@ -1211,7 +1274,11 @@ function currentValues() {
   for (const def of DEFS) {
     const input = inputs[def.key];
     out[def.key] =
-      def.type === 'toggle' ? input.checked : def.type === 'select' ? input.value : storedOf(def.key);
+      def.type === 'toggle'
+        ? input.checked
+        : def.type === 'select' || def.type === 'trigger'
+          ? input.value
+          : storedOf(def.key);
   }
   return out;
 }
@@ -1235,6 +1302,7 @@ function applyValues(values) {
 }
 
 function resetParam(key) {
+  if (defByKey[key]?.type === 'trigger') return; // nothing to put back
   const v = defaultFor(key, baseValues());
   if (v === undefined) return;
   queueWrite(key, v);
@@ -1666,6 +1734,10 @@ store.onChanged((changes) => {
 
 let midiMap = (await store.get({ midiMap: {} })).midiMap; // { cc: paramKey }
 let learnKey = null;
+// The last CC value seen per trigger key, so a trigger fires once per rise
+// through 64 — a held button, or a knob parked high, fires once, not on
+// every message it sends.
+const lastCC = {};
 
 function armLearn(key) {
   learnKey = learnKey === key ? null : key;
@@ -1723,6 +1795,12 @@ const midiHandlers = {
     if (!key) return;
     const def = defByKey[key];
     if (!def) return;
+    if (def.type === 'trigger') {
+      const was = lastCC[key] ?? 0;
+      lastCC[key] = value;
+      if (value >= 64 && was < 64) fireTrigger(key);
+      return;
+    }
     let v;
     if (def.type === 'toggle') {
       v = value >= 64;

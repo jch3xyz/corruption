@@ -55,7 +55,7 @@ export const GROUPS = [
     section: 'video',
     title: 'engine',
     collapsible: true,
-    tip: 'Setup and fine shape rather than look: how hard the sort works, at what detail, on how many videos; the shape of the flow (while flow is up); how often the trail wipes clean. Folded away until you open it.',
+    tip: 'Setup and fine shape rather than look: a button that wipes the trail now; how hard the sort works, at what detail, on how many videos; the shape of the flow (while flow is up); how often the trail wipes clean. Folded away until you open it.',
   },
   {
     id: 'body',
@@ -81,6 +81,9 @@ export const GROUPS = [
 // Appended under every parameter's tooltip — the two gestures that are not
 // discoverable from looking at the row.
 export const ROW_HINT = 'Double-click the name to put it back to the marked preset.';
+// A trigger row (type: 'trigger') is a button, not a setting: it has nothing
+// to put back, so its hint replaces ROW_HINT.
+export const TRIGGER_HINT = 'A button, not a setting: presets, default and double-click leave it alone.';
 export const NUM_HINT = 'Type + Enter; ↑/↓ steps (shift ×10); out of range clamps.';
 
 // Labels are the player's words (synth vocabulary: wet/dry, decay, gate,
@@ -160,7 +163,7 @@ export const DEFS = [
     type: 'toggle',
     section: 'video',
     group: 'feedback',
-    tip: 'A trail: each frame is laid over the last, so damage builds up, drifts and fades. Off = every frame sorted fresh. The trail wipes to a clean frame at slow random moments, timed under engine.',
+    tip: 'A trail: each frame is laid over the last, so damage builds up, drifts and fades. Off = every frame sorted fresh. It wipes clean at slow random moments, timed under engine; clear buffer, under engine, wipes the trail now.',
   },
   {
     key: 'decay',
@@ -224,7 +227,21 @@ export const DEFS = [
     tip: 'How much of the trail survives against the new frame. 0 = every frame fresh; 1 = the full trail. Video only.',
   },
 
-  // --- Video · engine: setup, the shape of the flow, the clear rhythm ---
+  // --- Video · engine: the clear button, setup, the shape of the flow, the clear rhythm ---
+  // A trigger, not a value (round 8, John: "a clear buffer button under the
+  // feedback tab" — a utility, not a headline handle). It sits first in the
+  // engine because the feedback column is full at its eight lane cells; the
+  // feedback switch's tip points here. Stored as a counter the panel
+  // increments (`keyframe`); gated with the feedback keys; excluded from
+  // presets (PRESET_EXCLUDED); a MIDI CC fires it once per rise through 64.
+  {
+    key: 'keyframe',
+    label: 'clear buffer',
+    type: 'trigger',
+    section: 'video',
+    group: 'engine',
+    tip: 'Wipe the trail to a clean frame right now, on every video. The random keyframe clock still runs. Bind a MIDI button to it for a rhythm.',
+  },
   {
     key: 'passes',
     label: 'sort passes',
@@ -557,6 +574,7 @@ export function toView(def, v) {
 export const fromView = toView;
 
 export const fmtValue = (def, v) => {
+  if (def.type === 'trigger') return ''; // a counter, never shown
   if (def.type === 'toggle') return v ? 'on' : 'off';
   if (def.type === 'select') return String(v);
   return fmtNumber(def, v);
@@ -582,8 +600,9 @@ export const PRESET_SLOTS = ['A', 'B', 'C'];
 // Keys a preset neither captures nor loads. The A/B is the comparison
 // gesture, not part of a look: loading a preset (or "default") while the
 // page is switched off must not switch it back on, and a save made mid-hold
-// must not capture the bypass.
-export const PRESET_EXCLUDED = ['enabled'];
+// must not capture the bypass. The clear-buffer counter (`keyframe`) is an
+// event, not a look: loading a preset must never fire it or wind it back.
+export const PRESET_EXCLUDED = ['enabled', 'keyframe'];
 
 // Where the panel lives (design review M9): a panel preference, not a
 // parameter — stored as `panelHome` beside `tooltips`, outside DEFAULTS, so

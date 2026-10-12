@@ -40,6 +40,12 @@ export const DEFAULTS = {
                      // the new frame; 0 = every frame fresh, 1 = the full rule
   resetMinS: 30,     // feedback modes: accumulator "keyframe" reset window
   resetMaxS: 60,
+  keyframe: 0,       // the clear-buffer trigger: a COUNTER, not a value. Each
+                     // increment asks every video job to wipe its trail to a
+                     // clean frame on its next tick (the reset the random
+                     // clock above takes). Jobs remember the value they were
+                     // built with, so a counter stored last session never
+                     // fires on load. Presets never capture or load it.
   maxRes: 1920,      // processing resolution cap, long axis
   maxVideos: 12,     // concurrent video jobs, biggest visible first
   textScramble: true, // letters rearranged inside each word, page-wide —
