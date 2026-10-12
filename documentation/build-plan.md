@@ -328,7 +328,17 @@ Design invariants that hold everywhere:
 ```bash
 python3 test/serve.py        # :8437, no-store + ACAO (mimics the DNR rule)
 python3 test/serve.py 8439   # second origin for the image CORS-route test
+node test/headless.mjs panel strip text   # the pure-DOM suites in headless Chrome
 ```
+
+`test/headless.mjs` (2026-10-11) drives Google Chrome headless over the
+DevTools protocol with no dependencies, waits for each suite's COMPLETE
+line and prints the failures; exit code 1 on any failure. A headless page
+counts as visible, so the panel, strip, text and audio (tiers 1–2) suites
+run deterministically there — unlike a background tab in the app's browser
+pane, which throttles timers, skips transitions and reports `hidden`, and
+fails a dozen checks for nothing. The visual suite still needs a real,
+visible tab.
 
 - Visual/lifecycle suite: `http://localhost:8437/test/harness/index.html`
   (32 checks; +2 more with the :8439 server up for the cross-origin image
