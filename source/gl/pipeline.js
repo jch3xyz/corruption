@@ -59,6 +59,7 @@ export function createPipeline(gl) {
     'uAngle',
     'uEdge',
     'uEdgeGate',
+    'uSpan',
   ]);
   const edge = buildProgram(gl, VERT_FULLSCREEN, FRAG_EDGE, ['uFrame', 'uTexel']);
   const field = buildProgram(gl, VERT_FULLSCREEN, FRAG_FIELD, [
@@ -228,6 +229,9 @@ export function createPipeline(gl) {
       // must be at least this edgy, < 0 at most 1 + it; 0 = off. The edge
       // map is likewise always bound and only sampled when the gate is on.
       gl.uniform1f(sort.uniforms.uEdgeGate, opts.edgeGate || 0);
+      // Span walls (round 8 part 3): pixels along the sort direction, whole
+      // numbers; 0 = none.
+      gl.uniform1f(sort.uniforms.uSpan, Math.max(0, Math.floor(opts.span || 0)));
       gl.uniform1i(sort.uniforms.uEdge, 2);
       gl.activeTexture(gl.TEXTURE2);
       gl.bindTexture(gl.TEXTURE_2D, bundle.edge.tex);

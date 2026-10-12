@@ -80,6 +80,18 @@
 // both members (and, for strides > 1, the span midpoint) read at least g —
 // outlines shred, fills hold. g < 0: only where all read at most 1 + g —
 // flat regions tear, outlines hold. Never sampled at 0.
+//
+// uSpan — walls (`span`, in pixels along the sort direction; 0 = none).
+// Cells are cut along the brick's own projection t = dot(p, v): a pair
+// trades only when both members fall in the same cell, so no run ever
+// reaches past one. Two refinements on floor(t / N): the cell length is
+// N·|v| in projection units, so N is pixels along v for diagonals and
+// knight moves too (an axis has |v| = 1); and t is measured from the
+// frame's first corner along v (t0, the smallest projection in the frame),
+// so cells start at a frame edge in every direction — without it a
+// negative direction would put a wall one pixel in from the edge, and a
+// span longer than the frame would not be "no wall". Cells are contiguous
+// along the projection, so the midpoint needs no check of its own.
 import { GLSL_LUMA } from './common.js';
 
 export const FRAG_SORT = `#version 300 es
@@ -99,6 +111,7 @@ uniform int uKey;
 uniform float uAngle;
 uniform sampler2D uEdge;
 uniform float uEdgeGate;
+uniform float uSpan;
 in vec2 vUV;
 out vec4 outColor;
 ${GLSL_LUMA}
@@ -190,6 +203,17 @@ void main() {
   if (uUseFlow > 0.5 && fieldDir(q >> 2) != v) {
     outColor = self;
     return;
+  }
+  // Span: the pair must share a cell along the projection. q = p ± s·v, so
+  // its projection is t ± sd; both members compute the same two cells.
+  if (uSpan > 0.0) {
+    int tq = isUpper ? t + sd : t - sd;
+    int t0 = min(0, v.x * (size.x - 1)) + min(0, v.y * (size.y - 1));
+    float cell = uSpan * length(vec2(v));
+    if (floor(float(t - t0) / cell) != floor(float(tq - t0) / cell)) {
+      outColor = self;
+      return;
+    }
   }
   vec4 other = texelFetch(uTex, q, 0);
 

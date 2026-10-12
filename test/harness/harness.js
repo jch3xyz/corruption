@@ -854,6 +854,73 @@ function tier0() {
       same(run(edgeSteps(0.3)), run(edgeSteps(0.3)))
   );
 
+  // --- Where: span, walls along the sort direction (round 8 part 3) --------
+  const spanSteps = (n, { img = noisy, deg = 0, facets = false, flow = 0 } = {}) => (p, b) => {
+    p.uploadFrame(b, img);
+    p.runReset(b);
+    if (flow > 0) p.runFieldPass(b, { amount: flow, scale: 4, speed: 0.05, time: 12.5, seed: 7 });
+    p.runSortPasses(b, 200, 0, 64, { span: n, angle: rad(deg), facets, flow: flow > 0 });
+  };
+  // Per-cell multisets: 16-pixel cells down each column (vertical) or along
+  // each row (horizontal). 64 = 4 × 16, so the cells are the same in the
+  // V-flipped readback as in the source.
+  const cellKeys = (px, horizontal) => {
+    const keys = [];
+    for (let a = 0; a < W; a++) {
+      for (let k = 0; k < 4; k++) {
+        const cell = [];
+        for (let j = k * 16; j < k * 16 + 16; j++) {
+          const i = horizontal ? (a * W + j) * 4 : (j * W + a) * 4;
+          cell.push(`${px[i]},${px[i + 1]},${px[i + 2]}`);
+        }
+        keys.push(cell.sort().join('|'));
+      }
+    }
+    return keys.join('/');
+  };
+  check('span: 0 is inert — bit-identical to the sort without the option', same(run(spanSteps(0)), s1));
+  const span16 = run(spanSteps(16));
+  const span16h = run(spanSteps(16, { deg: 90, facets: true }));
+  check(
+    'span 16: no pixel crosses a wall — every 16-pixel cell keeps exactly its own pixels, in columns (0°) and in rows (90°, where the projection runs negative)',
+    cellKeys(span16, false) === cellKeys(unsorted, false) && cellKeys(span16h, true) === cellKeys(unsorted, true) &&
+      !same(span16, unsorted) && cellKeys(s1, false) !== cellKeys(unsorted, false)
+  );
+  // A bright 8-row run low in every column, over black: unwalled it climbs
+  // to the top of the frame; with span 16 it climbs only to the top of its
+  // own cell (canvas rows 32–47 → 32–39).
+  const run40 = src((x) => {
+    x.fillStyle = '#000';
+    x.fillRect(0, 0, W, H);
+    x.fillStyle = '#fff';
+    x.fillRect(0, 40, W, 8);
+  });
+  const whiteRows = (px) => {
+    const rows = [];
+    for (let c = 0; c < H; c++) {
+      const i = ((H - 1 - c) * W + 5) * 4;
+      if (px[i] > 250) rows.push(c);
+    }
+    return rows;
+  };
+  const freeRun = whiteRows(run(spanSteps(0, { img: run40 })));
+  const walledRun = whiteRows(run(spanSteps(16, { img: run40 })));
+  check(
+    `span 16: a bright run climbs only to its cell's wall (canvas rows ${walledRun[0]}–${walledRun[walledRun.length - 1]}; unwalled ${freeRun[0]}–${freeRun[freeRun.length - 1]})`,
+    freeRun.join() === '0,1,2,3,4,5,6,7' && walledRun.join() === '32,33,34,35,36,37,38,39'
+  );
+  check(
+    'span: a permutation (16 and 40, vertical, at 90° and flowing) and deterministic',
+    [run(spanSteps(40)), run(spanSteps(16, { deg: 90 })), run(spanSteps(24, { flow: 1 }))].every((px) => globalKey(px) === globalKey(unsorted)) &&
+      same(span16, run(spanSteps(16))) && same(run(spanSteps(24, { flow: 1 })), run(spanSteps(24, { flow: 1 })))
+  );
+  check(
+    'span 512 on a 64-pixel frame is one cell — no wall: equal to 0 climbing up, down (180°, a negative-going projection) and flowing',
+    same(run(spanSteps(512)), s1) &&
+      same(run(spanSteps(512, { deg: 180, facets: true })), run(spanSteps(0, { deg: 180, facets: true }))) &&
+      same(run(spanSteps(512, { flow: 1 })), flowed)
+  );
+
 }
 
 // --- The boot guard (round 8) ------------------------------------------------
