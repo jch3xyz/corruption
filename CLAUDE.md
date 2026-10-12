@@ -62,15 +62,26 @@ Quick facts:
   (Video, Audio) behind dividers, sort and feedback knobs filed under
   **Video** (John's call), typed values that clamp and snap, double-click a
   row to restore one parameter, and a hover bubble on everything (nothing
-  at rest). **Video and Audio each have three groups** (sort · feedback ·
-  engine; body · smear · engine — engines folded by default). **The four
-  chips are the four masters** (video, images, text, audio — text has no
-  knobs). **Gated rows hide**, they do not grey. **Labels are synth
-  vocabulary for the stranger; keys never change** (storage, MIDI maps,
-  docs), and every tip ends with its key. Rows, groups and hover copy live
-  in `source/panel/defs.js`; **add a row there when you add a param, with
-  its `group`** — the panel harness fails if a stored param has no row, a
-  row has no tip, or a row leaves its group.
+  at rest). **Video and Audio each have three groups, and each effect
+  group holds only its handles** (John's handles round, 2026-10-12): sort
+  = amount · flow · jitter · ribbons; feedback = the switch · trail · drift
+  pad · follow motion; body = mix · body amount · ring time · drive; smear
+  = the switch · tail · level · wobble. Everything that shapes rather than
+  steers is in the **engines**, folded by default (Video: sort passes, max
+  res, max videos, the flow's shape, the clear rhythm; Audio: body type,
+  dry, max sources, exciter, comb damp, the smear clears). Gates are keyed,
+  not grouped. **Two control forms the table drives:** **amount** is
+  `threshold` shown inverted (`invert: true`, `toView`/`fromView`; the
+  stored key, presets and MIDI maps stay `threshold`), and **the drift
+  pad** plays `driftX`/`driftY` as one 2-D surface (`pad: 'drift'`,
+  `PADS`). **The four chips are the four masters** (video, images, text,
+  audio — text has no knobs). **Gated rows hide**, they do not grey.
+  **Labels are the stranger's words, named for the result; keys never
+  change** (storage, MIDI maps, docs), and every tip ends with its key.
+  Rows, groups and hover copy live in `source/panel/defs.js`; **add a row
+  there when you add a param, with its `group`** — the panel harness
+  fails if a stored param has no row, a row has no tip, or a row leaves
+  its group.
 - **The panel's layout follows its shape, in every home** (2026-10-12):
   the **rail** (one transport line), the **mixer** (a cluster plus the
   effect columns) or the **column**. The strip's frame is always the mixer,

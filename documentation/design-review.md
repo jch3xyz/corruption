@@ -759,3 +759,119 @@ strip 52/52, text 35/35; audio 34/34 unchanged. Mixer and rail at 1280,
 1440, 1512, 1728 and 1920; the window's shapes at 1000 × 320 (mixer) and
 700 × 700 (column), with a live resize each way. The remembered bounds and
 a strict-CSP site need a real Chrome: John's checklist in build-plan.md.
+
+---
+
+# Round 5: handles (2026-10-12)
+
+## The decision
+
+John's call: **handles first.** Of the candidates for the next step — the
+feedback blend (M5), the source-following audio body (M8), an intensity
+macro — he chose to answer his own round-4 note before adding a layer: the
+groups had been made easier to navigate, but the controls were neither
+simplified nor given more hold over the effect. The round-4 table above
+was the brief, and it landed in four commits: amount (`1acd69b`), the
+drift pad (`8ae1306`), the regroup and rename (`b7b1d34`), and these docs.
+
+## The handles, as they landed
+
+Each effect column now holds only its handles — three or four controls
+named for what they do to the picture or the sound. Whatever shapes
+rather than steers is filed in the engine, one fold away. Keys, storage,
+`DEFAULTS`, presets and MIDI maps did not change; only labels, group
+membership, order and tips.
+
+| Column | Handles, in order (key where the label changed) | Moved to the engine |
+|---|---|---|
+| Video · sort | amount (`threshold`, inverted) · flow · jitter · ribbons (`streak`, promoted from the engine) | flow mode · flow scale · flow speed |
+| Video · feedback | feedback (the switch) · trail (`decay`) · drift (pad: `driftX` + `driftY`) · follow motion (`motionGate`) | clear min s · clear max s |
+| Audio · body | mix · body amount · ring time · drive | body type |
+| Audio · smear | smear (the switch) · tail · level (`audioFbReturn`) · wobble | — (the clears were already there) |
+
+The engines, in order: **Video** — sort passes, max res, max videos, flow
+mode, flow scale, flow speed, clear min s, clear max s. **Audio** — body
+type, dry, max sources, exciter, comb damp, smear clear, clear fade s,
+clear min s, clear max s.
+
+Where it departs from the round-4 cut: *wildness* stayed *jitter*;
+`streak` was promoted as **ribbons** (the table had no length handle, and
+ribbon length is what you see); trail and the pad now come before follow
+motion, so the column reads switch → how long → which way → where; ring
+and mix kept their round-3 labels (ring time, mix). Gating stayed keyed, so
+a demoted row answers to the same switch as before: the flow shape hides
+while flow is 0 and the clear timings while feedback is off, even inside
+an unfolded engine.
+
+## The two control forms
+
+Both are driven by the control table in `defs.js`, not special-cased:
+
+- **amount** — an inverted view (`invert: true`). The row shows and takes
+  `max + min − v` through the pure `toView` / `fromView` helpers, so for
+  threshold it reads amount = 1 − threshold (0.95 at rest) and up is more
+  of the picture sorted. The slider, the typed value cell, the arrow keys
+  and a MIDI sweep all speak the view; presets, storage, MIDI maps and
+  `DEFAULTS` keep `threshold`. This answers the question round 4b left
+  open when the *more · less* captions went.
+- **the drift pad** (`pad: 'drift'`, `PADS.drift`) — `driftX` and `driftY`
+  as one 2-D surface. Push the point and the trail slides that way, faster
+  the further out; the cross is (0, 0); up on the pad is up on the
+  picture. Drag it, or focus it and nudge with the arrows (shift ×10); two
+  small typed fields take exact values; double-click the name or the pad
+  restores both; each key keeps its own ⊙. In the mixer it spans two lane
+  rows, the two cells its rows used to take.
+
+## Trade-offs, stated
+
+- **A fold away, for columns that read at a glance.** The flow's shape and
+  the clear rhythm cost one click now (they are still recognised, not
+  recalled, but behind a disclosure) so that every column is three or
+  four handles named for the result (aesthetic and minimalist design;
+  match between system and the real world: ribbons, trail, follow motion,
+  level).
+- **Amount agrees with its direction; the value cell no longer matches
+  the stored key.** The number now climbs as the effect does (match with
+  the real world); the tip says *stored inverted, as threshold* and its
+  key line keeps it honest for storage and the MIDI sheet.
+- **A new control form.** Two numbers become one gesture — a direction you
+  push — at the cost of a form the stranger has not met on this panel; the
+  cross, the two fields and per-axis learn keep it legible and playable
+  from a controller.
+- **The engines grew** to 8 and 9 rows, so an unfolded engine spills a row
+  or two into a second column and the lane scrolls sideways only then. The
+  effect columns still fit their eight cells (sort 6, feedback 6, body 7,
+  smear 5) and stay in view, with no sideways scroll, from 1280 px.
+- **A wider label column.** *follow motion* is the widest lane label, so
+  the mixer's label column went 88 → 98 px and the sliders give up 10 px.
+
+## Open visual notes
+
+- An unfolded engine's spilled row sits at the top of its own column,
+  level with the section titles and with no caption over it.
+- With a MIDI device at 1280 the ⊙ column now squeezes the lane's sliders
+  to ~20 px (round 4b noted ~30), and the drift pad's square is wider than
+  its knob cell, so its fields crowd the pad and the ⊙ beside them. Too
+  little width for MIDI rows at 1280, as before; not addressed.
+
+## What is left
+
+- **Headline knobs at the rail** (ring time, drive, tail) and the
+  **intensity macro** — still John's, and the *which controls when*
+  question rides with them.
+- **The layers, in the order John accepted:** the feedback blend (M5)
+  next, then the source-following audio body (M8), then the performance
+  ramp, then the CSS-scramble toggle, which needs its feasibility read
+  first.
+
+## Verification
+
+Headless Chrome, `node test/headless.mjs panel strip text`: panel 348/348
+(299 before the round; 312 after amount, 335 after the pad), strip 52/52,
+text 35/35. The panel suite pins the new group membership and labels, the
+renamed handles' tips, the engines' exact contents in the table and the
+DOM, the pad between trail and follow motion with follow motion ending the
+feedback column at every strip width, no effect column spilling, and every
+lane label on one line. Screenshots checked by eye: the mixer at 1512 and
+at 1280 with a MIDI device, both engines unfolded at 1512 and 1920, and the
+400 px column.

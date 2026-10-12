@@ -13,9 +13,12 @@ and their groups, typed values, tooltips — is [below](#the-panel).
 **Keys and labels.** The `Param` column is the key: what storage, MIDI
 maps, presets and the code use, and what every tooltip names on its last
 line. It never changes. The *panel label* is the player's word for the same
-knob — synth vocabulary (wet/dry, decay, gate, ring time), relabelled
-2026-10-12 for the stranger (design review M4/M8, finding 6). The table is
-in panel order, group by group.
+knob — synth vocabulary (wet/dry, tail, ring time), relabelled 2026-10-12
+for the stranger (design review M4/M8, finding 6), and since the handles
+round the same day, names for the result (amount, ribbons, trail, follow
+motion, level). The table is in panel order, group by group: each effect
+group holds only its handles, and the engines hold setup plus what shapes
+rather than steers.
 
 | Param | Panel label | Default | Range | What it does |
 |---|---|---|---|---|
@@ -24,38 +27,38 @@ in panel order, group by group.
 | `video` | video chip | on | on/off | Video on/off (the **video** chip, 2026-10-12). Off suspends every video job exactly as `enabled: false` does — overlay dropped, the video shown as transmitted — while images, text and audio carry on. |
 | `images` | images chip | on | on/off | Images on/off (the **images** chip, 2026-10-12). Off suspends every image job — the still shown as it arrived. Image look comes from the sort knobs under Video. |
 | **Video · sort** | | | | |
-| `threshold` | threshold | **0.05** | 0–1 | Luma above this is eligible for sorting (and feedback). Near-zero corrupts almost everything while true black holds as a barrier; 1 = untouched. The single most expressive knob. |
+| `threshold` | amount (shown inverted) | **0.05** | 0–1 | Luma above this is eligible for sorting (and feedback). Near-zero corrupts almost everything while true black holds as a barrier; 1 = untouched. The single most expressive knob. **Shown inverted, as amount = 1 − threshold** (the handles round, 2026-10-12): the slider, the typed value, the arrow keys and a MIDI sweep all speak amount, so up is more of the picture sorted (0.95 at rest). Storage, presets, MIDI maps and `DEFAULTS` keep `threshold` in the stored sense, unchanged. |
 | `flowAmount` | flow | **0.5** | 0–1 | **The resting state flows** (John's sweet spot, 2026-08-12). 0 = the classic vertical grammar, bit-identical. Up = sorting follows a slowly morphing **curl-noise flow field**: ribbons meander and curl along streamlines instead of climbing columns. Directions quantize to 16 sectors with a per-pass dithered boundary, so material rounds curves instead of pooling at fixed seams. Still a permutation — nothing added, nothing lost, harness-pinned. **Every element draws its own seed, rerolled when its content changes** (a new video in YouTube's reused player is new content): pattern, phase, morph rate, swirl size, and handedness all differ per medium — no two screens show the same corruption, and no knob controls this (it is identity, not a parameter). |
+| `temperature` | jitter | **0** | 0–0.5 | Fraction of pair-verdicts inverted per pass. The sort simmers at its equilibrium instead of settling into it: ribbons boil at their edges and the picture never comes to rest. Applies in straight sort and feedback alike; barriers still hold (the boil stays inside bright spans). 0.5 = a pure random walk, no net sorting. |
+| `streak` | ribbons | **256** | 1–256 | Longest compare-exchange stride (rounded down to a power of two). Directly sets how far pixels can travel per frame — the ribbon-length knob, promoted from the engine to the sort column in the handles round (2026-10-12). 1 = classic single-step odd-even. |
+| **Video · feedback** | | | | |
+| `feedbackVideo` | feedback | **on** | on/off | Temporal feedback on videos — **the resting state** (John, 2026-08-12; previously off): smear accumulates, drifts, decays, clears at slow 30–60 s keyframes. Off = straight per-frame pixel sorting. |
+| `decay` | trail | **0.81** | 0.8–0.999 | *Video feedback only.* Accumulator retention per frame. Higher = smear lingers longer. |
+| `driftX` | drift (pad), x | **−0.0025** | ±0.01 | *Video feedback only.* Horizontal smear, UV units per frame (negative = leftward). |
+| `driftY` | drift (pad), y | **0.0020** | ±0.01 | *Video feedback only.* Vertical smear; **positive = upward** — the resting state climbs gently. Purely visual — the audio wobble it used to drive is now `audioFbWobble`. |
+| `motionGate` | follow motion | **0** | 0–1 | *Video feedback only.* A pair may only trade when BOTH members' motion trail clears this, so damage stays strictly inside what the transmission itself is changing: action smears, stillness holds and heals. The trail decays ~1 s; each keyframe floods it hot, so a reset briefly sorts everywhere before confinement returns. 0 = sort regardless of motion. |
+| **Video · engine (folded)** | | | | |
+| `passes` | sort passes | **64** | 0–64 | Sort passes per frame. A full 256→1 stride ladder is 18 passes, so 64 runs ~3.5 settling cycles. |
+| `maxRes` | max res | 1920 | 480–1920 | Processing resolution cap, long axis. Lower it on weak GPUs; output upscales through the overlay. |
+| `maxVideos` | max videos | **12** | 1–16 | Concurrent video jobs, biggest visible first. Paused videos count too — they get a one-shot sorted still (rVFC never fires for them). Raised from 8 for grid feeds (Instagram explore) where a dozen previews are on screen at once. |
 | `flowMode` | flow mode | **facets** | paths / facets | *Flow only.* Two quantizers, both kept (John liked both; facets is his resting pick). **facets**: 8 fixed sectors, no dither — straight runs inside each patch, pooling at anchored seams where the field bends. **paths**: 16 sectors, boundary dithered per pass — seams wander, material rounds curves, ribbons meander. |
 | `flowScale` | flow scale | **2.5** | 1–12 | *Flow only.* Noise cells across the frame: higher = tighter, busier swirls; lower = broad sweeping currents. |
 | `flowSpeed` | flow speed | **0.045** | 0–0.2 | *Flow only.* How fast the field morphs (streamlines re-carve in place rather than marching). 0 = frozen geometry — flow without evolution. |
-| `temperature` | jitter | **0** | 0–0.5 | Fraction of pair-verdicts inverted per pass. The sort simmers at its equilibrium instead of settling into it: ribbons boil at their edges and the picture never comes to rest. Applies in straight sort and feedback alike; barriers still hold (the boil stays inside bright spans). 0.5 = a pure random walk, no net sorting. |
-| **Video · feedback** | | | | |
-| `feedbackVideo` | feedback | **on** | on/off | Temporal feedback on videos — **the resting state** (John, 2026-08-12; previously off): smear accumulates, drifts, decays, clears at slow 30–60 s keyframes. Off = straight per-frame pixel sorting. |
-| `motionGate` | motion gate | **0** | 0–1 | *Video feedback only.* A pair may only trade when BOTH members' motion trail clears this, so damage stays strictly inside what the transmission itself is changing: action smears, stillness holds and heals. The trail decays ~1 s; each keyframe floods it hot, so a reset briefly sorts everywhere before confinement returns. 0 = sort regardless of motion. |
-| `decay` | decay | **0.81** | 0.8–0.999 | *Video feedback only.* Accumulator retention per frame. Higher = smear lingers longer. |
-| `driftX` | drift x | **−0.0025** | ±0.01 | *Video feedback only.* Horizontal smear, UV units per frame (negative = leftward). |
-| `driftY` | drift y | **0.0020** | ±0.01 | *Video feedback only.* Vertical smear; **positive = upward** — the resting state climbs gently. Purely visual — the audio wobble it used to drive is now `audioFbWobble`. |
 | `resetMinS` / `resetMaxS` | clear min s / clear max s | **30 / 60** | 1–30 / 2–60 | *Video feedback only.* Keyframe rhythm: the accumulator resets to a clean frame at a random interval in this window. Slow by default — damage accumulates for half a minute or more before clearing. |
-| **Video · engine (folded)** | | | | |
-| `passes` | sort passes | **64** | 0–64 | Sort passes per frame. A full 256→1 stride ladder is 18 passes, so 64 runs ~3.5 settling cycles. |
-| `streak` | streak | **256** | 1–256 | Longest compare-exchange stride (rounded down to a power of two). Directly sets how far pixels can travel per frame — the ribbon-length knob. 1 = classic single-step odd-even. |
-| `maxRes` | max res | 1920 | 480–1920 | Processing resolution cap, long axis. Lower it on weak GPUs; output upscales through the overlay. |
-| `maxVideos` | max videos | **12** | 1–16 | Concurrent video jobs, biggest visible first. Paused videos count too — they get a one-shot sorted still (rVFC never fires for them). Raised from 8 for grid feeds (Instagram explore) where a dozen previews are on screen at once. |
 | `textScramble` | text chip | **on** | on/off | The text mode — **on in the resting state** (the call the proposal deferred to the room; John made it 2026-08-12). Letters rearrange inside each word, page-wide; anything that isn't a letter (space, punctuation, digit, emoji) is a barrier no glyph crosses, so every word keeps its length and the page keeps its shape. Off restores every run. **An on/off effect with no knobs** (John, 2026-10-11): the former `textMin` slider is gone and the minimum run length is the constant `TEXT_MIN` = 8 in `text-scramble.js` — prose and most labels dissolve, the shortest furniture (Home, OK) survives. A `textMin` left in an older profile is ignored. |
 | `audioEnabled` | audio chip | on | on/off | Audio master — the **audio** chip (its section row went 2026-10-11; chip and key are one control). Off ramps every tap to dry — the tap itself is permanent by design. |
 | **Audio · body** | | | | |
 | `audioMix` | mix | 1 | 0–1 | Wet/dry for the whole sound, in the tap graph after everything else (30 ms ramps). 0 = the internet as transmitted, 1 = all apparatus. Leads the body group since round 3: it is the first level a player reaches for. Distinct from `audioDirect`, which is inside the DSP. |
 | `audioBodyMix` | body amount | **1** | 0–2 | Resonant part against the direct path — the identity dial. Up for more fixed voice, down for more of the video. Making the bank a filter costs lattice salience (25 → ~7 measured, raw audio being 5.6); this is the knob that buys some back. |
-| `audioBody` | body type | **modal** | modal / comb | Which apparatus the signal passes through. **modal** = the 48 stretched partials, struck metal. **comb** = three recirculating lines on the same fundamentals, exactly harmonic — tube/pipe/spring, and about a tenth of the cost. The A/B John called for (2026-08-13); the character difference is inherent, not a defect (see below). |
 | `audioSustain` | ring time | **12** | 2–12 | T60 at the lowest string (55 Hz), seconds. Higher modes always die faster ((55/f)^0.7) — the ring-length knob. |
 | `audioDrive` | drive | **1.0** | 0–1 | Strike force into the resonators. Per-mode caps bound runaway, so drive shapes attack more than loudness. |
 | **Audio · smear** | | | | |
 | `audioFeedback` | smear | **on** | on/off | The smear: the engine's output recirculates through a 0.35 s delay line (0.1 Hz wobble, tanh-clipped write-back), continuously — see `audioFbClear`. |
-| `audioFbDecay` | tail | **0.999** | 0.8–0.999 | *Audio fb only.* The smear's **tail length** — and only that since 2026-08-13. Maps to loop gain 0.5–0.95, the visual `decay` knob's range, so it feels like the same knob. |
-| `audioFbReturn` | return | **0.25** | 0–1 | *Audio fb only.* How loud the wash sits, as a **fraction of the loop gain**. Tail and level used to be one number, which is why nothing survived it: at loop gain 0.95 the wash settles ~1/(1−g) ≈ 20× above whatever just arrived and buries it. **1 = the old behaviour exactly.** Measured: dropping to 0.25 takes envelope correlation with the source from 0.22 to 0.89 with the 47 s tail untouched. |
+| `audioFbDecay` | tail | **0.999** | 0.8–0.999 | *Audio fb only.* The smear's **tail length** — and only that since 2026-08-13. Maps to loop gain 0.5–0.95, the visual `decay` (trail) knob's range, so it feels like the same knob. |
+| `audioFbReturn` | level | **0.25** | 0–1 | *Audio fb only.* How loud the wash sits, as a **fraction of the loop gain**. Tail and level used to be one number, which is why nothing survived it: at loop gain 0.95 the wash settles ~1/(1−g) ≈ 20× above whatever just arrived and buries it. **1 = the old behaviour exactly.** Measured: dropping to 0.25 takes envelope correlation with the source from 0.22 to 0.89 with the 47 s tail untouched. |
 | `audioFbWobble` | wobble | **0** | 0–0.4 | *Audio fb only.* Delay wobble depth — the tape-warble on the echo stack. **0 = no wobble, a static echo stack** (the resting state). Until 2026-08-12 this rode the visual `driftY` slider; detangled so performing the video never bends the sound. |
 | **Audio · engine (folded)** | | | | |
+| `audioBody` | body type | **modal** | modal / comb | Which apparatus the signal passes through. **modal** = the 48 stretched partials, struck metal. **comb** = three recirculating lines on the same fundamentals, exactly harmonic — tube/pipe/spring, and about a tenth of the cost. The A/B John called for (2026-08-13); the character difference is inherent, not a defect (see below). |
 | `audioDirect` | dry | **1** | 0–1 | Direct signal level *inside* the DSP: both engines sum their resonant part with this, so the source passes through the apparatus instead of only driving it. **0 = the pre-2026-08-13 behaviour**, where the output never contained the input and every video sounded alike. |
 | `audioMaxTaps` | max sources | **8** | 1–8 | Concurrent *engaged* taps, most recently playing first — the audio sibling of `maxVideos`. Everything safe gets tapped; beyond the cap, elements play dry (idle processors cost ~nothing). Matters on feed pages with several sounding videos; each engaged tap is its own worklet. |
 | `audioExciter` | exciter | **continuous** | gated / continuous | **Continuous is the piece**: the stream drives the body always, bounded by resonz normalization and per-mode caps. Gated = onsets open a 60 ms window and the body is *struck* instead. |
@@ -251,19 +254,29 @@ is a jump target (`#section-video`, `#section-audio`).
 
 **Groups: effect, effect, engine** (2026-10-12, design review M4/M8). Video
 and Audio each split into three groups under small captions, so the effect
-you can see or hear comes first and the setup folds away:
+you can see or hear comes first and the setup folds away. Since the
+**handles round** (John, 2026-10-12) each effect group holds only its
+handles — three or four controls named for what they do — and whatever
+shapes rather than steers is filed in the engine:
 
-- **Video** — **sort** (threshold, flow, flow mode, flow scale, flow speed,
-  jitter), **feedback** (its own switch, then motion gate, which reads the
-  feedback trail, decay, drift x/y, clear min/max s), **engine** (sort
-  passes, streak, max res, max videos).
+- **Video** — **sort** (amount, flow, jitter, ribbons), **feedback** (its
+  own switch, then trail, the drift pad, follow motion — which reads the
+  feedback trail), **engine** (sort passes, max res, max videos; the
+  flow's shape: flow mode, flow scale, flow speed, shown while flow is
+  above 0; the clear rhythm: clear min s, clear max s).
 - **Audio** — **body** (mix, the whole-sound wet/dry, then body amount,
-  the identity dial, body type, ring time, drive), **smear** (its own
-  switch, tail, return, wobble), **engine** (dry, max sources, exciter,
-  comb damp, smear clear, clear fade s, clear min/max s). Mix leads body
-  and dry sits in the engine since round 3: mix is the level a player
-  reaches for; dry is setup. The `audio` master is the chip above.
+  the identity dial, ring time, drive), **smear** (its own switch, tail,
+  level, wobble), **engine** (body type, dry, max sources, exciter, comb
+  damp, smear clear, clear fade s, clear min/max s). Mix leads body and dry
+  sits in the engine since round 3: mix is the level a player reaches for;
+  dry is setup. Body type (modal or comb, John's open A/B) is setup too:
+  chosen once, not played. The `audio` master is the chip above.
 - **Text** has no section: it is the chip and nothing else.
+
+In the mixer the effect columns fit their eight lane cells (sort 6,
+feedback 6, body 7, smear 5); the engines are 8 and 9 rows, so an unfolded
+engine spills into a second column and the lane scrolls sideways only
+then.
 
 Both **engine** groups start folded behind a disclosure (`engine ▸`; click
 for `engine ▾`). The folded rows still exist — presets, MIDI and storage
@@ -271,10 +284,31 @@ reach them exactly as before; they are only out of sight. The open state is
 remembered per section in the storage key `engineOpen` (`{video, audio}`),
 panel furniture outside `DEFAULTS` like `tooltips`.
 
-Threshold is a plain slider. It carried *more* / *less* captions at its
-ends from round 3 until 2026-10-12, when John removed them: confusing for
-anyone who knows what a threshold is. Its direction lives in its tip, and
-the open question of showing it inverted as an *amount* stands.
+**Two control forms beyond the slider, both driven by the control table**
+(the handles round, 2026-10-12):
+
+- **amount** — an inverted view. `threshold` ran against "more" (lower
+  sorted more), so its def carries `invert: true` and the row is played
+  upside down: the pure helpers `toView` / `fromView` in `defs.js` map
+  `max + min − v` (for 0–1, amount = 1 − threshold), and the slider, the
+  typed value cell, the arrow keys and a MIDI CC all speak the view — a
+  controller turned up is more amount. Presets, storage, MIDI maps and
+  `DEFAULTS` keep `threshold` in the stored sense; the tip's key line
+  still reads `key: threshold`. Threshold carried *more* / *less* captions
+  at its ends until John removed them (confusing for anyone who knows what
+  a threshold is); the question that left open — show it as an amount —
+  is answered by this view.
+- **the drift pad** — one 2-D surface for `driftX` and `driftY`. A def
+  names its pad (`pad: 'drift'`) and `PADS.drift` names the x and y keys;
+  the panel builds one row where the first key sits. Push the point and
+  the trail slides that way, faster the further out; the cross marks
+  (0, 0), and **up on the pad is up on the picture**. Drag it, or focus it
+  and nudge with the arrow keys (shift ×10, each arrow on its own axis);
+  two small typed fields (x above y) take exact values; double-click the
+  name or the pad to restore both; each key keeps its own ⊙ MIDI learn.
+  Each key keeps its def, storage, preset slot and tip. In the column it
+  is a 72 px square; in the mixer it spans two lane rows (56 px, a 50 px
+  square), the two cells its two rows used to take.
 
 **Audio status line.** One muted line under the Audio header says what the
 tab you are looking at is putting through the body: *3 sources through the
@@ -293,8 +327,10 @@ a failure only stops the reporter.
 **Gated rows hide, they do not grey** (John, 2026-10-11: a control that
 waits on another switch should not be visible until that switch is on).
 Feedback off hides every feedback knob beneath the *feedback* switch, which
-stays as the group's header; flow at 0 hides the three flow-shape knobs;
-smear off hides tail, return, wobble and smear clear under the *smear*
+stays as the group's header, and the clear timings in the engine with
+them; flow at 0 hides the three flow-shape knobs in the engine (a
+demoted row can be hidden twice, by the fold and by its gate);
+smear off hides tail, level, wobble and smear clear under the *smear*
 switch; clear off hides the clear timings; a modal body hides comb damp.
 When a whole medium is off the section keeps its header and shows one
 italic line instead of its groups — *off — switch video or images on
@@ -603,8 +639,9 @@ right.
 3. Toggle params (`enabled`, the A/B) treat CC value ≥64 as on.
 
 Any class-compliant controller works. Suggested performance set (panel
-labels in brackets): threshold, `decay`, `driftY` (drift y), `passes` (sort
+labels in brackets): `threshold` (amount — the CC sweeps amount, so up is
+more), `decay` (trail), `driftY` (the drift pad's y axis), `passes` (sort
 passes). For audio: `audioMix` (mix), `audioSustain` (ring time),
-`audioBodyMix` (body amount) and `audioFbReturn` (return) — the two that
+`audioBodyMix` (body amount) and `audioFbReturn` (level) — the two that
 move the balance between the apparatus and the video — `audioFbDecay`
 (tail), `audioFbWobble` (wobble).

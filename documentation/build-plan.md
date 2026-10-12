@@ -162,7 +162,8 @@ balance are the open item below. The previous sound is exactly reachable at
   feed back into the effects themselves — refinements and possibly new
   layers will surface from designing the controls; log those as they
   appear rather than folding them silently into panel commits. The
-  CSS-scramble toggle above is the first candidate in that queue.
+  CSS-scramble toggle above is in that queue — fourth in the order John
+  accepted after round 5 (open item 6 below).
 
   **Who the user is (John, 2026-10-12): the stranger, not John.** The
   panel was built for John tuning a preset he could leave on a kiosk and
@@ -262,19 +263,53 @@ balance are the open item below. The previous sound is exactly reachable at
   default in code); the rail ~40 px with large targets. Suites (headless):
   panel 299/299, strip 52/52, text 35/35, audio 34/34 unchanged.
 
-  **Open items John holds (2026-10-11; (2) reinstated 2026-10-12):** (1)
-  the in-page first-run mark, the remaining half of the seam; (2) which
-  home is the default — after both are judged on real use; (3) threshold
-  shown inverted as an *amount*; (4) an intensity macro; (5) headline knobs
-  that ship at the rail (ring time, drive, tail); (6) the effects queue in
-  design-review.md (feedback blend, direct sort handles, source-following
-  audio body, performance ramp); (7) the comb body / gated exciter A/B;
-  **(8) the controls themselves** — John's round-4 note that the groups
-  were made easier to navigate but the controls were neither simplified
-  nor given more hold over the effect: each effect wants two or three handles named
-  for what they do (a first cut is in design-review.md round 4), the rest
-  demoted to engine, and the question of *which* controls a player needs
-  *when* re-asked; (9) the outside-the-box forms — a keyboard-summoned
+  **Round 5 — handles (2026-10-12).** John's call, over the other
+  candidates for the next step (the feedback blend, the source-following
+  audio body, an intensity macro): **handles first** — answer his round-4
+  note that the controls were made easier to navigate but not simplified
+  or given more hold, using the round-4 table in design-review.md. Four
+  commits, logged in design-review.md round 5: (1) `1acd69b` **threshold
+  reads as amount** — the row shows and plays 1 − threshold, through a def
+  flag (`invert: true`) and the pure `toView`/`fromView` helpers; slider,
+  typed field, arrows and MIDI speak amount, storage/presets/maps keep
+  `threshold`; (2) `8ae1306` **the drift pad** — `driftX`/`driftY` played as
+  one 2-D surface (`pad: 'drift'`, `PADS`), drag or arrows, up is up, two
+  typed fields and two ⊙, spanning two lane rows in the mixer; (3) `b7b1d34` **the
+  regroup and rename** — each effect column holds only its handles, named
+  for the result: sort = amount · flow · jitter · ribbons (`streak`,
+  promoted); feedback = feedback · trail (`decay`) · drift pad · follow
+  motion (`motionGate`); body = mix · body amount · ring time · drive;
+  smear = smear · tail · level (`audioFbReturn`) · wobble. Demoted to the
+  engines: the flow's shape (flow mode/scale/speed, still gated on flow),
+  the clear rhythm (clear min/max s, still gated on feedback) and body
+  type; the mixer's label column 88 → 98 px for *follow motion*; (4) the
+  docs (parameters.md, this file, design-review.md, CLAUDE.md). Storage
+  keys, `DEFAULTS`, presets and MIDI maps unchanged throughout.
+  Trade-offs: the flow's shape and the clear rhythm are a fold away
+  (recognition costs a click) so each column reads as three or four
+  handles named for what they do (minimalism; match with the real world);
+  amount puts the number in step with the direction at the cost of the
+  value cell diverging from the stored key (the tip's key line keeps it
+  honest); the pad is a control form the stranger has not met here, kept
+  legible by its cross, its two fields and per-axis learn. The effect
+  columns fit eight lane cells (sort 6, feedback 6, body 7, smear 5); the
+  engines are 8 and 9 rows, so an unfolded engine spills into a second
+  column and the lane scrolls sideways only then. Suites (headless):
+  panel 348/348 (299 before the round: 312 after amount, 335 after the
+  pad), strip 52/52, text 35/35.
+
+  **Open items John holds (2026-10-11; (2) reinstated 2026-10-12; revised
+  after round 5):** (1) the in-page first-run mark, the remaining half of
+  the seam; (2) which home is the default — after both are judged on real
+  use; (3) ~~threshold shown inverted as an *amount*~~ — done, round 5;
+  (4) an intensity macro; (5) headline knobs that ship at the rail (ring
+  time, drive, tail); (6) **the next layers, in the order John accepted
+  (2026-10-12): the feedback blend (M5) next, then the source-following
+  audio body (M8), then the performance ramp, then the CSS-scramble toggle
+  (which needs its feasibility read first)**; (7) the comb body / gated
+  exciter A/B; (8) the controls themselves — the handles half answered by
+  round 5; the question of *which* controls a player needs *when* rides
+  with (4) and (5); (9) the outside-the-box forms — a keyboard-summoned
   overlay that survives fullscreen, and handles on the media itself —
   logged, not scheduled.
 
