@@ -521,8 +521,9 @@ body:not(.midi-device) .midi { display: none; }
    900 px and twice as wide as tall); the side panel never does. The
    MIXER: the global block as a cluster at the left (A/B, the mediums, the
    presets, the prefs), then the four effect groups as columns — sort ·
-   feedback · body · smear — all in view at 1280 px with no sideways scroll;
-   an unfolded engine adds a column. In the strip at 28 px (the media query
+   feedback · body · smear — all in view from 1280 px with no sideways
+   scroll, each column spreading from 220 to 340 px as the width allows;
+   an unfolded engine adds a column. In the strip at rest (the media query
    below) it is the RAIL: one line with the A/B, the chips, the presets and
    the fold button. Same markup, same script — only placement. --- */
 :root[data-layout='mixer'] body { flex-direction: row; height: 100vh; }
@@ -530,7 +531,7 @@ body:not(.midi-device) .midi { display: none; }
 :root[data-layout='mixer'] #scroll {
   position: relative;
   display: grid;
-  grid-template-columns: 228px minmax(0, 1fr);
+  grid-template-columns: 260px minmax(0, 1fr);
   grid-template-rows: auto auto auto auto auto minmax(0, 1fr);
   column-gap: 16px;
   row-gap: 5px;
@@ -545,7 +546,7 @@ body:not(.midi-device) .midi { display: none; }
 :root[data-layout='mixer'] .ab-row { grid-column: 1; grid-row: 2; }
 :root[data-layout='mixer'] .chips { grid-column: 1; grid-row: 3; margin: 0; gap: 5px; }
 :root[data-layout='mixer'] #presets { grid-column: 1; grid-row: 4; margin: 0; align-self: start; gap: 4px; }
-:root[data-layout='mixer'] #prefs { grid-column: 1; grid-row: 5; margin: 0; display: flex; gap: 10px; align-items: center; }
+:root[data-layout='mixer'] #prefs { grid-column: 1; grid-row: 5; margin: 0; display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: center; min-width: 0; }
 :root[data-layout='mixer'] .midi { grid-column: 1; grid-row: 6; margin: 0; padding: 0; border: none; align-self: start; }
 :root[data-layout='mixer'] #controls { grid-column: 2; grid-row: 1 / -1; }
 :root[data-layout='mixer'] #persist-note,
@@ -554,26 +555,29 @@ body:not(.midi-device) .midi { display: none; }
 :root[data-layout='mixer'] .presets-head,
 :root[data-layout='mixer'] .midi .hint { display: none; }
 
-:root[data-layout='mixer'] h1 { font-size: 11px; margin: 0; }
-:root[data-layout='mixer'] .ab { min-height: 30px; padding: 4px 8px; border-radius: 4px; }
-:root[data-layout='mixer'] .ab .ab-state { font-size: 14px; }
-:root[data-layout='mixer'] .ab .ab-say { font-size: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-:root[data-layout='mixer'] .chip { gap: 2px; }
-:root[data-layout='mixer'] .chip-name { font-size: 9px; letter-spacing: 0.06em; }
-:root[data-layout='mixer'] .chip-toggle { height: 20px; font-size: 10px; }
-:root[data-layout='mixer'] .btn { padding: 4px 6px; font-size: 10px; }
-:root[data-layout='mixer'] .btn.slot { min-width: 24px; padding: 4px 2px; }
+:root[data-layout='mixer'] h1 { font-size: 12px; margin: 0; }
+:root[data-layout='mixer'] .ab { min-height: 34px; padding: 4px 8px; border-radius: 4px; }
+:root[data-layout='mixer'] .ab .ab-state { font-size: 15px; }
+:root[data-layout='mixer'] .ab .ab-say { font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+:root[data-layout='mixer'] .chip { gap: 3px; }
+:root[data-layout='mixer'] .chip-name { font-size: 10px; letter-spacing: 0.06em; }
+:root[data-layout='mixer'] .chip-toggle { height: 24px; font-size: 11px; }
+:root[data-layout='mixer'] .btn { padding: 5px 7px; font-size: 11px; }
+:root[data-layout='mixer'] .btn.slot { min-width: 28px; padding: 5px 2px; }
 
-/* The prefs as one compact line in the cluster. */
+/* The prefs as a compact line in the cluster, wrapping onto a second line
+   rather than running into the lane (the select once covered the lane's
+   first column: round 4b). */
 :root[data-layout='mixer'] #prefs .row,
-:root[data-layout='mixer'] body:not(.midi-device) #prefs .row { display: flex; gap: 5px; align-items: center; margin: 0; padding: 0; font-size: 10px; }
+:root[data-layout='mixer'] body:not(.midi-device) #prefs .row { display: flex; gap: 5px; align-items: center; min-width: 0; max-width: 100%; height: 24px; margin: 0; padding: 0; font-size: 11px; }
 :root[data-layout='mixer'] #prefs .row > .value,
 :root[data-layout='mixer'] #prefs .row > :nth-child(4) { display: none; }
 :root[data-layout='mixer'] #prefs .row > label { white-space: nowrap; }
-:root[data-layout='mixer'] #prefs .row select { font-size: 10px; padding: 1px 2px; }
+:root[data-layout='mixer'] #prefs .row select { min-width: 0; max-width: 100%; font-size: 11px; padding: 2px 3px; }
 :root[data-layout='mixer'] #prefs input[type='checkbox'] { width: 13px; height: 13px; }
-:root[data-layout='mixer'] .midi h2 { display: inline; margin: 0 6px 0 0; font-size: 9px; }
-:root[data-layout='mixer'] #midi-status { display: inline; font-size: 10px; }
+:root[data-layout='mixer'] body.midi-device .midi { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 6px; min-width: 0; }
+:root[data-layout='mixer'] .midi h2 { display: inline; margin: 0; font-size: 10px; }
+:root[data-layout='mixer'] #midi-status { display: inline; min-width: 0; overflow-wrap: anywhere; font-size: 11px; }
 
 /* The fold button: top-right corner of the mixer, end of the rail. */
 :root[data-layout='mixer'] .fold {
@@ -608,8 +612,8 @@ body:not(.midi-device) .midi { display: none; }
 :root[data-layout='mixer'] #controls {
   display: grid;
   grid-auto-flow: column;
-  grid-template-rows: repeat(8, 24px);
-  grid-auto-columns: 220px;
+  grid-template-rows: repeat(8, 28px);
+  grid-auto-columns: minmax(220px, 340px);
   column-gap: 14px;
   align-content: start;
   height: 100%;
@@ -634,32 +638,50 @@ body:not(.midi-device) .midi { display: none; }
 }
 
 :root[data-layout='mixer'] .section[data-section='audio'] { grid-row: 1 / 3; }
-:root[data-layout='mixer'] .section h2 { font-size: 10px; display: inline; }
-:root[data-layout='mixer'] .section .group-head.disclosure { display: inline; margin: 0 0 0 10px; font-size: 9px; }
+:root[data-layout='mixer'] .section h2 { font-size: 11px; display: inline; }
+:root[data-layout='mixer'] .section .group-head.disclosure { display: inline; margin: 0 0 0 10px; font-size: 10px; }
 :root[data-layout='mixer'] .section .group-head.disclosure[hidden] { display: none; }
 :root[data-layout='mixer'] .group.engine > .group-rows > .group-cap {
   display: block;
   grid-row: 1;
   align-self: end;
-  margin: 0 0 2px;
+  margin: 0 0 3px;
   color: #6c6c76;
-  font-size: 9px;
+  font-size: 10px;
   letter-spacing: 0.22em;
   text-transform: uppercase;
 }
-:root[data-layout='mixer'] .section .status { margin: 2px 0 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+:root[data-layout='mixer'] .section .status { margin: 3px 0 0; font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 :root[data-layout='mixer'] .section .off-note { margin: 2px 0 0; white-space: nowrap; }
-:root[data-layout='mixer'] .group-head { margin: 0 0 2px; align-self: end; grid-row: 1; }
+:root[data-layout='mixer'] .group-head { margin: 0 0 3px; align-self: end; grid-row: 1; font-size: 10px; }
 :root[data-layout='mixer'] .section + .group > .group-head { grid-row: 2; }
 :root[data-layout='mixer'] .section[data-section='audio'] + .group > .group-head { grid-row: 3; }
-:root[data-layout='mixer'] .row { margin: 0 -4px; padding: 0 4px; height: 24px; align-self: center; }
-:root[data-layout='mixer'] .row select { padding: 1px 3px; }
+:root[data-layout='mixer'] .row { margin: 0 -4px; padding: 0 4px; height: 28px; align-self: center; }
+:root[data-layout='mixer'] .row select { padding: 2px 4px; font-size: 12px; }
 
 /* Narrower cells than the column panel: the label column is the widest
-   label in the table at this size, and the value field shrinks. */
-:root[data-layout='mixer'] .row { grid-template-columns: 84px 1fr 46px 24px; gap: 6px; font-size: 11px; }
-:root[data-layout='mixer'] body:not(.midi-device) .row { grid-template-columns: 84px 1fr 46px; }
-:root[data-layout='mixer'] .row input.value.num { font-size: 10px; padding: 2px 3px; }
+   lane label at this size ("clear fade s"), and the value field holds the
+   widest value ("-0.0025", seven characters). The slider takes whatever
+   the column's spread adds. */
+:root[data-layout='mixer'] .row { grid-template-columns: 88px 1fr 58px 24px; gap: 6px; font-size: 12px; }
+:root[data-layout='mixer'] body:not(.midi-device) .row { grid-template-columns: 88px 1fr 58px; }
+:root[data-layout='mixer'] .row input.value.num { font-size: 12px; padding: 2px 2px; }
+:root[data-layout='mixer'] .ends { gap: 3px; }
+:root[data-layout='mixer'] .ends .cap { font-size: 8px; }
+
+/* A lane column at its narrowest (about 1280 px wide, the cluster taking
+   its 260) leaves the threshold slider no wider than its thumb once the
+   more · less captions are in: there the captions step aside (the row's
+   hover tip still says which way is which) and selects tighten. Each lane
+   row is its own size container; the prefs rows are not (they size from
+   their content). */
+:root[data-layout='mixer'] #controls .row { container-type: inline-size; }
+@container (max-width: 250px) {
+  :root[data-layout='mixer'] #controls .ends .cap { display: none; }
+  :root[data-layout='mixer'] #controls .row select { font-size: 11px; padding: 2px 1px; }
+}
+:root[data-layout='mixer'] .row input[type='range'] { height: 6px; border-radius: 3px; }
+:root[data-layout='mixer'] .row input[type='range']::-webkit-slider-thumb { width: 16px; height: 16px; }
 
 /* --- The rail: the same page in a frame too short for anything but one
    line (the strip at rest, 40 px). The A/B, the four chips and the presets

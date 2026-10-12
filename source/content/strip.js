@@ -32,7 +32,7 @@
 //     throws, the host is removed and the page is exactly as it was.
 //
 // Known cost, accepted: the rail covers the bottom 40 px of the page (and
-// the tab a small corner above it), the open mixer ~208 px, fixed footers
+// the tab a small corner above it), the open mixer 240 px, fixed footers
 // included. It does not push the page up — doing that means restyling the
 // page (John, 2026-10-12: keep covering). No hover-to-open, on purpose:
 // the rail sits where a player's scrubber often is and the pointer crosses
@@ -44,7 +44,7 @@
 const MSG = 'deflection:strip';
 export const RAIL_HEIGHT = 40;
 const TAB_HEIGHT = 20;
-export const STRIP_HEIGHT = 208;
+export const STRIP_HEIGHT = 240;
 const READY_TIMEOUT_MS = 8000;
 
 const HOST_CSS = [

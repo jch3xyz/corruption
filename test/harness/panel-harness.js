@@ -1462,8 +1462,8 @@ async function tier2() {
 
 // --- Tier 3: the other homes' layouts (design review M9) --------------------
 // The same shipped panel in the shapes the homes give it: the strip
-// unfolded (panel.html?layout=strip, 1280 × 208), the strip at rest (the
-// rail, 1280 × 28), the window dragged wide and tall (the layout follows
+// unfolded (panel.html?layout=strip, STRIP_HEIGHT tall) and at rest (the
+// rail, RAIL_HEIGHT tall), each at 1280–1920 px, the window dragged wide and tall (the layout follows
 // the shape, round 4b) and Chrome's side panel at its narrowest (~320 px).
 
 // Render every tip into the bubble exactly as the panel does (tip, hint,
@@ -1502,6 +1502,19 @@ function tipsThatClip(d) {
   return overflow;
 }
 
+// Every element in the mixer's left cluster (everything in #scroll but the
+// lane and the fold button) that has a box and reaches past the lane's left
+// edge. The containers alone are not enough: their content can overflow
+// them (the prefs select did).
+function clusterCrossing(d) {
+  const laneLeft = d.getElementById('controls').getBoundingClientRect().left;
+  const sel = '#scroll > :not(#controls):not(#strip-fold)';
+  return [...d.querySelectorAll(`${sel}, ${sel} *`)]
+    .filter((el) => el.getClientRects().length && el.getBoundingClientRect().width > 0)
+    .filter((el) => el.getBoundingClientRect().right > laneLeft + 0.5)
+    .map((el) => `${el.id || el.className || el.tagName} ${Math.round(el.getBoundingClientRect().right - laneLeft)}px`);
+}
+
 // Laptop to desktop: the strip is checked at each (John, 2026-10-12: 1280
 // is not a typical laptop).
 const WIDTHS = [1280, 1440, 1512, 1728, 1920];
@@ -1509,24 +1522,28 @@ const WIDTHS = [1280, 1440, 1512, 1728, 1920];
 async function tier3() {
   tier('tier 3 — the strip and side-panel layouts (M9)');
 
-  // -- the strip, unfolded: panel.html?layout=strip at 1280 × 208 --
-  {
-    const f = await bootFrame('./panel-frame.html?layout=strip', 1280, 208);
+  // -- the strip, unfolded: panel.html?layout=strip, STRIP_HEIGHT tall, at
+  // laptop-to-desktop widths. The layout checks run at every width; the
+  // behaviour checks (bubble, chip jump, engine, gates) once, at 1280. --
+  const sortWidth = {};
+  for (const width of WIDTHS) {
+    const first = width === WIDTHS[0];
+    const f = await bootFrame('./panel-frame.html?layout=strip', width, STRIP_HEIGHT);
     const w = f.contentWindow;
     const d = w.document;
     const q = (s) => d.querySelector(s);
     const rect = (el) => el.getBoundingClientRect();
     const vis = (el) => !!el && el.getClientRects().length > 0;
-    check('the frame really is 1280 × 208', w.innerWidth === 1280 && w.innerHeight === 208);
-    check('the strip’s frame (?layout=strip) is always the mixer', d.documentElement.dataset.layout === 'mixer');
+    check(`the frame really is ${width} × ${STRIP_HEIGHT}`, w.innerWidth === width && w.innerHeight === STRIP_HEIGHT);
+    check(`at ${width} px the strip’s frame (?layout=strip) is the mixer`, d.documentElement.dataset.layout === 'mixer');
     const heads = SECTIONS.map((s) => d.getElementById(`section-${s.id}`));
     const hr = heads.map(rect);
     check(
-      'the sections sit side by side: same top, each one right of the last',
+      `at ${width} px the sections sit side by side: same top, each one right of the last`,
       hr.every((r, i) => i === 0 || (r.left >= hr[i - 1].right && Math.abs(r.top - hr[0].top) < 2))
     );
     check(
-      'nothing overflows the strip: the page neither scrolls nor clips',
+      `at ${width} px nothing overflows the strip: the page neither scrolls nor clips`,
       d.documentElement.scrollWidth <= w.innerWidth &&
         d.documentElement.scrollHeight <= w.innerHeight &&
         q('#scroll').scrollWidth <= q('#scroll').clientWidth &&
@@ -1537,12 +1554,14 @@ async function tier3() {
     const groupHead = (sec, g) => q(`#controls .group[data-section="${sec}"][data-group="${g}"] .group-head`);
     // In the strip a folded engine's disclosure lives in the section header.
     const engineBtn = (sec) => q(`#section-${sec} .group-head.disclosure`);
+    if (first) {
+      check(
+        'a folded engine costs no column: its disclosure sits in the section header line, beside the title',
+        ['video', 'audio'].every((sec) => vis(engineBtn(sec)) && Math.abs(rect(engineBtn(sec)).top - rect(q(`#section-${sec} h2`)).top) < 6)
+      );
+    }
     check(
-      'a folded engine costs no column: its disclosure sits in the section header line, beside the title',
-      ['video', 'audio'].every((sec) => vis(engineBtn(sec)) && Math.abs(rect(engineBtn(sec)).top - rect(q(`#section-${sec} h2`)).top) < 6)
-    );
-    check(
-      'the four effect groups — sort · feedback · body · smear — are all in view with no sideways scroll',
+      `at ${width} px the four effect groups — sort · feedback · body · smear — are all in view with no sideways scroll`,
       c.scrollWidth <= c.clientWidth + 1 && c.scrollLeft === 0 &&
         [['video', 'sort'], ['video', 'feedback'], ['audio', 'body'], ['audio', 'smear']].every(([sec, g]) => {
           const r = rect(groupHead(sec, g));
@@ -1550,27 +1569,40 @@ async function tier3() {
         })
     );
     check(
-      'each effect group is its own column: feedback right of sort, smear right of body, body right of feedback',
+      `at ${width} px each effect group is its own column: feedback right of sort, body right of feedback, smear right of body`,
       rect(groupHead('video', 'feedback')).left > rect(groupHead('video', 'sort')).right &&
         rect(groupHead('audio', 'body')).left > rect(groupHead('video', 'feedback')).right &&
         rect(groupHead('audio', 'smear')).left > rect(groupHead('audio', 'body')).right
     );
     check(
-      'the lane never scrolls vertically, and every visible row fits its height (no row cut off)',
+      `at ${width} px the lane never scrolls vertically, and every visible row fits its height (no row cut off)`,
       c.scrollHeight <= c.clientHeight + 1 &&
         [...c.querySelectorAll('.section, .row, .group-head')].filter(vis).every((el) => rect(el).top >= cr.top - 1 && rect(el).bottom <= cr.bottom + 1)
     );
     check(
-      'the Audio header and its status line share the column top without colliding with the body caption',
+      `at ${width} px the Audio header and its status line share the column top without colliding with the body caption`,
       rect(groupHead('audio', 'body')).top >= rect(q('#section-audio')).bottom - 1
     );
     check(
-      'the global block is a cluster at the left: A/B, the mediums, the presets and the prefs, all in view',
+      `at ${width} px the global block is a cluster at the left: A/B, the mediums, the presets and the prefs, all in view`,
       ['#ab', '.chips', '#presets', '#prefs'].every((s) => {
         const r = rect(q(s));
         return r.width > 0 && r.right <= cr.left && r.top >= 0 && r.bottom <= w.innerHeight;
       }) && !!q('#panelHome') && rect(q('#panelHome')).width > 0 && q('.midi').getClientRects().length === 0
     );
+    // The guard the prefs overlap escaped (John's screenshot, 2026-10-12):
+    // not only the cluster's containers but everything inside them must
+    // stay left of the lane.
+    const crossing = clusterCrossing(d);
+    check(
+      `at ${width} px nothing in the cluster crosses into the lane (${crossing.join(', ') || 'nothing'})`,
+      crossing.length === 0
+    );
+    sortWidth[width] = rect(q('.row[data-key="threshold"]')).width;
+    if (!first) {
+      f.remove();
+      continue;
+    }
     const fold = q('#strip-fold');
     check(
       'the fold button shows in the strip’s top-right corner, offering to fold (▾)',
@@ -1626,6 +1658,26 @@ async function tier3() {
     fbToggle.checked = true;
     fbToggle.dispatchEvent(new w.Event('input', { bubbles: true }));
     await sleep(60);
+    f.remove();
+  }
+  check(
+    `the effect columns spread with the width: the sort column is wider at 1920 px than at 1280 (${WIDTHS.map((x) => Math.round(sortWidth[x])).join(' · ')} px)`,
+    sortWidth[1920] > sortWidth[1280] + 40 && WIDTHS.every((x, i) => i === 0 || sortWidth[x] >= sortWidth[WIDTHS[i - 1]] - 0.5)
+  );
+
+  // -- the same cluster with a MIDI controller: its line joins the cluster
+  // and must wrap inside it, like the prefs --
+  {
+    const f = await bootFrame('./panel-frame.html?layout=strip&midi=1', WIDTHS[0], STRIP_HEIGHT);
+    const d = f.contentWindow.document;
+    await sleep(120);
+    const midi = d.querySelector('.midi');
+    const mr = midi.getBoundingClientRect();
+    const crossing = clusterCrossing(d);
+    check(
+      `with a MIDI device the cluster shows its line, inside the strip, and nothing in it crosses into the lane (${crossing.join(', ') || 'nothing'})`,
+      d.body.classList.contains('midi-device') && mr.height > 0 && mr.bottom <= STRIP_HEIGHT + 0.5 && crossing.length === 0
+    );
     f.remove();
   }
 
