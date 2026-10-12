@@ -762,6 +762,98 @@ function tier0() {
     !same(run(angSteps(90, { flow: 1 })), flowed) && !same(run(angSteps(90, { flow: 1, facets: true })), faceted)
   );
 
+  // --- Where: the edges gate (round 8 part 3) ------------------------------
+  // Canvas rows 0–23 black, 24–63 a gentle grey ramp brightening downward
+  // (128 → 230, ~0.01 luma per row): one hard dark/bright edge across the
+  // frame between rows 23 and 24, a flat bright region below it, and the
+  // ramp runs against the sort, so ungated it all moves. Texel row = canvas
+  // row; present() flips, so readback row = H − 1 − canvas row.
+  const edgeSrc = src((x) => {
+    x.fillStyle = '#000';
+    x.fillRect(0, 0, W, H);
+    for (let y = 24; y < H; y++) {
+      const v = Math.round(128 + ((y - 24) * 102) / 39);
+      x.fillStyle = `rgb(${v},${v},${v})`;
+      x.fillRect(0, y, W, 1);
+    }
+  });
+  const edgeSteps = (g, { img = noisy, pass = true } = {}) => (p, b) => {
+    p.uploadFrame(b, img);
+    p.runReset(b);
+    if (!pass) return;
+    if (g) p.runEdgePass(b);
+    p.runSortPasses(b, 200, 0, 64, { edgeGate: g });
+  };
+  check(
+    'edges: gate 0 is inert — bit-identical to the sort without the option',
+    same(run(edgeSteps(0)), s1)
+  );
+  // The edge map itself, read straight from its texture (texel order).
+  const edgeMap = (() => {
+    const b = createBundle(gl, W, H, W, H);
+    try {
+      glc.pipeline.uploadFrame(b, edgeSrc);
+      glc.pipeline.runEdgePass(b);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, b.edge.fbo);
+      const px = new Uint8Array(W * H * 4);
+      gl.readPixels(0, 0, W, H, gl.RGBA, gl.UNSIGNED_BYTE, px);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+      return px;
+    } finally {
+      destroyBundle(gl, b);
+    }
+  })();
+  const edgeRow = (c) => {
+    let lo = 255;
+    let hi = 0;
+    for (let x = 0; x < W; x++) {
+      const v = edgeMap[(c * W + x) * 4];
+      lo = Math.min(lo, v);
+      hi = Math.max(hi, v);
+    }
+    return { lo, hi };
+  };
+  const flatRows = [...Array(H).keys()].filter((c) => c < 22 || c > 25);
+  const flatMax = Math.max(...flatRows.map((c) => edgeRow(c).hi));
+  check(
+    `edges: the map reads ~1 on the hard edge and ~0 on the flat areas (edge rows ${edgeRow(23).lo}/${edgeRow(24).lo} of 255, flat at most ${flatMax})`,
+    edgeRow(23).lo >= 230 && edgeRow(24).lo >= 230 && flatMax <= 26
+  );
+  const edgeIn = run(edgeSteps(0, { img: edgeSrc, pass: false }));
+  const rowsChanged = (px, canvasRows) =>
+    canvasRows.reduce((n, c) => {
+      const y = H - 1 - c;
+      for (let x = 0; x < W; x++) {
+        const i = (y * W + x) * 4;
+        if (px[i] !== edgeIn[i] || px[i + 1] !== edgeIn[i + 1] || px[i + 2] !== edgeIn[i + 2]) n++;
+      }
+      return n;
+    }, 0);
+  const farRows = [...Array(H).keys()].filter((c) => c < 22 || c > 25);
+  const bandRows2 = [23, 24];
+  const rampRows = [...Array(H).keys()].filter((c) => c > 25);
+  const eOpen = run(edgeSteps(0, { img: edgeSrc }));
+  const ePos = run(edgeSteps(0.5, { img: edgeSrc }));
+  const eNeg = run(edgeSteps(-0.5, { img: edgeSrc }));
+  check(
+    `edges +0.5: only outlines shred — no pixel far from the edge moves (${rowsChanged(ePos, farRows)} moved; ungated ${rowsChanged(eOpen, farRows)}), the edge band trades (${rowsChanged(ePos, bandRows2)})`,
+    rowsChanged(ePos, farRows) === 0 && rowsChanged(eOpen, farRows) > 500 && rowsChanged(ePos, bandRows2) > 0
+  );
+  check(
+    `edges −0.5: only flat regions tear — the ramp sorts (${rowsChanged(eNeg, rampRows)} moved) while the edge band holds (${rowsChanged(eNeg, bandRows2)} moved)`,
+    rowsChanged(eNeg, rampRows) > 500 && rowsChanged(eNeg, bandRows2) === 0
+  );
+  check(
+    'edges: a permutation at ±0.5, on the edge source and on noise',
+    globalKey(ePos) === globalKey(edgeIn) && globalKey(eNeg) === globalKey(edgeIn) &&
+      globalKey(run(edgeSteps(0.5))) === globalKey(unsorted) && globalKey(run(edgeSteps(-0.5))) === globalKey(unsorted)
+  );
+  check(
+    'edges: deterministic at ±0.5',
+    same(ePos, run(edgeSteps(0.5, { img: edgeSrc }))) && same(eNeg, run(edgeSteps(-0.5, { img: edgeSrc }))) &&
+      same(run(edgeSteps(0.3)), run(edgeSteps(0.3)))
+  );
+
 }
 
 // --- The boot guard (round 8) ------------------------------------------------

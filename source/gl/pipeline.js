@@ -12,6 +12,7 @@ import { FRAG_PASSTHROUGH } from './shaders/passthrough.js';
 import { FRAG_COMPOSITE } from './shaders/composite.js';
 import { FRAG_SORT } from './shaders/sort.js';
 import { FRAG_FIELD } from './shaders/field.js';
+import { FRAG_EDGE } from './shaders/edge.js';
 
 export function createPipeline(gl) {
   // Fullscreen triangle.
@@ -56,7 +57,10 @@ export function createPipeline(gl) {
     'uSeed',
     'uKey',
     'uAngle',
+    'uEdge',
+    'uEdgeGate',
   ]);
+  const edge = buildProgram(gl, VERT_FULLSCREEN, FRAG_EDGE, ['uFrame', 'uTexel']);
   const field = buildProgram(gl, VERT_FULLSCREEN, FRAG_FIELD, [
     'uProcSize',
     'uScale',
@@ -181,6 +185,21 @@ export function createPipeline(gl) {
       drawQuad();
     },
 
+    // The edge map for the edges gate (round 8 part 3): Sobel on the CLEAN
+    // uploaded frame (frameTex — the raw upload in both the reset and the
+    // composite paths), never on the sorted buffer. Call once per frame or
+    // still, after the upload, whenever edgeGate is not 0.
+    runEdgePass(bundle) {
+      gl.bindFramebuffer(gl.FRAMEBUFFER, bundle.edge.fbo);
+      gl.viewport(0, 0, bundle.w, bundle.h);
+      gl.useProgram(edge.handle);
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, bundle.frameTex);
+      gl.uniform1i(edge.uniforms.uFrame, 0);
+      gl.uniform2f(edge.uniforms.uTexel, 1 / bundle.w, 1 / bundle.h);
+      drawQuad();
+    },
+
     runSortPasses(bundle, passes, threshold, streak, opts = {}) {
       if (passes <= 0) return;
       let top = 1;
@@ -205,6 +224,13 @@ export function createPipeline(gl) {
       gl.uniform1i(sort.uniforms.uField, 1);
       gl.activeTexture(gl.TEXTURE1);
       gl.bindTexture(gl.TEXTURE_2D, bundle.field.tex);
+      // The edges gate (round 8 part 3): > 0 both members (and the midpoint)
+      // must be at least this edgy, < 0 at most 1 + it; 0 = off. The edge
+      // map is likewise always bound and only sampled when the gate is on.
+      gl.uniform1f(sort.uniforms.uEdgeGate, opts.edgeGate || 0);
+      gl.uniform1i(sort.uniforms.uEdge, 2);
+      gl.activeTexture(gl.TEXTURE2);
+      gl.bindTexture(gl.TEXTURE_2D, bundle.edge.tex);
       gl.activeTexture(gl.TEXTURE0);
       for (let i = 0; i < passes; i++) {
         const [stride, parity] = schedule[i % schedule.length];
@@ -290,8 +316,22 @@ export function createBundle(gl, srcW, srcH, w, h) {
     );
     return { tex, fbo };
   })();
+  // The edge map (round 8 part 3): one R8 texel per accumulator texel, the
+  // clean frame's Sobel magnitude. Rendered only while the edges gate is on.
+  const edge = (() => {
+    const tex = createTex(gl, gl.R8, w, h);
+    const fbo = target();
+    gl.framebufferTexture2D(
+      gl.FRAMEBUFFER,
+      gl.COLOR_ATTACHMENT0,
+      gl.TEXTURE_2D,
+      tex,
+      0
+    );
+    return { tex, fbo };
+  })();
   gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-  return { srcW, srcH, w, h, frameTex, accum, prev, field: fieldT, fieldW, fieldH, read: 0 };
+  return { srcW, srcH, w, h, frameTex, accum, prev, field: fieldT, fieldW, fieldH, edge, read: 0 };
 }
 
 export function destroyBundle(gl, bundle) {
@@ -304,6 +344,8 @@ export function destroyBundle(gl, bundle) {
   gl.deleteFramebuffer(bundle.prev.fbo);
   gl.deleteTexture(bundle.field.tex);
   gl.deleteFramebuffer(bundle.field.fbo);
+  gl.deleteTexture(bundle.edge.tex);
+  gl.deleteFramebuffer(bundle.edge.fbo);
 }
 
 function createTex(gl, internalFormat, w, h) {

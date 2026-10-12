@@ -68,6 +68,18 @@
 // Sense: v points AWAY from where the higher key goes (it seeks the smaller
 // projection), and texel y grows toward the video's bottom, so a growing
 // angle turns the climb clockwise on screen: 0 up, 90 right, 180 down.
+//
+// The where gates (round 8 part 3, John 2026-10-12) — each a condition BOTH
+// members must meet, computed identically by both, so every refusal stays
+// symmetric and every pass a permutation; they stack with the barrier and
+// the motion gate, and each is exactly inert at 0:
+//
+// uEdgeGate — the edges gate. uEdge holds the CLEAN frame's Sobel
+// magnitude (edge.js; never the sorted buffer, which would measure our own
+// damage), one texel per working texel. g > 0: a pair trades only where
+// both members (and, for strides > 1, the span midpoint) read at least g —
+// outlines shred, fills hold. g < 0: only where all read at most 1 + g —
+// flat regions tear, outlines hold. Never sampled at 0.
 import { GLSL_LUMA } from './common.js';
 
 export const FRAG_SORT = `#version 300 es
@@ -85,6 +97,8 @@ uniform float uMotionGate;
 uniform int uSeed;
 uniform int uKey;
 uniform float uAngle;
+uniform sampler2D uEdge;
+uniform float uEdgeGate;
 in vec2 vUV;
 out vec4 outColor;
 ${GLSL_LUMA}
@@ -139,6 +153,11 @@ ivec2 quantizeDir(float a) {
   int k = int(round(a / SECTOR + uSectorJitter));
   return DIRS[((k % 16) + 16) % 16];
 }
+// The edges gate for one texel (only called while uEdgeGate != 0).
+bool edgeOK(ivec2 c) {
+  float e = texelFetch(uEdge, c, 0).r;
+  return uEdgeGate > 0.0 ? e >= uEdgeGate : e <= 1.0 + uEdgeGate;
+}
 // The field's direction, turned by the angle before it is quantized.
 ivec2 fieldDir(ivec2 cell) {
   vec2 d = texelFetch(uField, cell, 0).rg * 2.0 - 1.0;
@@ -188,6 +207,13 @@ void main() {
     return;
   }
 
+  // Edges gate: both members must sit on the gate's side of the clean
+  // frame's edge map.
+  if (uEdgeGate != 0.0 && (!edgeOK(p) || !edgeOK(q))) {
+    outColor = self;
+    return;
+  }
+
   // Long strides could teleport pixels across a dark gap; checking the
   // span midpoint keeps barriers honest at negligible cost. The motion
   // gate rides the same check so a span can't sort across still material.
@@ -200,6 +226,10 @@ void main() {
       return;
     }
     if (uMotionGate > 0.0 && mid.a < uMotionGate) {
+      outColor = self;
+      return;
+    }
+    if (uEdgeGate != 0.0 && !edgeOK(m)) {
       outColor = self;
       return;
     }

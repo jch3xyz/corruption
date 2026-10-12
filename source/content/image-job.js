@@ -131,6 +131,9 @@ export class ImageJob {
     const p = glc.pipeline;
     p.uploadFrame(b, src);
     p.runReset(b);
+    // The edges gate reads the clean frame's edge map (round 8 part 3):
+    // render it only while the gate is on.
+    if ((params.edgeGate ?? 0) !== 0) p.runEdgePass(b);
     const flowAmount = params.flowAmount ?? 0;
     if (flowAmount > 0) {
       p.runFieldPass(b, {
