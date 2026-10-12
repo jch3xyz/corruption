@@ -292,3 +292,200 @@ All four closings converged on the same three things, in their own words:
    are the release blockers), re-run the panel harness after each, and
    re-run this heuristic pass on the revised panel.
 3. Log verdicts here as findings close, with the trade-off chosen.
+
+---
+
+# Round 2: room evidence merged (2026-10-12)
+
+John's observations from two art crawls and from his own use, including an
+unplanned live use during a lecture performance, merged against round 1.
+Room evidence outranks the heuristics; where it confirms a finding the
+severity stands or rises, where it adds something the reviewers could not
+see it is a new item, and where it answers a question the review had
+deferred it is logged as a decision.
+
+## Who the user turned out to be
+
+- The people who **played** were synth-literate: music or video
+  synthesizer users. Not technical people, but people who know what a
+  wet/dry, a mix, a decay and a threshold do. Design language follows from
+  this: **instrument conventions are allowed, programmer vocabulary is
+  not.** This resolves round-1 finding 6 (vocabulary) toward synth terms,
+  not toward plain English.
+- The people who resonated with the **concept** read it as activism. That
+  argues for portability and usability over everything: the extension as
+  the release form, installable by anyone, and a first-run seam so they
+  know what they have.
+- The piece is also **a live performance tool with zero setup**: John
+  played it through an Alan Watts video, subtle and intelligible at first,
+  rising to fully washed out by the end. Smooth, continuous control over
+  intensity across minutes is a real use, not a hypothetical one.
+
+## The merged list, ranked
+
+### M1. The on/off toggle is the piece's key gesture and it is a tiny checkbox
+
+**Room evidence.** "The ability to instantly toggle it off, see the
+original video, and toggle it back is what makes the piece click for
+people." `enabled` is the most important control and it is extremely
+small and hard to reach.
+**Severity 4.** New; the reviewers rated `enabled` only for feedback, not
+for size. The A/B is how strangers understand the work at all.
+**Direction.** One large, unmistakable A/B control at the top of the
+panel, a hold-to-bypass gesture as well as a latch, and the same control
+reachable outside the panel (badge, shortcut shown on screen; see M3).
+
+### M2. The preset system allowed the worst-case slip, and it happened
+
+**Room evidence.** Settings drifted somewhere ugly over the night; John
+went to restore defaults and pressed "set defaults". Round-1 finding 2,
+confirmed in the room at the worst moment.
+**Severity 4.**
+**Direction.** Original is immutable and always one click away. Named
+preset slots replace the single hidden snapshot. Every restore flashes
+and has an undo. Save is visually secondary and reversible.
+
+### M3. The panel does not say what it is, what it is for, or what to do
+
+**Room evidence.** First glance reads as visual clutter. Round-1 findings 1
+and 5 confirmed.
+**Severity 4.**
+**Direction.** A title line that names the piece and the gesture ("bend
+the page, A/B to compare"), sections with far fewer rows in view, and the
+seam outside the panel (badge, one-time mark) so the panel is found at
+all.
+
+### M4. Video mixes two effects and their setup into one list, and the visible effect has the least control
+
+**Room evidence.** Two effects are going on: the pixel sort (the visible
+one) and the temporal feedback. Their controls are interleaved with
+engine setup (sort passes, streak, reset min/max, max res, max videos).
+The sort offers density, speed and type, which are not what people reach
+for; people want direct control over the distortion. The most responsive
+controls are `threshold` and `motion gate` because they act as wet/dry.
+There is a feedback toggle but no toggle for the whole video effect, unlike
+text and audio.
+**Severity 3**, confirmed and sharpened from round-1 findings 3, 4 and 5.
+**Direction.** Video becomes three groups: **Sort** (front: threshold as
+the wet/dry it already is, motion gate, then flow), **Feedback** (its own
+toggle, decay, drift, reset), and **Engine** (collapsed: passes, streak,
+res, max videos). Add a whole-video toggle beside the text and audio ones.
+**Effects queue (not UI).** More direct handles on the sort itself: what a
+"distortion amount" knob would be is an effects question, logged below.
+
+### M5. Feedback reads as subtle because it only survives where the frame goes dark
+
+**Room evidence.** People reach for feedback expecting something drastic
+and see little; it mostly smooths harshness. John would not mind it being
+intense and does not remember the original intent.
+**What the code says.** The composite keeps history only where
+`history × decay` is brighter than the incoming frame (how-it-works 2.4),
+by design: it was built to persist damage the way a corrupted codec
+reference frame does, clearing at keyframes (proposal, "Temporal
+feedback"). So it is invisible over bright, moving footage and dramatic
+only over dark regions, which is what "requires transparent sections"
+describes.
+**Severity 3**, an effects finding surfaced by the UI work, exactly the
+feedback loop build-plan predicted.
+**Effects queue.** Give feedback a blend the player can push: a mix amount
+that is not brighter-wins (additive, screen, or a straight crossfade with
+history), so intensity is a knob rather than a property of the footage.
+The codec-faithful brighter-wins mode stays as one setting.
+
+### M6. Image feedback is removed
+
+**Room evidence.** "Basically pointless, I always have it off."
+**Decision (John, 2026-10-12): remove `feedbackImage`.** Images keep
+straight sorted stills. Remove the param, its row, its harness checks and
+its documentation in one commit; the dead code path in image-job.js goes
+with it. Image fps and anim cap go with it if nothing else uses them.
+
+### M7. Text scramble needs a fast, obvious toggle
+
+**Room evidence.** People like it, and they need to switch it off to read
+and navigate, then back on. Round-1 finding 5 (below the fold) confirmed.
+**Severity 3.**
+**Direction.** The four medium toggles (video, images, text, audio) in a
+row at the top under the A/B, each also a shortcut.
+
+### M8. Audio has the same mixing problem, and sounds the same all night
+
+**Room evidence.** An electronic musician read some of the audio knobs
+intuitively, but effects and setup are interleaved as in video. Audio is
+John's favourite part and still offers little control: it is a resonator
+and a delay by design, and the result is one ambient sound regardless of
+the video. The only way to make it differ is to let the direct signal back
+in, which defeats the point once it becomes intelligible. John uses only
+the modal body and the continuous exciter; the gated exciter "sounds like
+distortion"; he does not remember the comb.
+**Severity 3**, confirmed from round-1 findings 6 and 7, plus the
+coherence-versus-specificity tension build-plan already names in the
+audio A/B.
+**Direction (UI).** Audio becomes **Body** (front: body mix as the
+identity dial, sustain, drive), **Smear** (its own toggle, tail, return,
+wobble), **Engine** (collapsed: taps, clears, exciter, comb damp). A
+status line saying what is tapped (round-1 finding 7).
+**Effects queue.** The body is fixed, so every source excites the same
+chord. For it to sound different per video without re-admitting the direct
+signal, something in the apparatus has to follow the source: the body's
+tuning tracking the source's dominant pitch, the exciter's drive following
+the source envelope more strongly, or a small set of bodies the player
+chooses between. This is the A/B's successor question.
+**Pending A/B, John's call:** comb body and gated exciter are candidates
+for removal, but on a deliberate listen, not on memory of one night.
+
+### M9. The panel is a separate window, and vertical
+
+**Room evidence.** It is weird that the panel opens as another browser
+window; is that how extensions work? A horizontal strip under the browser
+window might be more intuitive than a vertical column beside it.
+**What the code says.** An extension's UI is web pages, and Chrome gives
+them several homes: an action popup (closes on blur, so useless as an
+instrument), a separate window (what ships; chosen because Web MIDI
+permission is per-origin and persists there), a **side panel** (docked
+inside the browser window, Chrome 114+, same origin so MIDI persists too),
+or an overlay the content script injects into the page itself.
+**Severity 2** for the window itself; the layout question is bigger.
+**Direction.** Two candidates to prototype: a side panel (docked, vertical,
+no window management), and an in-page bottom strip laid out horizontally
+like a mixer, which is the synth-user's expectation and the only way to
+get "underneath the video". The strip has costs: it lives inside the page,
+so fullscreen and page CSS can fight it. Prototype both against the same
+tasks.
+
+### M10. A body-tracking control surface
+
+**Room evidence.** One visitor suggested MediaPipe: no knobs, people just
+move. John's read: it trades understandability and control for novelty,
+and if the user cannot do the specific thing they want, it is not an
+instrument.
+**Logged, not scheduled.** If it comes, it comes as another controller
+beside MIDI, mapping pose to the same macros, never as the only surface.
+
+## Findings from round 1 the room did not touch
+
+Findings 8 (hidden gestures, slider double-click resets), 9 (greyed rows
+without reason), 10 (⊙ on every row with no device) and 11 (nothing says
+settings persist) stand at severity 2 and ride along with the
+restructure.
+
+## The effects queue (surfaced by the UI work)
+
+1. A feedback blend the player can push (M5).
+2. More direct handles on the sort's distortion (M4).
+3. An audio apparatus that follows the source without re-admitting it
+   (M8).
+4. A performance ramp: one intensity macro that moves smoothly over
+   seconds to minutes, for the Alan Watts case.
+
+## Order of work
+
+1. **M6**, image feedback removal: small, decided, clears a section.
+2. **M1 + M2 + M3 + M7** together: the top of the panel becomes the A/B,
+   the four medium toggles, and a sane preset row. This is one redesign of
+   the global block and resolves four severity-4/3 items.
+3. **M4 + M8**: regroup Video and Audio into effect / effect / engine.
+4. **M9**: prototype side panel vs bottom strip on the regrouped controls.
+5. Effects queue items as John picks them.
+6. Re-run the heuristic pass on the result; next room test on the fixed
+   task list.

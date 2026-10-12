@@ -158,7 +158,16 @@ balance are the open item below. The previous sound is exactly reachable at
   from two art crawls, which go into that round as evidence that outranks
   the heuristics; (3) merge both into one ranked list, fix the painful
   items first, re-run the heuristic pass on the revised panel. The panel
-  harness stays the regression net throughout.
+  harness stays the regression net throughout. **Rounds 1 and 2 are done
+  (2026-10-12)** and live in `design-review.md` with the order of work.
+  Decisions taken there: **`feedbackImage` is removed** (John: pointless,
+  always off); the user avatar is synth-literate, so instrument vocabulary
+  is the target language; the four medium toggles and a large A/B get the
+  top of the panel; Video and Audio each regroup into effect / effect /
+  engine; a whole-video toggle is added. The feedback composite's
+  brighter-wins rule is now an open effects question (M5), as is a
+  source-following audio apparatus (M8). Comb body and gated exciter are
+  removal candidates pending a deliberate A/B, John's call.
 
 For a full technical description of both pipelines — the GL sort/composite
 path and the resonant-body audio path, with the reasoning behind each —
