@@ -14,7 +14,7 @@
 // section). Text is an on/off effect with no knobs — its slider went with its
 // section (John, 2026-10-11) — so the sections are Video and Audio.
 
-import { DEFAULTS } from '../content/params.js';
+import { DEFAULTS, FEEDBACK_BLENDS } from '../content/params.js';
 
 export const SECTIONS = [
   {
@@ -48,7 +48,7 @@ export const GROUPS = [
     id: 'feedback',
     section: 'video',
     title: 'feedback',
-    tip: 'The trail: each frame laid over the last, so damage builds, drifts and fades. Its switch, then how long it lingers, which way it slides, and whether the sort follows motion. Video only.',
+    tip: 'The trail: each frame laid over the last, so damage builds, drifts and fades. Its switch, then how long it lingers, which way it slides, whether the sort follows motion, and how the trail meets the new frame. Video only.',
   },
   {
     id: 'engine',
@@ -203,6 +203,25 @@ export const DEFS = [
     section: 'video',
     group: 'feedback',
     tip: 'How closely the sort follows motion. 0 = the whole picture sorts; 1 = only what moves. Pixels trade only where the motion trail clears this, so action smears and stillness heals. Reads the feedback trail.',
+  },
+  {
+    key: 'feedbackBlend',
+    label: 'blend',
+    type: 'select',
+    options: FEEDBACK_BLENDS,
+    section: 'video',
+    group: 'feedback',
+    tip: 'How the trail meets the new frame. brighter = only where it outshines the frame (hidden over bright motion); mix = a crossfade; screen = it lightens the frame; add = it piles on and burns out. Video only.',
+  },
+  {
+    key: 'feedbackMix',
+    label: 'blend amount',
+    min: 0,
+    max: 1,
+    step: 0.01,
+    section: 'video',
+    group: 'feedback',
+    tip: 'How much of the trail survives against the new frame. 0 = every frame fresh; 1 = the full trail. Video only.',
   },
 
   // --- Video · engine: setup, the shape of the flow, the clear rhythm ---

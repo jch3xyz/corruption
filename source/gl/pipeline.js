@@ -39,6 +39,8 @@ export function createPipeline(gl) {
     'uDrift',
     'uDecay',
     'uThreshold',
+    'uBlend',
+    'uMix',
   ]);
   const sort = buildProgram(gl, VERT_FULLSCREEN, FRAG_SORT, [
     'uTex',
@@ -131,7 +133,10 @@ export function createPipeline(gl) {
     // accumulator (the proposal's shader), motion trail written to alpha
     // against the clean previous frame. The prev snapshot happens AFTER
     // the draw so the composite always sees the frame before this one.
-    runComposite(bundle, { driftX, driftY, decay, threshold }) {
+    // blend: 0 brighter · 1 mix · 2 screen · 3 add (FEEDBACK_BLENDS order);
+    // mix: how much of the trail survives. The defaults (0, 1) are the
+    // original brighter-wins composite, bit for bit.
+    runComposite(bundle, { driftX, driftY, decay, threshold, blend = 0, mix = 1 }) {
       const write = bindWrite(bundle);
       gl.useProgram(composite.handle);
       gl.activeTexture(gl.TEXTURE0);
@@ -146,6 +151,8 @@ export function createPipeline(gl) {
       gl.uniform2f(composite.uniforms.uDrift, driftX, driftY);
       gl.uniform1f(composite.uniforms.uDecay, decay);
       gl.uniform1f(composite.uniforms.uThreshold, threshold);
+      gl.uniform1i(composite.uniforms.uBlend, blend | 0);
+      gl.uniform1f(composite.uniforms.uMix, mix);
       drawQuad();
       bundle.read = write;
       gl.activeTexture(gl.TEXTURE0);

@@ -8,6 +8,7 @@ import { Overlay, objectFitRect } from './overlay.js';
 import { acquireGL } from '../gl/context.js';
 import { createBundle, destroyBundle } from '../gl/pipeline.js';
 import { FrameGovernor } from './metrics.js';
+import { FEEDBACK_BLENDS } from './params.js';
 
 // Detached CORS mirror for tainted sources — the video sibling of image
 // route 2. A cross-origin src without `crossorigin` fetches in no-cors mode
@@ -312,6 +313,8 @@ export class VideoJob {
         driftY: params.driftY ?? 0,
         decay: params.decay ?? 0.96,
         threshold: params.threshold ?? 0.55,
+        blend: Math.max(0, FEEDBACK_BLENDS.indexOf(params.feedbackBlend)),
+        mix: params.feedbackMix ?? 1,
       });
     }
     const flowAmount = params.flowAmount ?? 0;

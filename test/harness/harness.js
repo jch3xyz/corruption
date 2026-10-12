@@ -281,6 +281,157 @@ function tier0() {
     atA(wiped) < 10
   );
 
+  // The feedback blend (design review M5): how the decayed history meets
+  // the incoming frame — 0 brighter (max, the resting rule), 1 mix (a
+  // crossfade with history), 2 screen, 3 add — and how much of it survives.
+  // These read the accumulator itself as float RGBA, alpha included, so the
+  // values are the composite's own (RGBA16F) rather than the presented
+  // canvas. Inputs are read back the same way (a reset is an exact copy of
+  // the frame), so CPU expectations see exactly what the shader saw.
+  const runAccum = (steps) => {
+    const b = createBundle(gl, W, H, W, H);
+    try {
+      steps(glc.pipeline, b);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, b.accum[b.read].fbo);
+      const px = new Float32Array(W * H * 4);
+      gl.readPixels(0, 0, W, H, gl.RGBA, gl.FLOAT, px);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+      return px;
+    } finally {
+      destroyBundle(gl, b);
+    }
+  };
+  let s2seed = 19;
+  const rnd2 = () => (s2seed = (s2seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff;
+  const noisy2 = src((x) => {
+    for (let j = 0; j < H; j++) {
+      for (let i = 0; i < W; i++) {
+        x.fillStyle = `rgb(${(rnd2() * 256) | 0},${(rnd2() * 256) | 0},${(rnd2() * 256) | 0})`;
+        x.fillRect(i, j, 1, 1);
+      }
+    }
+  });
+  const flat = (v) => src((x) => {
+    x.fillStyle = `rgb(${v},${v},${v})`;
+    x.fillRect(0, 0, W, H);
+  });
+  const grey = flat(128);
+  const TOL = 1 / 255;
+  const FB = { driftX: 0, driftY: 0, decay: 0.81, threshold: 0.05 };
+  const asFrame = (img) => runAccum((p, b) => {
+    p.uploadFrame(b, img);
+    p.runReset(b);
+  });
+  // One composite of `inc` over a history that is exactly `hist`.
+  const blendOnce = (hist, inc, opts) => runAccum((p, b) => {
+    p.uploadFrame(b, hist);
+    p.runReset(b);
+    p.uploadFrame(b, inc);
+    p.runComposite(b, { ...FB, ...opts });
+  });
+  const lumaOf = (r, g2, b2) => 0.2126 * r + 0.7152 * g2 + 0.0722 * b2;
+  const histPx = asFrame(noisy);
+  const incPx = asFrame(noisy2);
+  const bitEqual = (a, b2) => a.length === b2.length && a.every((v, i) => Object.is(v, b2[i]));
+
+  // (1) Bit-identity: the resting state is the old brighter-wins composite.
+  const restDefault = blendOnce(noisy, noisy2, {});
+  const restExplicit = blendOnce(noisy, noisy2, { blend: 0, mix: 1 });
+  let restErr = 0;
+  let restSkipped = 0;
+  for (let i = 0; i < restDefault.length; i += 4) {
+    const kept = [0, 1, 2].map((c) => Math.max(histPx[i + c] * FB.decay, incPx[i + c]));
+    const l = lumaOf(...kept);
+    if (Math.abs(l - FB.threshold) < 0.002) {
+      restSkipped++;
+      continue;
+    }
+    const pass = l >= FB.threshold;
+    for (let c = 0; c < 3; c++) {
+      const want = pass ? kept[c] : incPx[i + c];
+      restErr = Math.max(restErr, Math.abs(restDefault[i + c] - want));
+    }
+  }
+  check(
+    `pipeline: feedback blend at rest (no options) is bit-identical to brighter at amount 1`,
+    bitEqual(restDefault, restExplicit)
+  );
+  check(
+    `pipeline: brighter at amount 1 reproduces max(history·decay, incoming) under the dark barrier (max error ${(restErr * 255).toFixed(3)}/255, ${restSkipped} px at the threshold edge skipped)`,
+    restErr <= TOL && incPx.some((v) => v > 0)
+  );
+
+  // (2) Amount 0 is a wire: every rule hands back the incoming frame.
+  const wireErr = [0, 1, 2, 3].map((blend) => {
+    const out = blendOnce(noisy, noisy2, { blend, mix: 0 });
+    let e = 0;
+    for (let i = 0; i < out.length; i += 4) {
+      for (let c = 0; c < 3; c++) e = Math.max(e, Math.abs(out[i + c] - incPx[i + c]));
+    }
+    return e;
+  });
+  check(
+    `pipeline: feedback blend amount 0 is a wire in every rule (max error ${wireErr.map((e) => (e * 255).toFixed(2)).join(' / ')} /255: brighter / mix / screen / add)`,
+    wireErr.every((e) => e <= TOL)
+  );
+
+  // (3) Ordering on mid-grey over mid-grey: add ≥ screen ≥ brighter ≥ mix at
+  // 0.5, each a real step (so a blend uniform that never arrived fails),
+  // and each on its formula.
+  const gv = asFrame(grey)[0];
+  const gd = gv * FB.decay;
+  const at = (opts) => blendOnce(grey, grey, opts);
+  const centre = ((H >> 1) * W + (W >> 1)) * 4;
+  const got = {
+    add: at({ blend: 3, mix: 1 }),
+    screen: at({ blend: 2, mix: 1 }),
+    brighter: at({ blend: 0, mix: 1 }),
+    mix: at({ blend: 1, mix: 0.5 }),
+  };
+  const want = {
+    add: Math.min(1, gv + gd),
+    screen: 1 - (1 - gv) * (1 - gd),
+    brighter: Math.max(gv, gd),
+    mix: gv + (gd - gv) * 0.5,
+  };
+  const order = ['add', 'screen', 'brighter', 'mix'];
+  const onFormula = order.every((k) => [0, 1, 2].every((c) => Math.abs(got[k][centre + c] - want[k]) <= TOL));
+  const stepped = [0, 1, 2].every((c) =>
+    order.every((k, i) => i === 0 || got[order[i - 1]][centre + c] > got[k][centre + c] + TOL)
+  );
+  check(
+    `pipeline: on mid-grey, add ≥ screen ≥ brighter ≥ mix at 0.5, each on its formula (${order.map((k) => `${k} ${(got[k][centre] * 255).toFixed(1)}`).join(', ')})`,
+    onFormula && stepped
+  );
+
+  // (4) The alpha motion trail never reads the blend: the same alpha in
+  // every rule at every amount, through a run of composites with motion.
+  const trailRun = (opts) => runAccum((p, b) => {
+    p.uploadFrame(b, noisy);
+    p.runReset(b);
+    for (let i = 0; i < 4; i++) p.runComposite(b, { ...FB, ...opts });
+    p.uploadFrame(b, f2);
+    p.runComposite(b, { ...FB, ...opts });
+  });
+  const alphaOf = (px) => px.filter((_, i) => i % 4 === 3);
+  const refAlpha = alphaOf(trailRun({}));
+  const spread = Math.max(...refAlpha) - Math.min(...refAlpha);
+  const alphaSame = [0, 1, 2, 3].every((blend) =>
+    [1, 0.35, 0].every((mix) => bitEqual(alphaOf(trailRun({ blend, mix })), refAlpha))
+  );
+  check(
+    `pipeline: the motion trail (alpha) is identical in every blend rule at every amount (trail spread ${spread.toFixed(2)})`,
+    alphaSame && spread > 0.2
+  );
+
+  // (5) Determinism: same inputs, same output, in the new rules too.
+  check(
+    'pipeline: feedback blend is deterministic (screen at 0.6, add at 1, mix at 0.3)',
+    [{ blend: 2, mix: 0.6 }, { blend: 3, mix: 1 }, { blend: 1, mix: 0.3 }].every((o) =>
+      bitEqual(trailRun(o), trailRun(o))
+    )
+  );
+
   // The flow field: sorting along curl-noise streamlines. Time is a fixed
   // uniform here, so every render is exactly reproducible.
   const flowSteps = (amount, time, facets = false, seed = 7) => (p, b) => {

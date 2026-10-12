@@ -32,6 +32,12 @@ export const DEFAULTS = {
   decay: 0.81,       // feedback modes: accumulator retention per frame
   driftX: -0.0025,   // feedback modes: smear direction, UV units per frame
   driftY: 0.0020,    // feedback modes: positive = upward smear
+  feedbackBlend: 'brighter', // feedback modes: how the trail meets the new
+                     // frame (design review M5) · 'brighter' = max, the
+                     // codec-faithful rule and the resting state · 'mix' =
+                     // crossfade · 'screen' · 'add'. See FEEDBACK_BLENDS.
+  feedbackMix: 1,    // feedback modes: how much of the trail survives against
+                     // the new frame; 0 = every frame fresh, 1 = the full rule
   resetMinS: 30,     // feedback modes: accumulator "keyframe" reset window
   resetMaxS: 60,
   maxRes: 1920,      // processing resolution cap, long axis
@@ -72,6 +78,9 @@ export const DEFAULTS = {
   audioDrive: 1.0,   // drive into the resonators
   audioExciter: 'continuous', // 'continuous' drives always · 'gated' strikes on onsets
 };
+
+// The feedback blends, in the order of the composite shader's uBlend int.
+export const FEEDBACK_BLENDS = ['brighter', 'mix', 'screen', 'add'];
 
 export async function loadParams() {
   const stored = await chrome.storage.local.get(DEFAULTS);

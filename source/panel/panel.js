@@ -68,8 +68,9 @@ const storedOf = (key) => fromView(defByKey[key], Number(inputs[key].value));
 // exists where a composite runs — without a feedback mode it has nothing
 // to read. temperature is NOT here: it bites in straight sort too. The
 // clear timings (resetMinS/resetMaxS) sit in the engine since the handles
-// round but still answer to the feedback switch.
-const FEEDBACK_SHARED = ['decay', 'driftX', 'driftY', 'resetMinS', 'resetMaxS', 'motionGate'];
+// round but still answer to the feedback switch, as do the blend and its
+// amount (design review M5): they shape only the composite.
+const FEEDBACK_SHARED = ['decay', 'driftX', 'driftY', 'resetMinS', 'resetMaxS', 'motionGate', 'feedbackBlend', 'feedbackMix'];
 
 // Audio rows gray out when the audio master toggle is off; the smear rows
 // additionally require their own toggles.

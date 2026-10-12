@@ -78,7 +78,7 @@ const LAYOUT = {
     loose: [],
     groups: [
       ['sort', ['threshold', 'flowAmount', 'temperature', 'streak']],
-      ['feedback', ['feedbackVideo', 'decay', 'driftX', 'driftY', 'motionGate']],
+      ['feedback', ['feedbackVideo', 'decay', 'driftX', 'driftY', 'motionGate', 'feedbackBlend', 'feedbackMix']],
       ['engine', ['passes', 'maxRes', 'maxVideos', 'flowMode', 'flowScale', 'flowSpeed', 'resetMinS', 'resetMaxS']],
     ],
   },
@@ -100,6 +100,7 @@ const LAYOUT = {
 const LABELS = {
   threshold: 'amount', flowAmount: 'flow', temperature: 'jitter', streak: 'ribbons',
   feedbackVideo: 'feedback', decay: 'trail', driftX: 'drift', driftY: 'drift', motionGate: 'follow motion',
+  feedbackBlend: 'blend', feedbackMix: 'blend amount',
   passes: 'sort passes', maxRes: 'max res', maxVideos: 'max videos',
   flowMode: 'flow mode', flowScale: 'flow scale', flowSpeed: 'flow speed',
   resetMinS: 'clear min s', resetMaxS: 'clear max s',
@@ -220,6 +221,17 @@ function tier1() {
       byKey.decay.tip.startsWith('How long the trail lingers.') &&
       byKey.motionGate.tip.startsWith('How closely the sort follows motion. 0 = the whole picture sorts; 1 = only what moves.') &&
       byKey.audioFbReturn.tip.startsWith('How loud the wash sits under the sound.')
+  );
+  // The feedback blend (design review M5): a select over the four rules in
+  // the shader's order, brighter (the codec-faithful rule) at rest, and an
+  // amount whose rest is the full rule — the resting picture is unchanged.
+  check(
+    'the feedback blend: four rules in the shader’s order, brighter and the full amount at rest, tips leading with what you see',
+    byKey.feedbackBlend.type === 'select' && byKey.feedbackBlend.options.join() === 'brighter,mix,screen,add' &&
+      DEFAULTS.feedbackBlend === 'brighter' && DEFAULTS.feedbackMix === 1 &&
+      byKey.feedbackMix.min === 0 && byKey.feedbackMix.max === 1 && byKey.feedbackMix.step === 0.01 &&
+      byKey.feedbackBlend.tip.startsWith('How the trail meets the new frame.') &&
+      byKey.feedbackMix.tip.startsWith('How much of the trail survives against the new frame.')
   );
   // What left the effect columns for the engines, in order: the engines
   // hold setup plus everything demoted, and nothing else.
@@ -1762,8 +1774,8 @@ async function tier2() {
   check('a live row is shown, enabled and carries no gate', shown(row('decay')) && !row('decay').hidden && !('gate' in row('decay').dataset) && !slider('decay').disabled);
   await setToggle('feedbackVideo', false);
   check(
-    'feedback off: every feedback knob hides, motion gate included, and the feedback switch stays as the header',
-    ['motionGate', 'decay', 'driftX', 'driftY', 'resetMinS', 'resetMaxS'].every((k) => gateSays(k, 'feedback')) &&
+    'feedback off: every feedback knob hides, motion gate and the blend included, and the feedback switch stays as the header',
+    ['motionGate', 'decay', 'driftX', 'driftY', 'resetMinS', 'resetMaxS', 'feedbackBlend', 'feedbackMix'].every((k) => gateSays(k, 'feedback')) &&
       shown(row('feedbackVideo')) && groupShown('video', 'feedback')
   );
   await setToggle('feedbackVideo', true);
@@ -1772,7 +1784,7 @@ async function tier2() {
   const ungated = (k) => !row(k).hidden && !('gate' in row(k).dataset) && !row(k).querySelector('input, select').disabled;
   check(
     'feedback on: the knobs unfold beneath the switch, and the clear timings in the engine are handed back',
-    ['decay', 'driftX', 'motionGate'].every((k) => shown(row(k))) && ['resetMinS', 'resetMaxS'].every(ungated)
+    ['decay', 'driftX', 'motionGate', 'feedbackBlend', 'feedbackMix'].every((k) => shown(row(k))) && ['resetMinS', 'resetMaxS'].every(ungated)
   );
   type('flowAmount', '0');
   field('flowAmount').blur();
@@ -1800,7 +1812,7 @@ async function tier2() {
   // The handles in their columns, and the keys of theirs filed in the engine.
   const SORT = ['threshold', 'flowAmount', 'temperature', 'streak'];
   const SORT_ENGINE = ['flowMode', 'flowScale', 'flowSpeed'];
-  const FEEDBACK = ['feedbackVideo', 'decay', 'driftX', 'driftY', 'motionGate'];
+  const FEEDBACK = ['feedbackVideo', 'decay', 'driftX', 'driftY', 'motionGate', 'feedbackBlend', 'feedbackMix'];
   const FEEDBACK_ENGINE = ['resetMinS', 'resetMaxS'];
   chip('video').querySelector('.chip-toggle').click();
   await sleep(60);
@@ -1958,8 +1970,10 @@ async function tier3() {
     );
     {
       // The drift pad takes two lane cells: trail above it, follow motion
-      // below, all in the feedback column, and nothing after follow motion
-      // (the next thing in the lane, the Audio header, starts a new column).
+      // below, all in the feedback column; then blend and blend amount, and
+      // nothing after blend amount (the next thing in the lane, the Audio
+      // header, starts a new column). Caption, switch, trail, pad (2),
+      // follow motion, blend, blend amount: exactly the eight cells.
       const pr = q('.row.pad-row');
       const p = rect(pr);
       const above = rect(q('.row[data-key="decay"]'));
@@ -1970,12 +1984,12 @@ async function tier3() {
         .filter((el) => Math.abs(rect(el).left - p.left) < 2 || (rect(el).left < p.left + 1 && rect(el).right > p.left + 1));
       const last = fbCol.reduce((a, el) => (rect(el).bottom > rect(a).bottom ? el : a), fbCol[0]);
       check(
-        `at ${width} px the drift pad spans two lane rows (${Math.round(p.height)} px, square ${Math.round(sq.width)} px) between trail and follow motion, in the same column, and follow motion ends it`,
+        `at ${width} px the drift pad spans two lane rows (${Math.round(p.height)} px, square ${Math.round(sq.width)} px) between trail and follow motion, in the same column, and blend amount ends it`,
         vis(pr) && Math.abs(p.height - 56) < 1 && Math.abs(sq.width - 50) < 1 && Math.abs(sq.height - 50) < 1 &&
           Math.abs(p.left - above.left) < 1 && Math.abs(p.left - below.left) < 1 &&
           p.top >= above.bottom - 1 && below.top >= p.bottom - 1 && below.bottom <= cr.bottom + 1 &&
           sq.top >= p.top - 0.5 && sq.bottom <= p.bottom + 0.5 &&
-          last === q('.row[data-key="motionGate"]')
+          last === q('.row[data-key="feedbackMix"]')
       );
       // Every effect column fits its eight lane cells: had one spilled, its
       // last rows would sit in the next column. So each group's visible rows
