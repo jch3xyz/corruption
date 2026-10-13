@@ -15,10 +15,12 @@
 // captions between cards (that version is tag `text-swap`), and then the
 // whole page rather than only media captions. The proposal argued against
 // both — an unreadable interface is an unnavigable one — so what protects
-// navigability now is not containment but `textMin`: only runs of at least
-// that many characters are eligible, and interface labels are short. At the
-// default 12 the prose dissolves and the furniture survives; wind it down
-// and the furniture goes too.
+// navigability now is not containment but a minimum run length: only runs
+// of at least TEXT_MIN characters are eligible, and interface labels are
+// short. At 8 the prose dissolves and the shortest furniture (Home, OK)
+// survives. It was the panel's `textMin` slider until 2026-10-11; John
+// retired the slider (the mode is an on/off effect) and 8, his setting,
+// became the constant. A stale `textMin` in an older profile is ignored.
 //
 // Three exclusions are not aesthetic and must stay:
 //
@@ -45,6 +47,7 @@
 //      much of the page it touches.
 
 const MAX_TRACKED = 2000; // bound on live records per document
+export const TEXT_MIN = 8; // shortest run of text that scrambles (was the textMin knob)
 const SHUFFLE_TRIES = 8; // attempts to land on an arrangement that differs
 
 const SKIP_TAGS = new Set([
@@ -68,10 +71,11 @@ function isSkippable(el) {
   return el.getAttribute('aria-hidden') === 'true';
 }
 
-// Eligibility is a single dial: enough letters to be worth rearranging.
-// `min` is the panel's `textMin` — at 12 the prose goes and the interface
-// labels survive by being short; at 1 nothing survives.
-export function qualifies(raw, min) {
+// Eligibility is a single number: enough letters to be worth rearranging.
+// `min` is TEXT_MIN in the piece (kept as a parameter so the grammar stays a
+// pure, testable function) — at 8 the prose goes and the interface labels
+// survive by being short; at 1 nothing survives.
+export function qualifies(raw, min = TEXT_MIN) {
   const s = raw.trim();
   return s.length >= min && /\p{L}/u.test(s);
 }
@@ -107,7 +111,7 @@ export class TextScramble {
     this.prune();
     if (this.records.size >= MAX_TRACKED) return;
 
-    const min = Math.max(1, this.params.textMin ?? 12);
+    const min = TEXT_MIN;
     const walker = document.createTreeWalker(
       document.body,
       NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT,

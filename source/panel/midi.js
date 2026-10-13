@@ -1,18 +1,31 @@
 // Web MIDI plumbing. The panel is an extension page, so the permission
 // grant is per-extension-origin and persists in the kiosk profile — grant
 // it once while building the template profile.
+//
+// The window and the side panel ask at boot. The strip's frame does not:
+// it sits inside whatever page is open, and that page's permissions policy
+// decides whether a frame may use MIDI, so asking on load drew a console
+// violation or a prompt from site after site. There the panel calls this
+// only when the player clicks MIDI… (panel.js).
+//
+// Resolves true when access was granted (devices or not), false when Web
+// MIDI is unavailable or the request was refused.
+// onDevices(count) reports how many inputs are connected, on every change,
+// so the panel can keep its ⊙ learn buttons out of sight until there is
+// something to learn from (design review finding 10). It is never called
+// when Web MIDI is unavailable or refused: the panel's default is "none".
 
-export async function initMIDI({ onCC, onStatus }) {
+export async function initMIDI({ onCC, onStatus, onDevices = () => {} }) {
   if (!navigator.requestMIDIAccess) {
     onStatus('Web MIDI unavailable');
-    return;
+    return false;
   }
   let access;
   try {
     access = await navigator.requestMIDIAccess();
   } catch {
     onStatus('MIDI permission denied');
-    return;
+    return false;
   }
 
   const attach = () => {
@@ -25,8 +38,10 @@ export async function initMIDI({ onCC, onStatus }) {
       };
     }
     onStatus(names.length ? names.join(', ') : 'no device');
+    onDevices(names.length);
   };
 
   access.onstatechange = attach;
   attach();
+  return true;
 }

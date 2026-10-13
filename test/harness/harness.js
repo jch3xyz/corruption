@@ -281,6 +281,157 @@ function tier0() {
     atA(wiped) < 10
   );
 
+  // The feedback blend (design review M5): how the decayed history meets
+  // the incoming frame — 0 brighter (max, the resting rule), 1 mix (a
+  // crossfade with history), 2 screen, 3 add — and how much of it survives.
+  // These read the accumulator itself as float RGBA, alpha included, so the
+  // values are the composite's own (RGBA16F) rather than the presented
+  // canvas. Inputs are read back the same way (a reset is an exact copy of
+  // the frame), so CPU expectations see exactly what the shader saw.
+  const runAccum = (steps) => {
+    const b = createBundle(gl, W, H, W, H);
+    try {
+      steps(glc.pipeline, b);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, b.accum[b.read].fbo);
+      const px = new Float32Array(W * H * 4);
+      gl.readPixels(0, 0, W, H, gl.RGBA, gl.FLOAT, px);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+      return px;
+    } finally {
+      destroyBundle(gl, b);
+    }
+  };
+  let s2seed = 19;
+  const rnd2 = () => (s2seed = (s2seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff;
+  const noisy2 = src((x) => {
+    for (let j = 0; j < H; j++) {
+      for (let i = 0; i < W; i++) {
+        x.fillStyle = `rgb(${(rnd2() * 256) | 0},${(rnd2() * 256) | 0},${(rnd2() * 256) | 0})`;
+        x.fillRect(i, j, 1, 1);
+      }
+    }
+  });
+  const flat = (v) => src((x) => {
+    x.fillStyle = `rgb(${v},${v},${v})`;
+    x.fillRect(0, 0, W, H);
+  });
+  const grey = flat(128);
+  const TOL = 1 / 255;
+  const FB = { driftX: 0, driftY: 0, decay: 0.81, threshold: 0.05 };
+  const asFrame = (img) => runAccum((p, b) => {
+    p.uploadFrame(b, img);
+    p.runReset(b);
+  });
+  // One composite of `inc` over a history that is exactly `hist`.
+  const blendOnce = (hist, inc, opts) => runAccum((p, b) => {
+    p.uploadFrame(b, hist);
+    p.runReset(b);
+    p.uploadFrame(b, inc);
+    p.runComposite(b, { ...FB, ...opts });
+  });
+  const lumaOf = (r, g2, b2) => 0.2126 * r + 0.7152 * g2 + 0.0722 * b2;
+  const histPx = asFrame(noisy);
+  const incPx = asFrame(noisy2);
+  const bitEqual = (a, b2) => a.length === b2.length && a.every((v, i) => Object.is(v, b2[i]));
+
+  // (1) Bit-identity: the resting state is the old brighter-wins composite.
+  const restDefault = blendOnce(noisy, noisy2, {});
+  const restExplicit = blendOnce(noisy, noisy2, { blend: 0, mix: 1 });
+  let restErr = 0;
+  let restSkipped = 0;
+  for (let i = 0; i < restDefault.length; i += 4) {
+    const kept = [0, 1, 2].map((c) => Math.max(histPx[i + c] * FB.decay, incPx[i + c]));
+    const l = lumaOf(...kept);
+    if (Math.abs(l - FB.threshold) < 0.002) {
+      restSkipped++;
+      continue;
+    }
+    const pass = l >= FB.threshold;
+    for (let c = 0; c < 3; c++) {
+      const want = pass ? kept[c] : incPx[i + c];
+      restErr = Math.max(restErr, Math.abs(restDefault[i + c] - want));
+    }
+  }
+  check(
+    `pipeline: feedback blend at rest (no options) is bit-identical to brighter at amount 1`,
+    bitEqual(restDefault, restExplicit)
+  );
+  check(
+    `pipeline: brighter at amount 1 reproduces max(history·decay, incoming) under the dark barrier (max error ${(restErr * 255).toFixed(3)}/255, ${restSkipped} px at the threshold edge skipped)`,
+    restErr <= TOL && incPx.some((v) => v > 0)
+  );
+
+  // (2) Amount 0 is a wire: every rule hands back the incoming frame.
+  const wireErr = [0, 1, 2, 3].map((blend) => {
+    const out = blendOnce(noisy, noisy2, { blend, mix: 0 });
+    let e = 0;
+    for (let i = 0; i < out.length; i += 4) {
+      for (let c = 0; c < 3; c++) e = Math.max(e, Math.abs(out[i + c] - incPx[i + c]));
+    }
+    return e;
+  });
+  check(
+    `pipeline: feedback blend amount 0 is a wire in every rule (max error ${wireErr.map((e) => (e * 255).toFixed(2)).join(' / ')} /255: brighter / mix / screen / add)`,
+    wireErr.every((e) => e <= TOL)
+  );
+
+  // (3) Ordering on mid-grey over mid-grey: add ≥ screen ≥ brighter ≥ mix at
+  // 0.5, each a real step (so a blend uniform that never arrived fails),
+  // and each on its formula.
+  const gv = asFrame(grey)[0];
+  const gd = gv * FB.decay;
+  const at = (opts) => blendOnce(grey, grey, opts);
+  const centre = ((H >> 1) * W + (W >> 1)) * 4;
+  const got = {
+    add: at({ blend: 3, mix: 1 }),
+    screen: at({ blend: 2, mix: 1 }),
+    brighter: at({ blend: 0, mix: 1 }),
+    mix: at({ blend: 1, mix: 0.5 }),
+  };
+  const want = {
+    add: Math.min(1, gv + gd),
+    screen: 1 - (1 - gv) * (1 - gd),
+    brighter: Math.max(gv, gd),
+    mix: gv + (gd - gv) * 0.5,
+  };
+  const order = ['add', 'screen', 'brighter', 'mix'];
+  const onFormula = order.every((k) => [0, 1, 2].every((c) => Math.abs(got[k][centre + c] - want[k]) <= TOL));
+  const stepped = [0, 1, 2].every((c) =>
+    order.every((k, i) => i === 0 || got[order[i - 1]][centre + c] > got[k][centre + c] + TOL)
+  );
+  check(
+    `pipeline: on mid-grey, add ≥ screen ≥ brighter ≥ mix at 0.5, each on its formula (${order.map((k) => `${k} ${(got[k][centre] * 255).toFixed(1)}`).join(', ')})`,
+    onFormula && stepped
+  );
+
+  // (4) The alpha motion trail never reads the blend: the same alpha in
+  // every rule at every amount, through a run of composites with motion.
+  const trailRun = (opts) => runAccum((p, b) => {
+    p.uploadFrame(b, noisy);
+    p.runReset(b);
+    for (let i = 0; i < 4; i++) p.runComposite(b, { ...FB, ...opts });
+    p.uploadFrame(b, f2);
+    p.runComposite(b, { ...FB, ...opts });
+  });
+  const alphaOf = (px) => px.filter((_, i) => i % 4 === 3);
+  const refAlpha = alphaOf(trailRun({}));
+  const spread = Math.max(...refAlpha) - Math.min(...refAlpha);
+  const alphaSame = [0, 1, 2, 3].every((blend) =>
+    [1, 0.35, 0].every((mix) => bitEqual(alphaOf(trailRun({ blend, mix })), refAlpha))
+  );
+  check(
+    `pipeline: the motion trail (alpha) is identical in every blend rule at every amount (trail spread ${spread.toFixed(2)})`,
+    alphaSame && spread > 0.2
+  );
+
+  // (5) Determinism: same inputs, same output, in the new rules too.
+  check(
+    'pipeline: feedback blend is deterministic (screen at 0.6, add at 1, mix at 0.3)',
+    [{ blend: 2, mix: 0.6 }, { blend: 3, mix: 1 }, { blend: 1, mix: 0.3 }].every((o) =>
+      bitEqual(trailRun(o), trailRun(o))
+    )
+  );
+
   // The flow field: sorting along curl-noise streamlines. Time is a fixed
   // uniform here, so every render is exactly reproducible.
   const flowSteps = (amount, time, facets = false, seed = 7) => (p, b) => {
@@ -353,6 +504,573 @@ function tier0() {
     'pipeline: a different seed still conserves every pixel',
     globalKey(otherSeed) === globalKey(unsorted)
   );
+
+  // --- Sort by (round 8 part 2): the comparison key -------------------------
+  // key 0 luma (the classic), 1 hue, 2 saturation, 3/4/5 red/green/blue. Only
+  // the ordering reads the key; the barrier stays on luma.
+  const KEYS = ['luma', 'hue', 'saturation', 'red', 'green', 'blue'];
+  const cpuKey = (k, r, g2, b2) => {
+    if (k === 1) {
+      const mx = Math.max(r, g2, b2);
+      const d = mx - Math.min(r, g2, b2);
+      if (d <= 0) return 0;
+      const h = mx === r ? (g2 - b2) / d : mx === g2 ? (b2 - r) / d + 2 : (r - g2) / d + 4;
+      return ((h / 6) % 1 + 1) % 1;
+    }
+    if (k === 2) {
+      const mx = Math.max(r, g2, b2);
+      return mx <= 0 ? 0 : (mx - Math.min(r, g2, b2)) / mx;
+    }
+    if (k >= 3) return [r, g2, b2][k - 3];
+    return lumaOf(r, g2, b2);
+  };
+  // Readback runs bottom-up (present() flips V), so the video's top is the
+  // last readback row: ordered means the key never falls going up a column.
+  // Near-ties (inside tol) are excused — the shader works on half floats.
+  const climbs = (px, k, tol) => {
+    let bad = 0;
+    for (let x = 0; x < W; x++) {
+      for (let y = 0; y + 1 < H; y++) {
+        const i = (y * W + x) * 4;
+        const j = ((y + 1) * W + x) * 4;
+        const lo = cpuKey(k, px[i] / 255, px[i + 1] / 255, px[i + 2] / 255);
+        const hi = cpuKey(k, px[j] / 255, px[j + 1] / 255, px[j + 2] / 255);
+        if (lo > hi + tol) bad++;
+      }
+    }
+    return bad;
+  };
+  const same = (a, b2) => a.length === b2.length && a.every((v, i) => v === b2[i]);
+  check(
+    'sort by: key absent = key 0 (luma) = the previous output, bit for bit — straight, and flowing in facets',
+    same(run(sortSteps({ key: 0 })), s1) && same(run(flowSteps(1, 12.5, true)), faceted) &&
+      same(run((p, b) => {
+        p.uploadFrame(b, noisy);
+        p.runReset(b);
+        p.runFieldPass(b, { amount: 1, scale: 4, speed: 0.05, time: 12.5, seed: 7 });
+        p.runSortPasses(b, 200, 0, 64, { flow: true, facets: true, key: 0 });
+      }), faceted)
+  );
+  const byKeyOut = KEYS.map((_, k) => run(sortSteps({ key: k })));
+  const perKey = KEYS.map((name, k) => ({
+    name,
+    columns: sameColumns(byKeyOut[k], unsorted),
+    bad: climbs(byKeyOut[k], k, k === 1 || k === 2 ? 0.02 : 0.75 / 255),
+    moved: byKeyOut[k].some((v, i) => v !== unsorted[i]),
+  }));
+  check(
+    `sort by: every key is a permutation — each column keeps exactly its own pixels (${perKey.map((r) => `${r.name} ${r.columns ? 'ok' : 'LOST'}`).join(', ')})`,
+    perKey.every((r) => r.columns && r.moved)
+  );
+  check(
+    `sort by: every key sorts by what it says — the higher key climbs to the top of each column (inversions: ${perKey.map((r) => `${r.name} ${r.bad}`).join(', ')})`,
+    perKey.every((r) => r.bad === 0)
+  );
+  check(
+    'sort by: the keys are genuinely different orders (every pair of keys gives a different picture)',
+    byKeyOut.every((a, i) => byKeyOut.every((b2, j) => j <= i || !same(a, b2)))
+  );
+  check(
+    'sort by: every key is deterministic',
+    KEYS.every((_, k) => same(run(sortSteps({ key: k })), byKeyOut[k]))
+  );
+
+  // Red over a dimmer green (0.21 vs 0.17 luma): luma finds the column
+  // already in order and leaves it bit-identical; hue ranks green (1/3)
+  // above red (0) and lifts it over.
+  const redGreen = src((x) => {
+    x.fillStyle = 'rgb(255,0,0)';
+    x.fillRect(0, 0, W, H / 2);
+    x.fillStyle = 'rgb(0,60,0)';
+    x.fillRect(0, H / 2, W, H / 2);
+  });
+  const rgSteps = (key) => (p, b) => {
+    p.uploadFrame(b, redGreen);
+    p.runReset(b);
+    if (key !== null) p.runSortPasses(b, 200, 0, 64, { key });
+  };
+  const rgIn = run(rgSteps(null));
+  const rgLuma = run(rgSteps(0));
+  const rgHue = run(rgSteps(1));
+  const topPx = (px) => {
+    const i = ((H - 1) * W + (W >> 1)) * 4; // readback's last row = the top
+    return [px[i], px[i + 1], px[i + 2]].join(',');
+  };
+  check(
+    `sort by: red over a dimmer green — luma leaves it bit-identical, hue lifts the green to the top (top pixel ${topPx(rgLuma)} → ${topPx(rgHue)})`,
+    same(rgLuma, rgIn) && topPx(rgLuma) === '255,0,0' && topPx(rgHue) === '0,60,0' && sameColumns(rgHue, rgIn)
+  );
+
+  // Equal keys never trade: two colours with the same red channel (exactly
+  // equal on the GPU — the same 8-bit value), interleaved row by row. Sorted
+  // by red the picture is untouched; by luma or green it reorders.
+  const sameRed = src((x) => {
+    for (let j = 0; j < H; j++) {
+      x.fillStyle = j % 2 ? 'rgb(200,180,0)' : 'rgb(200,0,0)';
+      x.fillRect(0, j, W, 1);
+    }
+  });
+  const srSteps = (key) => (p, b) => {
+    p.uploadFrame(b, sameRed);
+    p.runReset(b);
+    if (key !== null) p.runSortPasses(b, 200, 0, 64, { key });
+  };
+  const srIn = run(srSteps(null));
+  check(
+    'sort by: equal keys never trade — rows sharing a red value stay put under red, and reorder under luma and green',
+    same(run(srSteps(3)), srIn) && !same(run(srSteps(0)), srIn) && !same(run(srSteps(4)), srIn)
+  );
+
+  // The barrier stays on luma under every key: a dark band (rows 28–35, at
+  // least half the longest stride wide, so no stride can straddle it past
+  // its midpoint check) stays put, and each side keeps its own material.
+  // The band is a deep blue, rgb(0,0,40): luma 0.011, under the 0.05
+  // threshold, but HIGH under hue (2/3), saturation (1) and blue (0.16) — so
+  // a barrier that read the key instead of luma would let it trade.
+  const banded = src((x) => {
+    x.drawImage(noisy, 0, 0);
+    x.fillStyle = 'rgb(0,0,40)';
+    x.fillRect(0, 28, W, 8);
+  });
+  const bandSteps = (key) => (p, b) => {
+    p.uploadFrame(b, banded);
+    p.runReset(b);
+    if (key !== null) p.runSortPasses(b, 200, 0.05, 16, { key });
+  };
+  const bandIn = run(bandSteps(null));
+  const sideKey = (px, x, y0, y1) => {
+    const out = [];
+    for (let y = y0; y < y1; y++) {
+      const i = (y * W + x) * 4;
+      out.push(`${px[i]},${px[i + 1]},${px[i + 2]}`);
+    }
+    return out.sort().join('|');
+  };
+  const bandHolds = KEYS.map((name, k) => {
+    const out = run(bandSteps(k));
+    let ok = out.some((v, i) => v !== bandIn[i]);
+    for (let x = 0; x < W && ok; x++) {
+      for (let y = 28; y < 36; y++) {
+        const i = (y * W + x) * 4;
+        if (out[i] !== 0 || out[i + 1] !== 0 || out[i + 2] !== 40) ok = false;
+      }
+      // Readback rows 0–27 are source rows 63–36 (below the band), 36–63 above.
+      if (sideKey(out, x, 0, 28) !== sideKey(bandIn, x, 0, 28)) ok = false;
+      if (sideKey(out, x, 36, 64) !== sideKey(bandIn, x, 36, 64)) ok = false;
+    }
+    return ok ? null : name;
+  }).filter(Boolean);
+  check(
+    `sort by: the dark barrier is luma's under every key — a deep-blue band (dark, but high in hue, saturation and blue) stays put and nothing crosses it (${bandHolds.join(', ') || 'all hold'})`,
+    bandHolds.length === 0
+  );
+
+  // --- Direction (round 8 part 2): the angle, applied after the field ------
+  // Degrees clockwise on screen from "up"; the pipeline takes radians.
+  const rad = (deg) => (deg * Math.PI) / 180;
+  const angSteps = (deg, { facets = false, flow = 0, src: img = noisy, threshold = 0, streak = 64 } = {}) => (p, b) => {
+    p.uploadFrame(b, img);
+    p.runReset(b);
+    if (flow > 0) p.runFieldPass(b, { amount: flow, scale: 4, speed: 0.05, time: 12.5, seed: 7 });
+    p.runSortPasses(b, 200, threshold, streak, { flow: flow > 0, facets, angle: rad(deg) });
+  };
+  check(
+    'direction: angle 0 is bit-identical — flow off (paths and facets), and flowing in paths and facets',
+    same(run(angSteps(0)), s1) && same(run(angSteps(0, { facets: true })), s1) &&
+      same(run(angSteps(0, { flow: 1 })), flowed) && same(run(angSteps(0, { flow: 1, facets: true })), faceted)
+  );
+  // A white 8×8 square on mid-grey: where its pixels end up says which way
+  // the sort climbs. Centroid in the video's own coordinates (x right, y
+  // down), from the V-flipped readback.
+  const square = src((x) => {
+    x.fillStyle = 'rgb(128,128,128)';
+    x.fillRect(0, 0, W, H);
+    x.fillStyle = '#fff';
+    x.fillRect(28, 28, 8, 8);
+  });
+  const centroid = (px) => {
+    let n = 0;
+    let cx = 0;
+    let cy = 0;
+    for (let y = 0; y < H; y++) {
+      for (let x2 = 0; x2 < W; x2++) {
+        const i = (y * W + x2) * 4;
+        if (px[i] > 250 && px[i + 1] > 250 && px[i + 2] > 250) {
+          n++;
+          cx += x2;
+          cy += H - 1 - y;
+        }
+      }
+    }
+    return { n, x: cx / n, y: cy / n };
+  };
+  const fmtC = (c) => `(${c.x.toFixed(1)}, ${c.y.toFixed(1)})`;
+  const climbTo = {};
+  for (const deg of [0, 90, 180, 270]) climbTo[deg] = centroid(run(angSteps(deg, { facets: true, src: square })));
+  const at45 = centroid(run(angSteps(45, { facets: true, src: square })));
+  check(
+    `direction: 0 = up, 90 = right, 180 = down, 270 = left — the white square climbs that way (centroids ${[0, 90, 180, 270].map((d) => `${d}° ${fmtC(climbTo[d])}`).join(', ')})`,
+    [0, 90, 180, 270].every((d) => climbTo[d].n === 64) &&
+      climbTo[0].y < 4 && Math.abs(climbTo[0].x - 31.5) < 0.01 &&
+      climbTo[90].x > 59 && Math.abs(climbTo[90].y - 31.5) < 0.01 &&
+      climbTo[180].y > 59 && Math.abs(climbTo[180].x - 31.5) < 0.01 &&
+      climbTo[270].x < 4 && Math.abs(climbTo[270].y - 31.5) < 0.01
+  );
+  check(
+    `direction: 45 in facets climbs up and to the right (centroid ${fmtC(at45)})`,
+    at45.n === 64 && at45.x > 40 && at45.y < 23
+  );
+  const angles = [0, 30, 45, 90, 137, 180, 225, 270, 333];
+  const lost = [];
+  for (const facets of [false, true]) {
+    for (const deg of angles) {
+      if (globalKey(run(angSteps(deg, { facets }))) !== globalKey(unsorted)) lost.push(`${facets ? 'facets' : 'paths'} ${deg}`);
+    }
+    if (globalKey(run(angSteps(90, { facets, flow: 1 }))) !== globalKey(unsorted)) lost.push(`${facets ? 'facets' : 'paths'} 90 + flow`);
+  }
+  check(
+    `direction: every angle is a permutation, flow off in both modes and flowing at 90 (${lost.join(', ') || 'every pixel kept'})`,
+    lost.length === 0
+  );
+  check(
+    'direction: deterministic (paths at 30, facets at 137, paths at 90 with flow)',
+    same(run(angSteps(30)), run(angSteps(30))) &&
+      same(run(angSteps(137, { facets: true })), run(angSteps(137, { facets: true }))) &&
+      same(run(angSteps(90, { flow: 1 })), run(angSteps(90, { flow: 1 })))
+  );
+  const f30 = run(angSteps(30, { facets: true }));
+  check(
+    'direction: facets turns in 45° steps — 30 and 44 land in the same sector (bit-identical), and differ from 0',
+    same(f30, run(angSteps(44, { facets: true }))) && !same(f30, s1)
+  );
+  const p30 = run(angSteps(30));
+  // The square under paths at 30 and 60 (short ribbons, so it travels rather
+  // than piling into a corner): the climb leans right of up, more at 60.
+  const lean = (deg) => {
+    const c = centroid(run(angSteps(deg, { src: square, streak: 4 })));
+    return { ...c, dx: c.x - 31.5, dy: 31.5 - c.y };
+  };
+  const l30 = lean(30);
+  const l60 = lean(60);
+  check(
+    `direction: paths glides — 30 differs from 0 and from facets at 30, and the square leans right of up, more at 60 (30°: dx ${l30.dx.toFixed(1)} dy ${l30.dy.toFixed(1)}; 60°: dx ${l60.dx.toFixed(1)} dy ${l60.dy.toFixed(1)})`,
+    !same(p30, s1) && !same(p30, f30) && l30.n === 64 && l60.n === 64 &&
+      l30.dx > 0 && l30.dy > l30.dx && l60.dx > 0 && l60.dx / l60.dy > l30.dx / l30.dy
+  );
+  check(
+    'direction: with flow on the whole pattern turns — 90 differs from 0 at the same field',
+    !same(run(angSteps(90, { flow: 1 })), flowed) && !same(run(angSteps(90, { flow: 1, facets: true })), faceted)
+  );
+
+  // --- Where: the edges gate (round 8 part 3) ------------------------------
+  // Canvas rows 0–23 black, 24–63 a gentle grey ramp brightening downward
+  // (128 → 230, ~0.01 luma per row): one hard dark/bright edge across the
+  // frame between rows 23 and 24, a flat bright region below it, and the
+  // ramp runs against the sort, so ungated it all moves. Texel row = canvas
+  // row; present() flips, so readback row = H − 1 − canvas row.
+  const edgeSrc = src((x) => {
+    x.fillStyle = '#000';
+    x.fillRect(0, 0, W, H);
+    for (let y = 24; y < H; y++) {
+      const v = Math.round(128 + ((y - 24) * 102) / 39);
+      x.fillStyle = `rgb(${v},${v},${v})`;
+      x.fillRect(0, y, W, 1);
+    }
+  });
+  const edgeSteps = (g, { img = noisy, pass = true } = {}) => (p, b) => {
+    p.uploadFrame(b, img);
+    p.runReset(b);
+    if (!pass) return;
+    if (g) p.runEdgePass(b);
+    p.runSortPasses(b, 200, 0, 64, { edgeGate: g });
+  };
+  check(
+    'edges: gate 0 is inert — bit-identical to the sort without the option',
+    same(run(edgeSteps(0)), s1)
+  );
+  // The edge map itself, read straight from its texture (texel order).
+  const edgeMap = (() => {
+    const b = createBundle(gl, W, H, W, H);
+    try {
+      glc.pipeline.uploadFrame(b, edgeSrc);
+      glc.pipeline.runEdgePass(b);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, b.edge.fbo);
+      const px = new Uint8Array(W * H * 4);
+      gl.readPixels(0, 0, W, H, gl.RGBA, gl.UNSIGNED_BYTE, px);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+      return px;
+    } finally {
+      destroyBundle(gl, b);
+    }
+  })();
+  const edgeRow = (c) => {
+    let lo = 255;
+    let hi = 0;
+    for (let x = 0; x < W; x++) {
+      const v = edgeMap[(c * W + x) * 4];
+      lo = Math.min(lo, v);
+      hi = Math.max(hi, v);
+    }
+    return { lo, hi };
+  };
+  const flatRows = [...Array(H).keys()].filter((c) => c < 22 || c > 25);
+  const flatMax = Math.max(...flatRows.map((c) => edgeRow(c).hi));
+  check(
+    `edges: the map reads ~1 on the hard edge and ~0 on the flat areas (edge rows ${edgeRow(23).lo}/${edgeRow(24).lo} of 255, flat at most ${flatMax})`,
+    edgeRow(23).lo >= 230 && edgeRow(24).lo >= 230 && flatMax <= 26
+  );
+  const edgeIn = run(edgeSteps(0, { img: edgeSrc, pass: false }));
+  const rowsChanged = (px, canvasRows) =>
+    canvasRows.reduce((n, c) => {
+      const y = H - 1 - c;
+      for (let x = 0; x < W; x++) {
+        const i = (y * W + x) * 4;
+        if (px[i] !== edgeIn[i] || px[i + 1] !== edgeIn[i + 1] || px[i + 2] !== edgeIn[i + 2]) n++;
+      }
+      return n;
+    }, 0);
+  const farRows = [...Array(H).keys()].filter((c) => c < 22 || c > 25);
+  const bandRows2 = [23, 24];
+  const rampRows = [...Array(H).keys()].filter((c) => c > 25);
+  const eOpen = run(edgeSteps(0, { img: edgeSrc }));
+  const ePos = run(edgeSteps(0.5, { img: edgeSrc }));
+  const eNeg = run(edgeSteps(-0.5, { img: edgeSrc }));
+  check(
+    `edges +0.5: only outlines shred — no pixel far from the edge moves (${rowsChanged(ePos, farRows)} moved; ungated ${rowsChanged(eOpen, farRows)}), the edge band trades (${rowsChanged(ePos, bandRows2)})`,
+    rowsChanged(ePos, farRows) === 0 && rowsChanged(eOpen, farRows) > 500 && rowsChanged(ePos, bandRows2) > 0
+  );
+  check(
+    `edges −0.5: only flat regions tear — the ramp sorts (${rowsChanged(eNeg, rampRows)} moved) while the edge band holds (${rowsChanged(eNeg, bandRows2)} moved)`,
+    rowsChanged(eNeg, rampRows) > 500 && rowsChanged(eNeg, bandRows2) === 0
+  );
+  check(
+    'edges: a permutation at ±0.5, on the edge source and on noise',
+    globalKey(ePos) === globalKey(edgeIn) && globalKey(eNeg) === globalKey(edgeIn) &&
+      globalKey(run(edgeSteps(0.5))) === globalKey(unsorted) && globalKey(run(edgeSteps(-0.5))) === globalKey(unsorted)
+  );
+  check(
+    'edges: deterministic at ±0.5',
+    same(ePos, run(edgeSteps(0.5, { img: edgeSrc }))) && same(eNeg, run(edgeSteps(-0.5, { img: edgeSrc }))) &&
+      same(run(edgeSteps(0.3)), run(edgeSteps(0.3)))
+  );
+
+  // --- Where: span, walls along the sort direction (round 8 part 3) --------
+  const spanSteps = (n, { img = noisy, deg = 0, facets = false, flow = 0 } = {}) => (p, b) => {
+    p.uploadFrame(b, img);
+    p.runReset(b);
+    if (flow > 0) p.runFieldPass(b, { amount: flow, scale: 4, speed: 0.05, time: 12.5, seed: 7 });
+    p.runSortPasses(b, 200, 0, 64, { span: n, angle: rad(deg), facets, flow: flow > 0 });
+  };
+  // Per-cell multisets: 16-pixel cells down each column (vertical) or along
+  // each row (horizontal). 64 = 4 × 16, so the cells are the same in the
+  // V-flipped readback as in the source.
+  const cellKeys = (px, horizontal) => {
+    const keys = [];
+    for (let a = 0; a < W; a++) {
+      for (let k = 0; k < 4; k++) {
+        const cell = [];
+        for (let j = k * 16; j < k * 16 + 16; j++) {
+          const i = horizontal ? (a * W + j) * 4 : (j * W + a) * 4;
+          cell.push(`${px[i]},${px[i + 1]},${px[i + 2]}`);
+        }
+        keys.push(cell.sort().join('|'));
+      }
+    }
+    return keys.join('/');
+  };
+  check('span: 0 is inert — bit-identical to the sort without the option', same(run(spanSteps(0)), s1));
+  const span16 = run(spanSteps(16));
+  const span16h = run(spanSteps(16, { deg: 90, facets: true }));
+  check(
+    'span 16: no pixel crosses a wall — every 16-pixel cell keeps exactly its own pixels, in columns (0°) and in rows (90°, where the projection runs negative)',
+    cellKeys(span16, false) === cellKeys(unsorted, false) && cellKeys(span16h, true) === cellKeys(unsorted, true) &&
+      !same(span16, unsorted) && cellKeys(s1, false) !== cellKeys(unsorted, false)
+  );
+  // A bright 8-row run low in every column, over black: unwalled it climbs
+  // to the top of the frame; with span 16 it climbs only to the top of its
+  // own cell (canvas rows 32–47 → 32–39).
+  const run40 = src((x) => {
+    x.fillStyle = '#000';
+    x.fillRect(0, 0, W, H);
+    x.fillStyle = '#fff';
+    x.fillRect(0, 40, W, 8);
+  });
+  const whiteRows = (px) => {
+    const rows = [];
+    for (let c = 0; c < H; c++) {
+      const i = ((H - 1 - c) * W + 5) * 4;
+      if (px[i] > 250) rows.push(c);
+    }
+    return rows;
+  };
+  const freeRun = whiteRows(run(spanSteps(0, { img: run40 })));
+  const walledRun = whiteRows(run(spanSteps(16, { img: run40 })));
+  check(
+    `span 16: a bright run climbs only to its cell's wall (canvas rows ${walledRun[0]}–${walledRun[walledRun.length - 1]}; unwalled ${freeRun[0]}–${freeRun[freeRun.length - 1]})`,
+    freeRun.join() === '0,1,2,3,4,5,6,7' && walledRun.join() === '32,33,34,35,36,37,38,39'
+  );
+  check(
+    'span: a permutation (16 and 40, vertical, at 90° and flowing) and deterministic',
+    [run(spanSteps(40)), run(spanSteps(16, { deg: 90 })), run(spanSteps(24, { flow: 1 }))].every((px) => globalKey(px) === globalKey(unsorted)) &&
+      same(span16, run(spanSteps(16))) && same(run(spanSteps(24, { flow: 1 })), run(spanSteps(24, { flow: 1 })))
+  );
+  check(
+    'span 512 on a 64-pixel frame is one cell — no wall: equal to 0 climbing up, down (180°, a negative-going projection) and flowing',
+    same(run(spanSteps(512)), s1) &&
+      same(run(spanSteps(512, { deg: 180, facets: true })), run(spanSteps(0, { deg: 180, facets: true }))) &&
+      same(run(spanSteps(512, { flow: 1 })), flowed)
+  );
+
+  // --- Where: the soft barrier (round 8 part 3) ----------------------------
+  // Threshold 0.5, soft 0.3: the band is luma 0.2–0.5. A random mix of three
+  // grey families — bright (≥ 140/255), just under (90–114, luma ~0.35–0.45:
+  // inside the band) and deep (0–38, luma ≤ 0.15: under the band) — so the
+  // hard barrier holds both dark families and the soft one only the deep.
+  const softSrc = src((x) => {
+    for (let j = 0; j < H; j++) {
+      for (let i = 0; i < W; i++) {
+        const r = rnd();
+        const v = r < 0.45 ? 140 + ((rnd() * 116) | 0) : r < 0.75 ? 90 + ((rnd() * 25) | 0) : (rnd() * 39) | 0;
+        x.fillStyle = `rgb(${v},${v},${v})`;
+        x.fillRect(i, j, 1, 1);
+      }
+    }
+  });
+  const softSteps = (soft, { seed, img = softSrc, threshold = 0.5, temperature = 0 } = {}) => (p, b) => {
+    p.uploadFrame(b, img);
+    p.runReset(b);
+    p.runSortPasses(b, 200, threshold, 64, { soft, seed, temperature });
+  };
+  const softIn = run((p, b) => {
+    p.uploadFrame(b, softSrc);
+    p.runReset(b);
+  });
+  // Pixels of a family that left their place (by the input's family at each
+  // position: a moved pixel changes its position's value, or another
+  // pixel lands on it).
+  const familyMoved = (px, lo, hi) => {
+    let n = 0;
+    for (let i = 0; i < px.length; i += 4) {
+      if (softIn[i] >= lo && softIn[i] <= hi && px[i] !== softIn[i]) n++;
+    }
+    return n;
+  };
+  const hard = run(softSteps(0));
+  check(
+    'soft barrier: 0 is inert — bit-identical to the sort without the option (threshold 0 and 0.5)',
+    same(run(softSteps(0, { img: noisy, threshold: 0 })), s1) &&
+      same(hard, run((p, b) => {
+        p.uploadFrame(b, softSrc);
+        p.runReset(b);
+        p.runSortPasses(b, 200, 0.5, 64);
+      }))
+  );
+  const soft3 = run(softSteps(0.3, { seed: 1234 }));
+  check(
+    `soft barrier 0.3: pixels just under the threshold now trade (${familyMoved(soft3, 90, 114)} moved; hard cut ${familyMoved(hard, 90, 114)}) and none under threshold − soft does (${familyMoved(soft3, 0, 38)} moved)`,
+    familyMoved(soft3, 90, 114) > 0 && familyMoved(hard, 90, 114) === 0 && familyMoved(soft3, 0, 38) === 0 && familyMoved(hard, 0, 38) === 0
+  );
+  check(
+    'soft barrier: a permutation (0.3 and 0.5, with jitter too)',
+    globalKey(soft3) === globalKey(softIn) && globalKey(run(softSteps(0.5))) === globalKey(softIn) &&
+      globalKey(run(softSteps(0.3, { temperature: 0.3 }))) === globalKey(softIn)
+  );
+  check(
+    'soft barrier: deterministic for a seed sequence (runSortPasses opts.seed) — the same seed replays it, another seed draws differently; jitter replays too',
+    same(soft3, run(softSteps(0.3, { seed: 1234 }))) && !same(soft3, run(softSteps(0.3, { seed: 99 }))) &&
+      same(run(softSteps(0, { temperature: 0.3, seed: 7 })), run(softSteps(0, { temperature: 0.3, seed: 7 })))
+  );
+
+}
+
+// --- The boot guard (round 8) ------------------------------------------------
+// Neither condition can be produced in a test page — a prerendered document,
+// a content-script context invalidated by an extension reload — so the guard
+// is pinned twice: statically (the source says it), and by running the real
+// bootstrap.js source against stand-ins for window, document and chrome,
+// with getURL handing back a data: module that counts its own imports.
+async function bootGuard() {
+  const text = async (p) => (await fetch(p, { cache: 'no-store' })).text();
+  const boot = await text('../../source/content/bootstrap.js');
+  const main = await text('../../source/content/main.js');
+  const at = (src, s) => src.indexOf(s);
+  const importAt = at(boot, 'import(');
+  check(
+    'boot guard (static): bootstrap.js waits out document.prerendering on a one-shot prerenderingchange, and checks runtime.id, both before the import',
+    at(boot, 'document.prerendering') >= 0 && at(boot, "'prerenderingchange'") >= 0 && /once: true/.test(boot) &&
+      at(boot, 'runtime?.id') >= 0 && importAt > at(boot, 'prerenderingchange') && importAt > at(boot, 'runtime?.id') &&
+      at(boot, '__deflectionBooted') >= 0 && /catch \(err\)/.test(boot)
+  );
+  check(
+    'boot guard (static): main.js imports the strip only with a live runtime id',
+    /if \(isTopFrame && globalThis\.chrome\?\.runtime\?\.id\) \{\s*import\('\.\/strip\.js'\)/.test(main)
+  );
+
+  const runBoot = (doc, chromeStub) => {
+    const win = {};
+    const warned = [];
+    const con = { warn: (...a) => warned.push(a.join(' ')) };
+    // bootstrap.js reads window, document, chrome and globalThis.chrome.
+    new Function('window', 'document', 'chrome', 'globalThis', 'console', boot)(
+      win, doc, chromeStub, { chrome: chromeStub }, con
+    );
+    return { win, warned };
+  };
+  let nonce = 0;
+  const stub = (id) => {
+    const c = {
+      asked: 0,
+      runtime: {
+        id,
+        getURL: () => {
+          c.asked++;
+          const code = `globalThis.__bootProbe = (globalThis.__bootProbe || 0) + 1; // ${++nonce}`;
+          return `data:text/javascript,${encodeURIComponent(code)}`;
+        },
+      },
+    };
+    return c;
+  };
+  const probe = () => globalThis.__bootProbe || 0;
+  const doc = (prerendering) => {
+    const d = { prerendering, listeners: [] };
+    d.addEventListener = (type, fn, opts) => d.listeners.push({ type, fn, once: !!opts?.once });
+    return d;
+  };
+
+  const live = stub('abc');
+  const p0 = probe();
+  const ran = runBoot(doc(false), live);
+  await waitFor(() => probe() > p0, 2000, 20);
+  check(
+    `boot guard: a live, active document imports the entry point once (${live.asked} import)`,
+    live.asked === 1 && probe() === p0 + 1 && ran.win.__deflectionBooted === true && ran.warned.length === 0
+  );
+
+  const pre = stub('abc');
+  const preDoc = doc(true);
+  const p1 = probe();
+  runBoot(preDoc, pre);
+  await sleep(60);
+  const waited = pre.asked === 0 && probe() === p1;
+  const l = preDoc.listeners;
+  check(
+    `boot guard: a prerendered document imports nothing until it activates, through one one-shot prerenderingchange listener (${pre.asked} imports while prerendered)`,
+    waited && l.length === 1 && l[0].type === 'prerenderingchange' && l[0].once
+  );
+  preDoc.prerendering = false;
+  l[0]?.fn();
+  await waitFor(() => probe() > p1, 2000, 20);
+  check('boot guard: on activation the entry point is imported, once', pre.asked === 1 && probe() === p1 + 1);
+
+  const dead = stub(undefined);
+  const p2 = probe();
+  const gone = runBoot(doc(false), dead);
+  await sleep(60);
+  check(
+    'boot guard: an invalidated context (no runtime id) returns quietly — no import, no warning',
+    dead.asked === 0 && probe() === p2 && gone.warned.length === 0
+  );
 }
 
 async function run() {
@@ -361,17 +1079,24 @@ async function run() {
   } catch (e) {
     check(`tier 0 crashed (${e.message})`, false);
   }
+  try {
+    await bootGuard();
+  } catch (e) {
+    check(`boot guard crashed (${e.message})`, false);
+  }
   // Boot the registry FIRST so all videos arrive via MutationObserver.
   // feedbackVideo:true (the default, pinned here anyway) so the trail test
   // exercises the temporal path; a later check flips it off and asserts
-  // straight sorting leaves no trail. feedbackImage stays off — the image
-  // tests are route/still tests, and the ticker check flips it itself.
+  // straight sorting leaves no trail. The image tests are route/still
+  // tests (images never animate).
   // maxVideos pinned to 4 so the cap/promotion tests stay meaningful.
   // textScramble pinned OFF: it defaults on now, and letting it run would
   // scramble this page's own PASS/FAIL output mid-suite.
   // decay/flowAmount pinned to the classic grammar: the trail assertions
   // are calibrated against decay 0.906 and vertical sorting. DEFAULTS
   // follow John's taste and will keep moving; tier 0 owns the new knobs.
+  // keyframe (the clear-buffer counter) boots at 41, as if left in storage
+  // by an earlier session: no job may take that as a request to clear.
   const params = {
     ...DEFAULTS,
     enabled: true,
@@ -380,6 +1105,7 @@ async function run() {
     textScramble: false,
     decay: 0.906,
     flowAmount: 0,
+    keyframe: 41,
   };
   const registry = new Registry(params);
   registry.start();
@@ -477,17 +1203,33 @@ async function run() {
   );
   params.feedbackVideo = true;
 
-  // --- Split feedback toggles: the image ticker rides feedbackImage alone,
-  // regardless of the video toggle. (Pure timer state — pane-immune.)
-  params.feedbackImage = true;
-  registry.paramsChanged({ feedbackImage: true });
-  check('image ticker starts with image feedback', registry.imageTicker !== 0);
-  params.feedbackImage = false;
-  registry.paramsChanged({ feedbackImage: false });
-  check(
-    'image ticker ignores the video toggle',
-    registry.imageTicker === 0 && params.feedbackVideo === true
-  );
+  // --- The clear-buffer trigger (round 8): `keyframe` is a counter. A value
+  // larger than a job has answered sends it down the keyframe branch on its
+  // next tick, the reset the random clock (resetMinS..resetMaxS) takes, and
+  // a job never answers the counter it was built with.
+  {
+    const jobs = activeJobs();
+    check(
+      'clear buffer: every video job starts level with the counter it was built with (41), so a stored counter never fires on load',
+      jobs.length > 0 && [...registry.jobs.values()].filter((j) => j.kind === 'video').every((j) => j.lastKeyframe === 41)
+    );
+    // Stay clear of the random clock: one coming due in the next 3 s would
+    // muddy the count, so let it pass first (it reschedules 30–60 s out).
+    if (jobs.some((j) => j.nextResetAt - performance.now() < 3000)) await sleep(3500);
+    const before = jobs.map((j) => j.resets);
+    params.keyframe = 42;
+    registry.paramsChanged({ keyframe: 42 });
+    const fired = await waitFor(() => jobs.every((j, i) => j.resets > before[i]), 3000, 20);
+    await sleep(400); // more ticks, no second reset
+    registry.paramsChanged({ keyframe: 42 }); // the same value again: nothing
+    await sleep(200);
+    const minS = params.resetMinS;
+    check(
+      'clear buffer: a new counter value resets every active video job’s trail on its next tick, exactly once, and the random clock reschedules',
+      fired &&
+        jobs.every((j, i) => j.resets === before[i] + 1 && j.lastKeyframe === 42 && j.nextResetAt > performance.now() + 1000 * (minS - 2))
+    );
+  }
 
   // --- Images (Phase 4): route resolution + sorted stills ---
   // Direct route: a data-URL image (origin-clean by definition).
@@ -821,6 +1563,75 @@ async function run() {
     );
     params.maxVideos = 4;
     registry.refresh();
+  }
+
+  // --- Per-medium switches (video / images): the master's gate, per kind ---
+  // Asserted on job state and the page elements, not on mirroring, so a
+  // starved pane (no rVFC, stills never rendered) still tests the logic:
+  // the counts must drop to zero and return to exactly where they were.
+  {
+    const kindJobs = (kind) =>
+      [...registry.jobs.values()].filter((j) => (j.kind === 'image') === (kind === 'image'));
+    const shown = (j) => (j.video ?? j.img).style.opacity !== '0';
+    // Last in the suite on purpose: every check line pushes the video grid
+    // further down the status log, and in a short (headless, 720 px) window
+    // an extra line earlier on scrolls the grid out of view and starves the
+    // checks after it. Bring a live video into view first.
+    videos.find((v) => v.isConnected)?.scrollIntoView({ block: 'start' });
+    await waitFor(() => registry.stats().active > 0);
+    const before = registry.stats();
+
+    params.video = false;
+    registry.paramsChanged({ video: false });
+    check(
+      'video:false suspends every video job and shows the originals',
+      await waitFor(
+        () =>
+          registry.stats().active === 0 &&
+          kindJobs('video').every((j) => !j.active && shown(j)) &&
+          kindJobs('video').every((j) => !j.overlay || j.overlay.canvas.style.display === 'none')
+      )
+    );
+    check('video:false leaves image jobs alone', registry.stats().activeImages === before.activeImages);
+    params.video = true;
+    registry.paramsChanged({ video: true });
+    check(
+      `video:true reactivates the same video jobs (${before.active})`,
+      before.active > 0 && (await waitFor(() => registry.stats().active === before.active))
+    );
+
+    // The test images sit below the fold in a short window, so pin one more
+    // copy into the viewport (position: fixed — no scroll, no reflow of the
+    // video grid) to give the switch an active image job to act on.
+    const pinImg = document.createElement('img');
+    pinImg.src = sameImg.src;
+    pinImg.style.cssText = 'position:fixed;left:8px;bottom:8px;width:120px;z-index:5';
+    document.body.appendChild(pinImg);
+    await waitFor(() => !!registry.jobs.get(pinImg)?.active);
+    const sameImgJob = registry.jobs.get(pinImg);
+    const beforeImg = registry.stats();
+    params.images = false;
+    registry.paramsChanged({ images: false });
+    check(
+      'images:false suspends every image job and shows the originals',
+      await waitFor(
+        () =>
+          registry.stats().activeImages === 0 &&
+          kindJobs('image').every((j) => !j.active && !j.mirrored && shown(j))
+      )
+    );
+    check('images:false leaves video jobs alone', registry.stats().active === beforeImg.active);
+    params.images = true;
+    registry.paramsChanged({ images: true });
+    check(
+      `images:true reactivates the same image jobs (${beforeImg.activeImages})`,
+      beforeImg.activeImages > 0 &&
+        (await waitFor(
+          () => registry.stats().activeImages === beforeImg.activeImages && !!sameImgJob?.active
+        ))
+    );
+    pinImg.remove(); // the next scan tears its job down
+    await waitFor(() => !registry.jobs.has(pinImg));
   }
 
   const done = document.createElement('div');

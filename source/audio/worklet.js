@@ -6,6 +6,9 @@
 //   body — 48 modal resonators (stretched partials over three just
 //          fundamentals); the browsing only decides when and how hard the
 //          body is driven. Identity lives in the apparatus, not the source.
+//          With `follow` up, the chord retunes toward the source's own
+//          pitch (design review M8) — the source still passes through; only
+//          where the apparatus rings moves. follow 0 is the fixed chord.
 //
 // Discipline (from the multiple-perspectives run):
 // - non-finite guards on everything entering recursive state;
@@ -13,7 +16,16 @@
 // - process() must never throw: a dead processor is permanently silent
 //   media, which violates "never break the page".
 
-import { rms, modeTable, OnsetDetector, CombLine, BODY_FUNDAMENTALS } from './dsp.js';
+import {
+  rms,
+  modeTable,
+  OnsetDetector,
+  CombLine,
+  BODY_FUNDAMENTALS,
+  PitchFollower,
+  foldSticky,
+  followRatio,
+} from './dsp.js';
 
 const PRESENCE_OPEN_DB = -55;
 const PRESENCE_CLOSE_DB = -65;
@@ -23,6 +35,13 @@ const BODY_STATE_CAP = 0.35; // per-mode amplitude bound (hard backstop)
 const BODY_OUT_GAIN = 0.4;
 const BODY_CONT_BOOST = 4; // continuous-path peak gain = amp × this
 const COMB_OUT_GAIN = 0.5; // three lines, each level-normalised by (1 − g)
+// The source-following body (design review M8). Retuning is per block, and
+// only once the glided ratio has moved this far since the last retune — the
+// step is far below what the ear resolves on a ringing partial.
+const TUNE_EPS = 0.002; // 0.2 %
+const FOLLOW_GLIDE_S = 0.2; // one-pole on log(ratio): the chord never jumps
+const TUNE_MIN = 0.5; // backstop only: the sticky fold keeps the ratio in
+const TUNE_MAX = 4; //   [2^(−1/12), 2^(13/12)); the comb rings are sized for 0.5
 
 const DEFAULT_PARAMS = {
   body: 'modal', // which apparatus the signal passes through: modal | comb
@@ -45,6 +64,8 @@ const DEFAULT_PARAMS = {
   wobble: 0, // delay wobble depth, 0..0.4; 0 = a static echo stack
   clearMinS: 1, // when clearing: the smear's own keyframe window —
   clearMaxS: 60, // decoupled from the visual reset rhythm (2026-08-12)
+  follow: 0, // how far the chord retunes toward the source's pitch, 0..1;
+  //            0 = the fixed chord, bit for bit, and the follower never runs
 };
 
 // --- Engine: fixed resonant body ------------------------------------------
@@ -58,6 +79,10 @@ class BodyEngine {
     const n = this.modes.length;
     this.a1 = new Float64Array(n);
     this.a2 = new Float64Array(n);
+    this.pole = new Float64Array(n); // r per mode, kept for retuning
+    this.baseF = new Float64Array(n); // each mode's frequency at ratio 1
+    this.ratio = 1; // the tuning asked for
+    this.tunedRatio = 1; // the tuning the coefficients hold
     this.gGate = new Float64Array(n); // impulse-normalized: strikes ring
     this.gCont = new Float64Array(n); // peak-normalized (resonz): drones bounded
     this.y1 = []; // per channel per mode
@@ -80,6 +105,28 @@ class BodyEngine {
     this.coeffsDirty = true;
   }
 
+  // The source-following body: multiply all three fundamentals by `ratio`.
+  // Only the pole angles move (a1); the radii, so the ring, and the gains
+  // stay, and the y1/y2 state is kept, so a ringing partial glides to its new
+  // pitch instead of clicking. Recomputed only past TUNE_EPS, or to land
+  // exactly on 1 — the resting chord is then the same doubles as ever.
+  setTuning(ratio) {
+    const r = ratio > 0 && Number.isFinite(ratio) ? ratio : 1;
+    this.ratio = r;
+    if (r === this.tunedRatio || this.coeffsDirty) return; // refresh will apply it
+    if (r === 1 || Math.abs(r / this.tunedRatio - 1) > TUNE_EPS) this.retune();
+  }
+
+  retune() {
+    const nyq = 0.45 * this.sr;
+    for (let i = 0; i < this.a1.length; i++) {
+      const f = Math.min(nyq, this.baseF[i] * this.ratio);
+      const w = (2 * Math.PI * f) / this.sr;
+      this.a1[i] = 2 * this.pole[i] * Math.cos(w);
+    }
+    this.tunedRatio = this.ratio;
+  }
+
   // Two normalizations, one per exciter. Gated strikes want impulse
   // normalization (the ring is the point). Continuous drive wants the
   // constant-peak-gain resonz form — a plain two-pole's low-frequency
@@ -87,17 +134,18 @@ class BodyEngine {
   // sum rails the clip (harness-caught). The (1 − z⁻²) zeros kill that
   // skirt, so continuous input excites only its sympathetic partials.
   refreshCoeffs() {
-    const table = modeTable(this.sr, this.sustain);
+    const table = modeTable(this.sr, this.sustain); // ratio 1: the base chord
     for (let i = 0; i < table.length; i++) {
       const m = table[i];
       const r = Math.pow(10, -3 / (m.t60 * this.sr));
-      const w = (2 * Math.PI * m.f) / this.sr;
-      this.a1[i] = 2 * r * Math.cos(w);
+      this.pole[i] = r;
+      this.baseF[i] = m.f;
       this.a2[i] = r * r;
       this.gGate[i] = m.amp;
       this.gCont[i] = ((m.amp * (1 - r * r)) / 2) * BODY_CONT_BOOST;
     }
     this.coeffsDirty = false;
+    this.retune(); // a1 at the current tuning (ratio 1: exactly as before)
   }
 
   reset() {
@@ -198,9 +246,27 @@ class CombEngine {
     this.lines = [];
     for (let c = 0; c < channels; c++) {
       this.lines.push(
-        BODY_FUNDAMENTALS.map((f) => new CombLine(sr, f, this.sustain, this.damp))
+        // Rings sized for TUNE_MIN so retuning down never reads past them.
+        BODY_FUNDAMENTALS.map((f) => new CombLine(sr, f, this.sustain, this.damp, f * TUNE_MIN))
       );
     }
+    this.ratio = 1;
+    this.tunedRatio = 1;
+  }
+
+  // Same contract as the modal bank's: past TUNE_EPS, or landing on 1. The
+  // delays stay fractional (the line already interpolates), the loop gains
+  // follow the new pass length so the T60 holds, and the lines keep their
+  // contents, so what is ringing is re-pitched rather than dropped.
+  setTuning(ratio) {
+    const r = ratio > 0 && Number.isFinite(ratio) ? ratio : 1;
+    this.ratio = r;
+    if (r === this.tunedRatio) return;
+    if (r !== 1 && Math.abs(r / this.tunedRatio - 1) <= TUNE_EPS) return;
+    for (const ch of this.lines) {
+      for (let i = 0; i < ch.length; i++) ch[i].setFreq(BODY_FUNDAMENTALS[i] * r);
+    }
+    this.tunedRatio = r;
   }
 
   setSustain(s) {
@@ -376,6 +442,9 @@ class DeflectionAudio extends AudioWorkletProcessor {
     this.muted = false;
     this.statsAtFrame = 0;
     this.lastLoudFrame = 0;
+    this.follower = null; // built the first time follow > 0
+    this.tuneRatio = 1; // the glided ratio the engine is tuned to
+    this.foldOctave = null; // the sticky fold's octave (see foldSticky)
 
     this.port.onmessage = (e) => {
       const m = e.data;
@@ -386,6 +455,42 @@ class DeflectionAudio extends AudioWorkletProcessor {
   applyParams(params) {
     Object.assign(this.p, params);
     this.body?.setSustain(this.p.sustain);
+  }
+
+  // The source-following body (design review M8). The follower listens to
+  // the mono feed; its pitch, folded into the chord's lowest octave, sets
+  // where the chord should sit, `follow` how far toward it (geometric, so 0
+  // is exactly the fixed chord), and a one-pole on log(ratio) glides there.
+  // Unsure → glide home to 1. With follow 0 and the chord home, nothing here
+  // runs at all: no FFT, no retune — the resting state costs nothing.
+  followSource(n) {
+    const raw = Number(this.p.follow);
+    const follow = raw > 0 ? Math.min(1, raw) : 0;
+    let target = 1;
+    if (follow > 0) {
+      if (!this.follower) this.follower = new PitchFollower(sampleRate);
+      this.follower.push(this.monoIn.length === n ? this.monoIn : this.monoIn.subarray(0, n));
+      const hz = this.follower.hz;
+      if (hz > 0) {
+        const fold = foldSticky(hz, this.foldOctave);
+        this.foldOctave = fold.octave;
+        target = followRatio(fold.ratio, follow);
+      } else {
+        this.foldOctave = null;
+      }
+    } else {
+      this.follower = null; // a fresh follower next time: no stale held pitch
+      this.foldOctave = null;
+      if (this.tuneRatio === 1) return;
+    }
+    const a = 1 - Math.exp(-n / (FOLLOW_GLIDE_S * sampleRate));
+    const l = Math.log(this.tuneRatio);
+    let r = Math.exp(l + a * (Math.log(target) - l));
+    if (Math.abs(r - target) < 1e-5) r = target; // land exactly: 1 is the rest
+    if (!Number.isFinite(r)) r = 1;
+    r = Math.min(TUNE_MAX, Math.max(TUNE_MIN, r));
+    this.tuneRatio = r;
+    this.body.setTuning(r);
   }
 
   // Swapping engines rebuilds state, so it clicks — acceptable for a bake-off
@@ -475,6 +580,7 @@ class DeflectionAudio extends AudioWorkletProcessor {
         return true;
       }
 
+      this.followSource(n);
       this.body.process(this.inBufs, this.out, channels, n, this.p, this.monoIn);
 
       // The smear layer runs on the body's output, pre-clip.
@@ -504,6 +610,7 @@ class DeflectionAudio extends AudioWorkletProcessor {
           this.muted = true;
           this.body?.reset();
           this.fbLayer?.reset(); // stale echoes must not return with presence
+          this.follower?.reset(); // nor a held pitch from before the silence
           for (let c = 0; c < output.length; c++) output[c].fill(0);
         }
       }

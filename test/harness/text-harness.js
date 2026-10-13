@@ -12,6 +12,7 @@
 
 import {
   TextScramble,
+  TEXT_MIN,
   qualifies,
   scramble,
 } from '../../source/content/text-scramble.js';
@@ -96,10 +97,13 @@ function tier1() {
     })()
   );
   check(
-    'textMin is the only gate: long prose yes, short labels no',
-    qualifies('The Last Hour of Analog Television', 12) &&
+    'the minimum run length is the only gate: long prose yes, short labels no (and the piece fixes it at 8)',
+    TEXT_MIN === 8 &&
+      qualifies('The Last Hour of Analog Television', 12) &&
       !qualifies('Subscribe', 12) &&
       qualifies('Subscribe', 5) &&
+      qualifies('Subscribe') && // the default argument is the piece's own minimum
+      !qualifies('Home') &&
       !qualifies('12:04 · 1.2 / 60 %', 12) // letterless runs never qualify
       // (a lone unit letter like "1.2M" does qualify — harmless, since
       // single letters between barriers cannot be rearranged anyway)
@@ -150,7 +154,8 @@ function tier2() {
   const { titles, prose } = buildPage();
   const originals = titles.map((n) => n.nodeValue);
   const proseOriginal = prose.nodeValue;
-  const params = { ...DEFAULTS, enabled: true, textScramble: true, textMin: 12 };
+  // A stale `textMin` from an older profile rides along to prove it is ignored.
+  const params = { ...DEFAULTS, enabled: true, textScramble: true, textMin: 2 };
   const ts = new TextScramble(params);
 
   // The registry's observer options exactly: if a write here produced a
@@ -168,7 +173,7 @@ function tier2() {
   );
   check('prose far from any media scrambled too (page-wide)', prose.nodeValue !== proseOriginal);
   check(
-    'long navigation text scrambled too — reach is textMin, not card',
+    'long navigation text scrambled too — reach is the minimum run length, not card',
     stage.querySelector('.nav-link').textContent !== 'Browse the whole library of recordings' &&
       stage.querySelector('.nav-button').textContent !== 'Subscribe to this excellent channel'
   );
@@ -193,7 +198,7 @@ function tier2() {
 
   // --- the exclusions that keep the page functional ---
   check(
-    'short labels survive at textMin 12',
+    'short labels survive at the fixed minimum (8) — and a stale stored textMin of 2 does not lower it',
     stage.querySelector('.nav-short').textContent === 'Home' &&
       stage.querySelector('.short').textContent === 'OK'
   );
@@ -293,8 +298,8 @@ async function tier3() {
   registry.sweep();
   check('the sweep feeds the text mode', updates === 1);
 
-  // Toggle and textMin edits are debounced (the panel drags at ~30 Hz and a
-  // pass walks the whole document), so these assertions wait out the 200 ms.
+  // Toggle edits are debounced (a pass walks the whole document), so these
+  // assertions wait out the 200 ms.
   const settle = () => new Promise((r) => setTimeout(r, 300));
 
   params.textScramble = false;
@@ -308,15 +313,12 @@ async function tier3() {
   await settle();
   check('toggling it on applies without waiting for the sweep', updates === beforeToggle + 1);
 
-  const beforeMin = { updates, restores };
-  params.textMin = 4;
-  registry.paramsChanged({ textMin: 4 });
-  registry.paramsChanged({ textMin: 3 });
-  registry.paramsChanged({ textMin: 2 });
+  const beforeStale = { updates, restores };
+  registry.paramsChanged({ textMin: 4 }); // from an old profile: no longer a key
   await settle();
   check(
-    'a textMin drag restores and re-applies once, not per tick',
-    restores === beforeMin.restores + 1 && updates === beforeMin.updates + 1
+    'a stray textMin change (old profiles) neither restores nor re-applies',
+    restores === beforeStale.restores && updates === beforeStale.updates
   );
 
   const priorRestores = restores;

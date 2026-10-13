@@ -44,6 +44,68 @@
 // motion trail (composite pass: |incoming − prev frame|, decaying); a pair
 // may only trade when BOTH members clear the gate, so damage stays inside
 // what the transmission itself is changing.
+//
+// uKey — the comparison key (`sortKey`, "sort by", round 8 part 2). Which
+// pixel climbs is decided by key(): 0 luma (the classic, and the very same
+// expression, so the default is bit-identical), 1 hue, 2 saturation, 3/4/5
+// one channel. Only the ORDERING reads the key. The BARRIER stays on luma —
+// threshold tests and the span midpoint read luma(), never key() — so
+// amount keeps its meaning under every key (dark material always holds the
+// picture together) and the permutation argument is untouched: both
+// members still compute the same key pair and the same refusals.
+//
+// uAngle — the direction (`angle`, round 8 part 2), radians, applied AFTER
+// the field: the angle is added to the field's own angle before it is
+// quantized, so with flow on the whole streamline pattern turns at any
+// flow amount. With flow off every pixel shares one direction, π/2 +
+// uAngle, through the SAME quantizer the mode uses — facets: 8 fixed
+// sectors, so the sort turns in 45° steps; paths: 16 sectors under the
+// per-pass jitter, so the single direction dithers pass to pass and the
+// average motion follows the true angle (the paths grammar, applied to the
+// whole frame). At 0 with flow off v stays exactly (0,1): bit-identical.
+// One shared v per pass needs no partner check; with flow on the check is
+// unchanged, and both members' fieldDir now includes the same angle.
+// Sense: v points AWAY from where the higher key goes (it seeks the smaller
+// projection), and texel y grows toward the video's bottom, so a growing
+// angle turns the climb clockwise on screen: 0 up, 90 right, 180 down.
+//
+// The where gates (round 8 part 3, John 2026-10-12) — each a condition BOTH
+// members must meet, computed identically by both, so every refusal stays
+// symmetric and every pass a permutation; they stack with the barrier and
+// the motion gate, and each is exactly inert at 0:
+//
+// uEdgeGate — the edges gate. uEdge holds the CLEAN frame's Sobel
+// magnitude (edge.js; never the sorted buffer, which would measure our own
+// damage), one texel per working texel. g > 0: a pair trades only where
+// both members (and, for strides > 1, the span midpoint) read at least g —
+// outlines shred, fills hold. g < 0: only where all read at most 1 + g —
+// flat regions tear, outlines hold. Never sampled at 0.
+//
+// uSpan — walls (`span`, in pixels along the sort direction; 0 = none).
+// Cells are cut along the brick's own projection t = dot(p, v): a pair
+// trades only when both members fall in the same cell, so no run ever
+// reaches past one. Two refinements on floor(t / N): the cell length is
+// N·|v| in projection units, so N is pixels along v for diagonals and
+// knight moves too (an axis has |v| = 1); and t is measured from the
+// frame's first corner along v (t0, the smallest projection in the frame),
+// so cells start at a frame edge in every direction — without it a
+// negative direction would put a wall one pixel in from the edge, and a
+// span longer than the frame would not be "no wall". Cells are contiguous
+// along the projection, so the midpoint needs no check of its own.
+//
+// uSoft — the soft barrier (`barrierSoft`). The luma barrier becomes a
+// band: at or above uThreshold a member passes; below uThreshold − uSoft it
+// never does; in between it passes when the pair's draw falls under
+// (l − (uThreshold − uSoft)) / uSoft, so the odds rise toward the
+// threshold and ribbon ends fray instead of cutting clean. ONE draw per
+// pair per pass, from the temperature's hash family — keyed on the upper
+// member and uSeed — with different constants, so it is independent of the
+// temperature's draw; the same draw judges self, other and the midpoint,
+// so both members reach the same verdict and the pass stays a permutation.
+// At uSoft 0 the old comparisons run untouched (their own branch), so the
+// hard cut is bit-identical. The band is not floored at black: with a low
+// threshold (the resting 0.05) a wide band reaches below 0, and black
+// itself then trades with odds (uSoft − uThreshold) / uSoft.
 import { GLSL_LUMA } from './common.js';
 
 export const FRAG_SORT = `#version 300 es
@@ -59,9 +121,40 @@ uniform float uThreshold;
 uniform float uTemp;
 uniform float uMotionGate;
 uniform int uSeed;
+uniform int uKey;
+uniform float uAngle;
+uniform sampler2D uEdge;
+uniform float uEdgeGate;
+uniform float uSpan;
+uniform float uSoft;
 in vec2 vUV;
 out vec4 outColor;
 ${GLSL_LUMA}
+// The ordering key. Plain if-chains on the int (ANGLE-safe); anything
+// unknown falls through to luma.
+float key(vec3 c) {
+  if (uKey == 1) {
+    // Hue in [0,1): red 0, green 1/3, blue 2/3. Grey has none: 0.
+    float mx = max(c.r, max(c.g, c.b));
+    float d = mx - min(c.r, min(c.g, c.b));
+    if (d <= 0.0) return 0.0;
+    float h;
+    if (mx == c.r) h = (c.g - c.b) / d;
+    else if (mx == c.g) h = (c.b - c.r) / d + 2.0;
+    else h = (c.r - c.g) / d + 4.0;
+    return fract(h / 6.0);
+  }
+  if (uKey == 2) {
+    // Saturation (HSV): (max - min) / max; black has none.
+    float mx = max(c.r, max(c.g, c.b));
+    if (mx <= 0.0) return 0.0;
+    return (mx - min(c.r, min(c.g, c.b))) / mx;
+  }
+  if (uKey == 3) return c.r;
+  if (uKey == 4) return c.g;
+  if (uKey == 5) return c.b;
+  return luma(c);
+}
 const float SECTOR = 0.39269908169872414; // pi/8: 16 sectors of 22.5 deg
 const float SECTOR8 = 0.7853981633974483; // pi/4: the facet grammar's 8
 const ivec2 DIRS[16] = ivec2[16](
@@ -80,15 +173,41 @@ const ivec2 DIRS8[8] = ivec2[8](
 // facets (uFacets 1): 8 fixed sectors, no dither — the first cut's
 // grammar, where sector edges are anchored seams and ribbons run
 // straight inside each patch and pool where the field bends.
-ivec2 fieldDir(ivec2 cell) {
-  vec2 d = texelFetch(uField, cell, 0).rg * 2.0 - 1.0;
-  float a = atan(d.y, d.x);
+ivec2 quantizeDir(float a) {
   if (uFacets > 0.5) {
     int k = int(round(a / SECTOR8));
     return DIRS8[((k % 8) + 8) % 8];
   }
   int k = int(round(a / SECTOR + uSectorJitter));
   return DIRS[((k % 16) + 16) % 16];
+}
+// The soft barrier's draw for a pair (only while uSoft > 0): [0, 1), keyed
+// on the upper member and the pass seed like the temperature's, with other
+// constants so the two draws are independent.
+float softDraw(ivec2 up) {
+  uint h = (uint(up.x) * 374761393u) ^ (uint(up.y) * 668265263u) ^
+           (uint(uSeed) * 3266489917u) ^ 0x9E3779B9u;
+  h = (h ^ (h >> 15u)) * 2246822519u;
+  h = (h ^ (h >> 13u)) * 3266489917u;
+  h = h ^ (h >> 16u);
+  return float(h & 0x00FFFFFFu) / 16777216.0;
+}
+// One member against the soft barrier, under the pair's draw.
+bool softPass(float l, float draw) {
+  if (l >= uThreshold) return true;
+  float lo = uThreshold - uSoft;
+  if (l < lo) return false;
+  return draw < (l - lo) / uSoft;
+}
+// The edges gate for one texel (only called while uEdgeGate != 0).
+bool edgeOK(ivec2 c) {
+  float e = texelFetch(uEdge, c, 0).r;
+  return uEdgeGate > 0.0 ? e >= uEdgeGate : e <= 1.0 + uEdgeGate;
+}
+// The field's direction, turned by the angle before it is quantized.
+ivec2 fieldDir(ivec2 cell) {
+  vec2 d = texelFetch(uField, cell, 0).rg * 2.0 - 1.0;
+  return quantizeDir(atan(d.y, d.x) + uAngle);
 }
 void main() {
   ivec2 size = textureSize(uTex, 0);
@@ -98,6 +217,7 @@ void main() {
   int s = int(uStride);
   ivec2 v = ivec2(0, 1);
   if (uUseFlow > 0.5) v = fieldDir(p >> 2);
+  else if (uAngle != 0.0) v = quantizeDir(1.5707963267948966 + uAngle);
 
   // Brick pairing along v. floor division (not truncation) keeps blocks
   // consistent when the projection goes negative under leftward/upward v.
@@ -117,11 +237,30 @@ void main() {
     outColor = self;
     return;
   }
+  // Span: the pair must share a cell along the projection. q = p ± s·v, so
+  // its projection is t ± sd; both members compute the same two cells.
+  if (uSpan > 0.0) {
+    int tq = isUpper ? t + sd : t - sd;
+    int t0 = min(0, v.x * (size.x - 1)) + min(0, v.y * (size.y - 1));
+    float cell = uSpan * length(vec2(v));
+    if (floor(float(t - t0) / cell) != floor(float(tq - t0) / cell)) {
+      outColor = self;
+      return;
+    }
+  }
   vec4 other = texelFetch(uTex, q, 0);
 
-  float lSelf = luma(self.rgb);
-  float lOther = luma(other.rgb);
-  if (lSelf < uThreshold || lOther < uThreshold) {
+  // The barrier reads luma whatever the key. Hard (uSoft 0, the old
+  // comparisons, untouched) or soft: one draw for the pair, shared by both
+  // members and the midpoint.
+  float draw = 0.0;
+  if (uSoft > 0.0) {
+    draw = softDraw(isUpper ? p : q);
+    if (!softPass(luma(self.rgb), draw) || !softPass(luma(other.rgb), draw)) {
+      outColor = self;
+      return;
+    }
+  } else if (luma(self.rgb) < uThreshold || luma(other.rgb) < uThreshold) {
     outColor = self;
     return;
   }
@@ -134,6 +273,13 @@ void main() {
     return;
   }
 
+  // Edges gate: both members must sit on the gate's side of the clean
+  // frame's edge map.
+  if (uEdgeGate != 0.0 && (!edgeOK(p) || !edgeOK(q))) {
+    outColor = self;
+    return;
+  }
+
   // Long strides could teleport pixels across a dark gap; checking the
   // span midpoint keeps barriers honest at negligible cost. The motion
   // gate rides the same check so a span can't sort across still material.
@@ -141,7 +287,7 @@ void main() {
   if (s > 1) {
     ivec2 m = isUpper ? p + (s / 2) * v : p - (s / 2) * v;
     vec4 mid = texelFetch(uTex, m, 0);
-    if (luma(mid.rgb) < uThreshold) {
+    if (uSoft > 0.0 ? !softPass(luma(mid.rgb), draw) : luma(mid.rgb) < uThreshold) {
       outColor = self;
       return;
     }
@@ -149,10 +295,18 @@ void main() {
       outColor = self;
       return;
     }
+    if (uEdgeGate != 0.0 && !edgeOK(m)) {
+      outColor = self;
+      return;
+    }
   }
 
-  // Bright seeks the smaller projection along v (for columns: the video's
-  // top). "swap" is symmetric: both members output the other's value.
+  // The higher key seeks the smaller projection along v (for columns: the
+  // video's top; under luma, bright climbs). "swap" is symmetric: both
+  // members output the other's value. Equal keys do not trade (until
+  // temperature flips the verdict).
+  float lSelf = key(self.rgb);
+  float lOther = key(other.rgb);
   float lUpper = isUpper ? lSelf : lOther;
   float lLower = isUpper ? lOther : lSelf;
   bool swap = lUpper < lLower;

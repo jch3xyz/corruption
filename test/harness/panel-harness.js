@@ -1,4 +1,4 @@
-// Panel harness. The panel grew real logic on 2026-08-20 — four sections,
+// Panel harness. The panel grew real logic on 2026-08-20 — sections,
 // value fields you can type into, a saved default set, per-row restore, and
 // a tooltip layer — so it gets a suite like every other part of the piece.
 //
@@ -8,18 +8,113 @@
 // markup that ships, and stubs chrome.storage.local so the harness can read
 // exactly what the panel wrote.
 //
+// 2026-10-12: the global block was redesigned (design review M1/M2/M3/M7):
+// title + subtitle + shortcuts, a large A/B with hold-to-bypass, four medium
+// chips, and presets (immutable original, slots A/B/C behind a save mode,
+// undo after every load). The old "set defaults" snapshot migrates to A.
+//
+// 2026-10-12, later (M4/M8 + round-1 findings 6–10): Video and Audio regroup
+// into effect / effect / engine with the engine folded away (`engineOpen`),
+// labels in the player's vocabulary (keys unchanged), an audio status line,
+// gate captions on inert rows, ⊙ hidden until a MIDI device appears, the
+// slider out of the row double-click, clamp flashes, and the tooltip moved
+// to a fixed strip under the scroller.
+//
+// Round 3 (three heuristic reviewers): the A/B latches on any press under
+// 600 ms and only a longer hold is a momentary compare; "original" is now
+// "default", under a PRESETS caption, with the base marked by a dot; the
+// strip rests at one line and grows over the rows on hover without moving
+// them; mix leads the audio body and dry moved to the engine; save mode
+// says "replace A" and a save-over can be undone; the chips land and flash;
+// the Video rows name the medium switch that would wake them.
+//
+// Handles round (John, 2026-10-12): threshold shows as amount, drift is one
+// pad, and each effect column holds only its handles, named for the result
+// (ribbons, trail, follow motion, level); the flow shape, the clear rhythm
+// and the body type are filed in the engines. Gates are keyed, so a demoted
+// row is hidden twice — by the fold and by its gate — and the checks read
+// `hidden`/`data-gate` rather than visibility for those.
+//
 // Run: python3 test/serve.py  →  http://localhost:8437/test/harness/panel.html
 
 import { DEFAULTS } from '../../source/content/params.js';
+import { RAIL_HEIGHT, STRIP_HEIGHT } from '../../source/content/strip.js';
 import {
   DEFS,
+  PADS,
   SECTIONS,
+  GROUPS,
   quantize,
+  settle,
   fmtValue,
   fmtNumber,
+  toView,
+  fromView,
   decimals,
   defaultFor,
+  PRESET_SLOTS,
+  PRESET_EXCLUDED,
+  PANEL_HOME,
+  PANEL_HOMES,
 } from '../../source/panel/defs.js';
+
+// Keys the panel may store that are NOT parameters: panel furniture and the
+// preset store. Excluded from "every stored key has a row". `panelHome` is
+// where the panel opens (M9); `stripOpen` is written by the in-page strip;
+// `panelBounds` (the window's remembered size and place, round 4b) by the
+// service worker, which no suite here can run — it is only listed.
+const PANEL_ONLY = ['tooltips', 'midiMap', 'presets', 'presetBase', 'engineOpen', 'panelHome', 'stripOpen', 'panelBounds'];
+// Sectionless keys: the global block's own controls — the A/B and the four
+// chips, which since 2026-10-11 are the only face of all four mediums.
+const GLOBAL_KEYS = ['enabled', 'video', 'images', 'textScramble', 'audioEnabled'];
+// The chips, in order, and the key each one drives.
+const CHIP_KEYS = ['video', 'images', 'textScramble', 'audioEnabled'];
+
+// The regrouped sections (design review M4/M8; the handles round, John
+// 2026-10-12: each effect column holds only its handles, the rest is filed
+// in the engine), in render order: rows that sit above the groups, then each
+// group's rows. Key → the player's label.
+const LAYOUT = {
+  video: {
+    loose: [],
+    groups: [
+      ['sort', ['threshold', 'sortKey', 'angle', 'flowAmount', 'temperature', 'streak']],
+      ['feedback', ['feedbackVideo', 'decay', 'driftX', 'driftY', 'feedbackBlend', 'feedbackMix']],
+      ['gate', ['motionGate', 'edgeGate', 'span', 'barrierSoft']],
+      ['engine', ['keyframe', 'passes', 'maxRes', 'maxVideos', 'flowMode', 'flowScale', 'flowSpeed', 'resetMinS', 'resetMaxS']],
+    ],
+  },
+  audio: {
+    loose: [],
+    groups: [
+      ['body', ['audioMix', 'audioBodyMix', 'audioFollow', 'audioSustain', 'audioDrive']],
+      ['smear', ['audioFeedback', 'audioFbDecay', 'audioFbReturn', 'audioFbWobble']],
+      [
+        'engine',
+        [
+          'audioBody', 'audioDirect', 'audioMaxTaps', 'audioExciter', 'audioCombDamp',
+          'audioFbClear', 'audioFbClearS', 'audioFbClearMinS', 'audioFbClearMaxS',
+        ],
+      ],
+    ],
+  },
+};
+const LABELS = {
+  threshold: 'amount', sortKey: 'sort by', angle: 'direction', flowAmount: 'flow', temperature: 'jitter', streak: 'ribbons',
+  feedbackVideo: 'feedback', decay: 'trail', driftX: 'drift', driftY: 'drift', motionGate: 'follow motion',
+  feedbackBlend: 'blend', feedbackMix: 'blend amount',
+  edgeGate: 'edges', span: 'span', barrierSoft: 'soft barrier',
+  keyframe: 'clear buffer', passes: 'sort passes', maxRes: 'max res', maxVideos: 'max videos',
+  flowMode: 'flow mode', flowScale: 'flow scale', flowSpeed: 'flow speed',
+  resetMinS: 'clear min s', resetMaxS: 'clear max s',
+  audioMix: 'mix', audioBodyMix: 'body amount', audioFollow: 'follow', audioSustain: 'ring time', audioDrive: 'drive',
+  audioFeedback: 'smear', audioFbDecay: 'tail', audioFbReturn: 'level', audioFbWobble: 'wobble',
+  audioBody: 'body type', audioDirect: 'dry', audioMaxTaps: 'max sources', audioExciter: 'exciter',
+  audioCombDamp: 'comb damp', audioFbClear: 'smear clear', audioFbClearS: 'clear fade s',
+  audioFbClearMinS: 'clear min s', audioFbClearMaxS: 'clear max s',
+};
+// Changelog has no place in hover copy (finding 6).
+const CHANGELOG = /since the detangle|until 20\d\d|pre-20\d\d|old synth|the old behaviour|20\d\d-\d\d-\d\d/i;
 
 const status = document.getElementById('status');
 let passCount = 0;
@@ -39,10 +134,12 @@ function check(name, ok) {
 
 const tier = (name) => line(name, 'tier');
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const numeric = DEFS.filter((d) => d.type !== 'toggle' && d.type !== 'select');
+const numeric = DEFS.filter((d) => d.type !== 'toggle' && d.type !== 'select' && d.type !== 'trigger');
 const byKey = Object.fromEntries(DEFS.map((d) => [d.key, d]));
 
 // --- Tier 1: the control table and the value helpers -----------------------
+
+const defsSection = (key) => byKey[key].section;
 
 function tier1() {
   tier('tier 1 — control table + value helpers (pure)');
@@ -69,8 +166,170 @@ function tier1() {
 
   const declared = new Set(SECTIONS.map((s) => s.id));
   check(
-    'every row belongs to a declared section, except the master switch',
-    DEFS.every((d) => (d.key === 'enabled' ? !d.section : declared.has(d.section)))
+    'every row belongs to a declared section, except the global block (A/B and the four chips)',
+    DEFS.every((d) => (GLOBAL_KEYS.includes(d.key) ? !d.section : declared.has(d.section)))
+  );
+  check(
+    'the per-medium switches exist as on-by-default toggles',
+    DEFAULTS.video === true &&
+      DEFAULTS.images === true &&
+      byKey.video?.type === 'toggle' &&
+      byKey.images?.type === 'toggle'
+  );
+  check(
+    'every grouped row names a group declared for its own section',
+    DEFS.filter((d) => d.group).every((d) => GROUPS.some((g) => g.section === d.section && g.id === d.group))
+  );
+  check(
+    'every group carries hover copy, and only the engines fold away',
+    GROUPS.every((g) => typeof g.tip === 'string' && g.tip.length > 20) &&
+      GROUPS.filter((g) => g.collapsible).map((g) => `${g.section}.${g.id}`).join() === 'video.engine,audio.engine'
+  );
+  {
+    const wantOrder = Object.entries(LAYOUT).flatMap(([, l]) => [...l.loose, ...l.groups.flatMap(([, keys]) => keys)]);
+    const haveOrder = DEFS.filter((d) => d.section).map((d) => d.key);
+    check('the control table lists every section row in the stated group order', haveOrder.join() === wantOrder.join());
+    const wantGroups = Object.values(LAYOUT).flatMap((l) => [
+      ...l.loose.map((k) => [k, undefined]),
+      ...l.groups.flatMap(([g, keys]) => keys.map((k) => [k, g])),
+    ]);
+    const wrongGroup = wantGroups.filter(([k, g]) => byKey[k]?.group !== g).map(([k]) => k);
+    check(`every row sits in its stated group (${wrongGroup.join(', ') || 'all'})`, wrongGroup.length === 0);
+  }
+  {
+    const wrong = Object.entries(LABELS).filter(([k, l]) => byKey[k]?.label !== l).map(([k]) => k);
+    check(`Video and Audio rows carry the player’s labels (${wrong.join(', ') || 'all'})`, wrong.length === 0);
+  }
+  check(
+    'the labels are the stranger’s, not the machine’s (no fb, taps, direct, temperature, sustain)',
+    DEFS.every((d) => !/\bfb\b|taps|\bdirect\b|temperature|sustain|body mix|audio mix/.test(d.label))
+  );
+  {
+    const dated = DEFS.filter((d) => CHANGELOG.test(d.tip)).map((d) => d.key);
+    check(`no tip carries changelog (${dated.join(', ') || 'clean'})`, dated.length === 0);
+  }
+  check(
+    'the tips the review named lead with what you see or hear',
+    byKey.threshold.tip.startsWith('How much of the picture is sorted. 0 = untouched; 1 = everything but true black, which always holds as a barrier. The most expressive knob.') &&
+      byKey.temperature.tip.startsWith('Random swaps on top of the sort. 0 = clean ribbons; up = grain and shimmer.') &&
+      byKey.audioBodyMix.tip.startsWith('How much of the resonant body you hear against the source. 0 = source only, 2 = all body.') &&
+      byKey.audioDirect.tip.startsWith('The untouched source mixed back in. Up = intelligible again, which defeats the piece; kept for comparison.') &&
+      byKey.audioMix.tip.startsWith('Wet/dry for the whole sound. 0 = the sound exactly as transmitted, 1 = all apparatus.')
+  );
+  // The handles round renamed five rows for the result; each tip's first
+  // sentence says that result before anything about the machine.
+  check(
+    'the renamed handles lead with what you see or hear (ribbons, trail, follow motion, level; amount above)',
+    byKey.streak.tip.startsWith('How far the ribbons run: the distance a pixel can travel in one frame.') &&
+      byKey.decay.tip.startsWith('How long the trail lingers.') &&
+      byKey.motionGate.tip.startsWith('How closely the sort follows motion. 0 = the whole picture sorts; 1 = only what moves.') &&
+      byKey.audioFbReturn.tip.startsWith('How loud the wash sits under the sound.')
+  );
+  // The feedback blend (design review M5): a select over the four rules in
+  // the shader's order, brighter (the codec-faithful rule) at rest, and an
+  // amount whose rest is the full rule — the resting picture is unchanged.
+  check(
+    'the feedback blend: four rules in the shader’s order, brighter and the full amount at rest, tips leading with what you see',
+    byKey.feedbackBlend.type === 'select' && byKey.feedbackBlend.options.join() === 'brighter,mix,screen,add' &&
+      DEFAULTS.feedbackBlend === 'brighter' && DEFAULTS.feedbackMix === 1 &&
+      byKey.feedbackMix.min === 0 && byKey.feedbackMix.max === 1 && byKey.feedbackMix.step === 0.01 &&
+      byKey.feedbackBlend.tip.startsWith('How the trail meets the new frame.') &&
+      byKey.feedbackMix.tip.startsWith('How much of the trail survives against the new frame.')
+  );
+  // Sort by (round 8 part 2): the comparison key as a select, luma at rest
+  // (the classic, bit for bit), right after amount in the sort column.
+  check(
+    'sort by: a select over luma · hue · saturation · red · green · blue (the shader’s order), luma at rest, right after amount, tip leading with what you see',
+    byKey.sortKey?.type === 'select' && byKey.sortKey.label === 'sort by' &&
+      byKey.sortKey.options.join() === 'luma,hue,saturation,red,green,blue' &&
+      DEFAULTS.sortKey === 'luma' && byKey.sortKey.group === 'sort' &&
+      DEFS.indexOf(byKey.sortKey) === DEFS.indexOf(byKey.threshold) + 1 &&
+      byKey.sortKey.tip.startsWith('What decides which pixel climbs. luma = the bright rises; hue = colours stratify into bands;') &&
+      /dark barrier still holds/.test(byKey.sortKey.tip) && /Shapes images too/.test(byKey.sortKey.tip)
+  );
+  // Direction (round 8 part 2): the panel's first knob — an angle in whole
+  // degrees that wraps (0–359), 0 at rest, after sort by and before flow.
+  check(
+    'direction: a wrapping knob, 0–359 in whole degrees, 0 at rest, between sort by and flow, tip naming the four quarters',
+    byKey.angle?.type === 'knob' && byKey.angle.wrap === true && byKey.angle.label === 'direction' &&
+      byKey.angle.min === 0 && byKey.angle.max === 359 && byKey.angle.step === 1 && DEFAULTS.angle === 0 &&
+      byKey.angle.group === 'sort' && numeric.includes(byKey.angle) &&
+      DEFS.indexOf(byKey.angle) === DEFS.indexOf(byKey.sortKey) + 1 &&
+      DEFS.indexOf(byKey.flowAmount) === DEFS.indexOf(byKey.angle) + 1 &&
+      byKey.angle.tip.startsWith('Which way the sort climbs: 0 = up, 90 = right, 180 = down, 270 = left.') &&
+      /45° steps/.test(byKey.angle.tip) && /Shapes images too/.test(byKey.angle.tip)
+  );
+  check(
+    'settle wraps a wrapping def round the circle (360 → 0, −1 → 359, 450 → 90, 359.6 → 0, 719 → 359, −30 → 330) and is quantize for every other def',
+    settle(byKey.angle, 360) === 0 && settle(byKey.angle, -1) === 359 && settle(byKey.angle, 450) === 90 &&
+      settle(byKey.angle, 359.6) === 0 && settle(byKey.angle, 719) === 359 && settle(byKey.angle, -30) === 330 &&
+      settle(byKey.angle, 137.4) === 137 &&
+      numeric.filter((d) => !d.wrap).every((d) =>
+        [d.min - 1, d.min, (d.min + d.max) / 3, d.max, d.max + 1].every((n) => settle(d, n) === quantize(d, n))
+      )
+  );
+  // The source-following body (design review M8): one 0–1 knob in the body
+  // column after body amount, resting at 0 so the fixed chord is unchanged.
+  check(
+    'the follow knob: 0–1 in steps of 0.01, 0 at rest, after body amount in the body group, tip leading with what you hear',
+    byKey.audioFollow?.min === 0 && byKey.audioFollow.max === 1 && byKey.audioFollow.step === 0.01 &&
+      DEFAULTS.audioFollow === 0 && byKey.audioFollow.group === 'body' &&
+      DEFS.indexOf(byKey.audioFollow) === DEFS.indexOf(byKey.audioBodyMix) + 1 &&
+      byKey.audioFollow.tip.startsWith('How much the body retunes toward the source’s own pitch. 0 = the fixed chord')
+  );
+  // What left the effect columns for the engines, in order: the engines
+  // hold setup plus everything demoted, and nothing else.
+  check(
+    'the engines hold exactly their setup plus the demoted keys, in order (the clear button first; flow shape and clear rhythm; body type first)',
+    DEFS.filter((d) => d.section === 'video' && d.group === 'engine').map((d) => d.key).join() ===
+      'keyframe,passes,maxRes,maxVideos,flowMode,flowScale,flowSpeed,resetMinS,resetMaxS' &&
+      DEFS.filter((d) => d.section === 'audio' && d.group === 'engine').map((d) => d.key).join() ===
+        'audioBody,audioDirect,audioMaxTaps,audioExciter,audioCombDamp,audioFbClear,audioFbClearS,audioFbClearMinS,audioFbClearMaxS'
+  );
+  // -- pads: two numeric keys played as one 2-D surface --
+  {
+    const padKeys = DEFS.filter((d) => d.pad);
+    const pad = PADS.drift;
+    check(
+      'the drift pad is declared: driftX and driftY both carry pad "drift", PADS.drift names them x and y, labelled drift',
+      padKeys.map((d) => `${d.key}:${d.pad}`).join() === 'driftX:drift,driftY:drift' &&
+        pad?.x === 'driftX' && pad.y === 'driftY' && pad.label === 'drift' &&
+        byKey.driftX.label === 'drift' && byKey.driftY.label === 'drift'
+    );
+    check(
+      'a pad’s two keys are numeric, share one range and step, and sit next to each other in DEFS',
+      Object.values(PADS).every((p) => {
+        const [a, b] = [byKey[p.x], byKey[p.y]];
+        const i = DEFS.indexOf(a);
+        return (
+          numeric.includes(a) && numeric.includes(b) && a.min === b.min && a.max === b.max && a.step === b.step &&
+          DEFS[i + 1] === b && a.pad === b.pad && PADS[a.pad] === p
+        );
+      })
+    );
+    check(
+      'every pad leads with what you see, carries no changelog, and its keys keep their own tips (they feed the two fields)',
+      Object.values(PADS).every(
+        (p) => p.tip.length > 20 && !CHANGELOG.test(p.tip) && byKey[p.x].tip !== p.tip && byKey[p.y].tip !== p.tip
+      ) && PADS.drift.tip.startsWith('Which way the trail slides') && /up on the picture/i.test(PADS.drift.tip)
+    );
+  }
+  // The clear-buffer trigger (round 8): a counter at 0, a trigger row first
+  // in the Video engine, never in a preset; the feedback switch points to it.
+  check(
+    'clear buffer: keyframe is a trigger (a counter resting at 0) first in the Video engine, labelled clear buffer, tip leading with what you see',
+    DEFAULTS.keyframe === 0 && byKey.keyframe?.type === 'trigger' && byKey.keyframe.label === 'clear buffer' &&
+      byKey.keyframe.section === 'video' && byKey.keyframe.group === 'engine' &&
+      DEFS.find((d) => d.section === 'video' && d.group === 'engine') === byKey.keyframe &&
+      byKey.keyframe.tip.startsWith('Wipe the trail to a clean frame right now, on every video.') &&
+      /MIDI button/.test(byKey.keyframe.tip) && /clear buffer, under engine, wipes the trail now/.test(byKey.feedbackVideo.tip) &&
+      fmtValue(byKey.keyframe, 3) === '' && !numeric.includes(byKey.keyframe)
+  );
+  check('presets never capture or load the clear-buffer counter', PRESET_EXCLUDED.includes('keyframe'));
+  check('no row carries slider-end captions (threshold’s "more · less" went 2026-10-12, John)', DEFS.every((d) => !d.ends));
+  check(
+    'presets are three slots and never capture the A/B',
+    PRESET_SLOTS.join() === 'A,B,C' && PRESET_EXCLUDED.includes('enabled')
   );
   check(
     'no section is empty',
@@ -134,16 +393,49 @@ function tier1() {
       fmtValue(byKey.flowMode, 'facets') === 'facets'
   );
 
+  // -- the view mapping (amount = 1 − threshold): a def flag, not a special case --
+  {
+    const inverted = numeric.filter((d) => d.invert);
+    check('threshold is the inverted row, shown as amount', inverted.map((d) => d.key).join() === 'threshold' && byKey.threshold.label === 'amount');
+    check(
+      'toView/fromView round-trip every numeric def across its grid (and are the identity unless inverted)',
+      numeric.every((d) => {
+        const n = Math.round((d.max - d.min) / d.step);
+        for (let i = 0; i <= n; i += Math.max(1, Math.floor(n / 50))) {
+          const v = quantize(d, d.min + i * d.step);
+          if (fromView(d, toView(d, v)) !== v || toView(d, fromView(d, v)) !== v) return false;
+          if (!d.invert && toView(d, v) !== v) return false;
+        }
+        return true;
+      })
+    );
+    check(
+      'toView(threshold, 0.05) is 0.95, the ends swap, and the view carries no float noise',
+      toView(byKey.threshold, 0.05) === 0.95 &&
+        toView(byKey.threshold, 0) === 1 &&
+        toView(byKey.threshold, 1) === 0 &&
+        fromView(byKey.threshold, 0.42) === 0.58 &&
+        fmtNumber(byKey.threshold, toView(byKey.threshold, DEFAULTS.threshold)) === '0.95'
+    );
+    check(
+      'an inverted def keeps its default on-grid in both senses',
+      inverted.every((d) => {
+        const view = toView(d, DEFAULTS[d.key]);
+        return quantize(d, DEFAULTS[d.key]) === DEFAULTS[d.key] && quantize(d, view) === view;
+      })
+    );
+  }
+
   check(
-    'with no saved set, defaults come from the code',
+    'with "default" as the base, defaults come from the code',
     DEFS.every((d) => defaultFor(d.key, null) === DEFAULTS[d.key])
   );
   check(
-    'a saved set wins over the code defaults',
+    'a base preset wins over the code defaults',
     defaultFor('threshold', { threshold: 0.42 }) === 0.42
   );
   check(
-    'a partial saved set still falls through per key',
+    'a partial base preset still falls through per key',
     defaultFor('decay', { threshold: 0.42 }) === DEFAULTS.decay
   );
   check(
@@ -156,7 +448,28 @@ function tier1() {
   // content scripts filter on `key in DEFAULTS`, and these are not knobs.
   check(
     'panel-only keys stay out of the parameter set',
-    !('userDefaults' in DEFAULTS) && !('tooltips' in DEFAULTS) && !('midiMap' in DEFAULTS)
+    !('userDefaults' in DEFAULTS) && PANEL_ONLY.every((k) => !(k in DEFAULTS))
+  );
+  check(
+    'panelHome is a panel preference: not a parameter, no row in the table, excluded from the row check',
+    !('panelHome' in DEFAULTS) &&
+      !('stripOpen' in DEFAULTS) &&
+      PANEL_ONLY.includes('panelHome') &&
+      !DEFS.some((d) => d.key === 'panelHome' || d.key === 'stripOpen')
+  );
+  check(
+    'panelHome offers window · strip · side, defaults to the window (John, 2026-10-12), and its tip says when a change applies',
+    PANEL_HOME.key === 'panelHome' &&
+      PANEL_HOMES.join() === 'window,strip,side' &&
+      PANEL_HOME.default === 'window' &&
+      PANEL_HOME.tip.length > 20 &&
+      /next time/i.test(PANEL_HOME.tip)
+  );
+  check(
+    '"every stored key has a row" ignores the preset store and panel prefs',
+    Object.keys({ ...DEFAULTS, ...Object.fromEntries(PANEL_ONLY.map((k) => [k, 1])) })
+      .filter((k) => !PANEL_ONLY.includes(k))
+      .every((k) => DEFS.some((d) => d.key === k))
   );
 }
 
@@ -168,9 +481,13 @@ let doc;
 let store;
 
 const $ = (sel) => doc.querySelector(sel);
-const row = (key) => doc.querySelector(`.row[data-key="${key}"]`);
-const slider = (key) => row(key).querySelector('input[type=range]');
-const field = (key) => row(key).querySelector('input.value.num');
+// A pad row stands for two keys (data-keys="driftX driftY"); its state
+// holders are hidden ranges marked data-for, its fields data-param.
+const row = (key) => doc.querySelector(`.row[data-key="${key}"], .row[data-keys~="${key}"]`);
+const slider = (key) =>
+  row(key).querySelector(`input[type=range][data-for="${key}"]`) ?? row(key).querySelector('input[type=range]');
+const field = (key) => row(key).querySelector(`input.value.num[data-param="${key}"]`);
+const keysOf = (r) => (r.dataset.keys ?? r.dataset.key).split(' ');
 
 function type(key, text) {
   const el = field(key);
@@ -188,13 +505,36 @@ function fire(el, type_, opts = {}) {
   el.dispatchEvent(new win.MouseEvent(type_, { bubbles: true, ...opts }));
 }
 
+function pointer(el, type_, opts = {}) {
+  el.dispatchEvent(
+    new win.PointerEvent(type_, { bubbles: true, pointerId: 1, button: 0, isPrimary: true, ...opts })
+  );
+}
+
+const chip = (key) => doc.querySelector(`.chip[data-key="${key}"]`);
+const text = (el) => el.textContent.trim();
+
+async function bootFrame(src, w = 400, h = 720) {
+  const f = document.createElement('iframe');
+  // content-box: the panel inside gets exactly w × h.
+  f.style.cssText = `width:${w}px;height:${h}px;border:1px solid #2e2e36;margin-left:8px;box-sizing:content-box`;
+  f.src = src;
+  document.getElementById('stage').appendChild(f);
+  const deadline = Date.now() + 8000;
+  while (!f.contentWindow?.__panelReady) {
+    if (Date.now() > deadline) throw new Error(`${src} never booted`);
+    await sleep(50);
+  }
+  return f;
+}
+
 async function tier2() {
   tier('tier 2 — the shipped panel, live in an iframe');
 
   // -- sections --
   const heads = [...doc.querySelectorAll('#controls .section')];
   check(
-    'the four sections render in order',
+    'the sections render in order',
     heads.map((h) => h.querySelector('h2').textContent).join(',') ===
       SECTIONS.map((s) => s.title).join(',')
   );
@@ -216,7 +556,7 @@ async function tier2() {
   let currentSection = null;
   const misplaced = [];
   const strayBeforeFirstDivider = [];
-  for (const el of $('#controls').children) {
+  for (const el of $('#controls').querySelectorAll('.section, .row')) {
     if (el.classList.contains('section')) {
       currentSection = el.dataset.section;
       continue;
@@ -235,49 +575,606 @@ async function tier2() {
     strayBeforeFirstDivider.length === 0
   );
 
-  // The global block above the first divider: master switch, tooltips
-  // switch, defaults buttons — in that order, and nothing else.
+  // The global block above the first divider (2026-10-12): title line, the
+  // A/B, the four medium chips — then the preset row and its note — and
+  // nothing else; the tooltips switch moved down beside MIDI.
   const globals = [...$('#globals').children];
   check(
-    'the global block is the master switch then the tooltips switch',
+    'the global block is the A/B then the four medium chips',
     globals.length === 2 &&
-      globals[0].dataset.key === 'enabled' &&
-      globals[1].classList.contains('pref')
+      globals[0].classList.contains('ab-row') &&
+      globals[1].classList.contains('chips')
   );
   check(
-    'the tooltips switch lines up with the parameter row above it',
-    win.getComputedStyle(globals[1]).gridTemplateColumns ===
-      win.getComputedStyle(globals[0]).gridTemplateColumns
+    'the title line names the piece, says what it does, and shows both shortcuts',
+    text($('h1')) === 'CORRUPTION' &&
+      $('.masthead .lede')?.textContent.includes('Switch it off') &&
+      /Ctrl\+Shift\+D\s+on\/off/.test($('#keys').textContent) &&
+      /Ctrl\+Shift\+P\s+this panel/.test($('#keys').textContent)
+  );
+  const ab = $('#ab');
+  check(
+    'the A/B is one full-width button bound to enabled, with its MIDI learn beside it',
+    ab?.tagName === 'BUTTON' &&
+      ab.dataset.key === 'enabled' &&
+      ab.getBoundingClientRect().width > 0.8 * $('#globals').getBoundingClientRect().width &&
+      !!$('.ab-row .learn')
   );
   check(
-    'the defaults buttons close the global block, above every divider',
+    'the A/B dominates: taller than any other one-line control in the panel, and bigger than the drift pad and the direction dial',
     (() => {
-      const body = [...doc.body.children];
-      const g = body.indexOf($('#globals'));
-      const f = body.indexOf($('#defaults').closest('.footer'));
-      const c = body.indexOf($('#controls'));
-      return g < f && f < c;
+      const r = ab.getBoundingClientRect();
+      const p = $('.pad').getBoundingClientRect();
+      const k = $('.dial').getBoundingClientRect();
+      return (
+        [...doc.querySelectorAll('.btn, .chip-toggle, .row:not(.pad-row):not(.knob-row)')].every(
+          (el) => el.getBoundingClientRect().height * 1.6 < r.height
+        ) && r.width * r.height > 3 * p.width * p.height && r.width * r.height > 3 * k.width * k.height
+      );
     })()
   );
   check(
-    'every parameter in the table reached the DOM',
-    DEFS.every((d) => !!row(d.key))
+    'the A/B reads ON in yellow at rest',
+    ab.classList.contains('on') &&
+      text(ab).startsWith('ON') &&
+      win.getComputedStyle(ab).backgroundColor === 'rgb(232, 232, 100)'
+  );
+  check(
+    'the chips are video · images · text · audio, each bound to its key',
+    [...doc.querySelectorAll('.chips .chip')].map((c) => c.dataset.key).join() === CHIP_KEYS.join() &&
+      [...doc.querySelectorAll('.chip-name')].map((c) => text(c).replace(/\W+$/, '')).join() ===
+        'video,images,text,audio'
+  );
+  check(
+    'every chip shows itself on at rest (filled)',
+    CHIP_KEYS.every((k) => chip(k).classList.contains('on'))
+  );
+  check(
+    'the presets close the global block, above every divider',
+    (() => {
+      const body = [...$('#globals').parentElement.children];
+      const g = body.indexOf($('#globals'));
+      const p = body.indexOf($('#presets'));
+      const n = body.indexOf($('#persist-note'));
+      const c = body.indexOf($('#controls'));
+      return g < p && p < n && n < c;
+    })()
+  );
+  check(
+    'the preset row is default · A · B · C · save…, and nothing else shows',
+    [...$('#presets').children].filter((b) => !b.hidden).map(text).join() === 'default,A,B,C,save…'
+  );
+  check(
+    'the row carries a small muted PRESETS caption, styled like the group captions',
+    (() => {
+      const cap = $('#presets-head');
+      if (!cap || cap.nextElementSibling !== $('#presets')) return false;
+      const a = win.getComputedStyle(cap);
+      const b = win.getComputedStyle(doc.querySelector('#controls div.group-head'));
+      return text(cap) === 'presets' && a.textTransform === 'uppercase' && a.fontSize === b.fontSize && a.color === b.color;
+    })()
+  );
+  check(
+    'the base preset is marked by a small dot, not a pressed look: no button in the row differs in fill or edge',
+    (() => {
+      const base = $('#preset-default');
+      const dot = win.getComputedStyle(base, '::before');
+      const cs = win.getComputedStyle(base);
+      const plain = win.getComputedStyle($('#preset-save'));
+      return (
+        base.classList.contains('base') &&
+        dot.content !== 'none' && dot.backgroundColor === 'rgb(232, 232, 100)' && parseFloat(dot.width) <= 6 &&
+        cs.boxShadow === 'none' &&
+        cs.backgroundColor === plain.backgroundColor &&
+        cs.borderTopColor === plain.borderTopColor
+      );
+    })()
+  );
+  check(
+    'one line says changes persist and presets are snapshots',
+    /kept automatically/.test($('#persist-note').textContent) &&
+      /snapshots/.test($('#persist-note').textContent)
+  );
+  check(
+    'the old defaults buttons are gone',
+    !$('#defaults') && !$('#setdefaults') && !$('#cleardefaults')
+  );
+  const prefRow = $('#prefs .row.pref');
+  check(
+    'the tooltips switch sits at the bottom, after the MIDI block',
+    !!prefRow &&
+      !!$('#tooltips') &&
+      (doc.querySelector('.midi').compareDocumentPosition(prefRow) & win.Node.DOCUMENT_POSITION_FOLLOWING) !== 0
+  );
+  check(
+    'the tooltips switch lines up with the parameter rows',
+    win.getComputedStyle(prefRow).gridTemplateColumns ===
+      win.getComputedStyle(row('threshold')).gridTemplateColumns
+  );
+  // -- where the panel lives (M9): the second pref, beside tooltips --
+  {
+    const homeRow = $('#prefs .row.pref[data-pref="panelHome"]');
+    const sel = homeRow?.querySelector('select');
+    check(
+      'the "panel lives in" row sits in the prefs block, right after tooltips',
+      !!homeRow && homeRow.previousElementSibling === prefRow && text(homeRow.querySelector('label')) === 'panel lives in'
+    );
+    check(
+      'it offers the three homes, the window first and selected',
+      !!sel && [...sel.options].map((o) => o.value).join() === 'window,strip,side' && sel.value === 'window'
+    );
+    check(
+      'it carries a tip that says a change applies on the next open',
+      homeRow?.dataset.tip?.length > 20 && /next time/i.test(homeRow.dataset.tip)
+    );
+    check(
+      'it lines up with the tooltips switch and the parameter rows',
+      win.getComputedStyle(homeRow).gridTemplateColumns === win.getComputedStyle(row('threshold')).gridTemplateColumns
+    );
+    check('choosing nothing writes nothing', !('panelHome' in store));
+    sel.value = 'strip';
+    sel.dispatchEvent(new win.Event('change', { bubbles: true }));
+    await sleep(40);
+    check('choosing a home stores it as panelHome', store.panelHome === 'strip');
+    win.chrome.storage.local.set({ panelHome: 'side' });
+    await sleep(40);
+    check('a panelHome change from elsewhere is followed', sel.value === 'side');
+    win.chrome.storage.local.set({ panelHome: 'nonsense' });
+    await sleep(40);
+    check('an unknown stored home reads as the window', sel.value === 'window');
+    sel.value = 'window';
+    sel.dispatchEvent(new win.Event('change', { bubbles: true }));
+    await sleep(40);
+    check('and the window can be chosen back', store.panelHome === 'window');
+    // One default in three places: the service worker opens it, the content
+    // script decides whether to mount the strip, the panel shows it.
+    const src = async (p) => (await fetch(p, { cache: 'no-store' })).text();
+    const sw = await src('../../source/background/service-worker.js');
+    const st = await src('../../source/content/strip.js');
+    check(
+      'the service worker and the strip default to the panel’s home, the window',
+      sw.includes(`const DEFAULT_HOME = '${PANEL_HOME.default}';`) &&
+        st.includes(`storage.get({ panelHome: '${PANEL_HOME.default}'`)
+    );
+  }
+  check(
+    'every section header is a jump target',
+    SECTIONS.every((sec) => doc.getElementById(`section-${sec.id}`)?.classList.contains('section'))
+  );
+  check(
+    'every parameter with a section reached the DOM as a row',
+    DEFS.filter((d) => d.section).every((d) => !!row(d.key))
+  );
+  check(
+    'nothing in the panel overflows its 400 px window',
+    doc.documentElement.scrollWidth <= win.innerWidth && $('#scroll').scrollWidth <= $('#scroll').clientWidth
+  );
+
+  // -- groups (M4/M8) --
+  {
+    const misgrouped = [];
+    for (const [sectionId, l] of Object.entries(LAYOUT)) {
+      const head = doc.getElementById(`section-${sectionId}`);
+      // Rows between this header and the next, in document order.
+      const rowsAfter = [...doc.querySelectorAll('#controls .section, #controls .row')];
+      const from = rowsAfter.indexOf(head);
+      const until = rowsAfter.findIndex((el, i) => i > from && el.classList.contains('section'));
+      const inSection = rowsAfter.slice(from + 1, until < 0 ? undefined : until).flatMap(keysOf);
+      const want = [...l.loose, ...l.groups.flatMap(([, keys]) => keys)];
+      if (inSection.join() !== want.join()) misgrouped.push(`${sectionId} order`);
+      const loose = inSection.filter((k) => !row(k).closest('.group'));
+      if (loose.join() !== l.loose.join()) misgrouped.push(`${sectionId} loose rows`);
+      const groupEls = [...doc.querySelectorAll(`#controls .group[data-section="${sectionId}"]`)];
+      if (groupEls.map((g) => g.dataset.group).join() !== l.groups.map(([g]) => g).join()) {
+        misgrouped.push(`${sectionId} groups`);
+      }
+      for (const [gid, keys] of l.groups) {
+        const g = groupEls.find((el) => el.dataset.group === gid);
+        const have = g ? [...g.querySelectorAll('.row')].flatMap(keysOf) : [];
+        if (have.join() !== keys.join()) misgrouped.push(`${sectionId}.${gid}`);
+      }
+    }
+    check(
+      `every row renders inside its group, in the stated order (${misgrouped.join(', ') || 'all in place'})`,
+      misgrouped.length === 0
+    );
+  }
+  check(
+    'each group shows a small caption: sort · feedback · where · engine, body · smear · engine',
+    [...doc.querySelectorAll('#controls .group-head')].map((h) => text(h).replace(/\s*[▸▾]$/, '')).join() ===
+      'sort,feedback,where,engine,body,smear,engine'
+  );
+  {
+    const engineRows = (sec) =>
+      [...doc.querySelectorAll(`#controls .group.engine[data-section="${sec}"] .group-rows > .row`)].flatMap(keysOf);
+    check(
+      'the rendered engines hold exactly the setup and the demoted keys, in order, beneath their caption',
+      engineRows('video').join() === 'keyframe,passes,maxRes,maxVideos,flowMode,flowScale,flowSpeed,resetMinS,resetMaxS' &&
+        engineRows('audio').join() ===
+          'audioBody,audioDirect,audioMaxTaps,audioExciter,audioCombDamp,audioFbClear,audioFbClearS,audioFbClearMinS,audioFbClearMaxS' &&
+        ['video', 'audio'].every(
+          (sec) => doc.querySelector(`#controls .group.engine[data-section="${sec}"] .group-rows`).firstElementChild.classList.contains('group-cap')
+        )
+    );
+  }
+  check(
+    'the rendered labels are the player’s',
+    Object.entries(LABELS).every(([k, l]) => text(row(k).querySelector('label')) === l)
+  );
+  check(
+    'no section carries a master row: the chips are the masters, the body group follows the Audio header directly',
+    !row('audioEnabled') && !row('textScramble') && !$('#section-text') &&
+      $('#section-audio').nextElementSibling?.dataset.group === 'body'
+  );
+  check(
+    'threshold is a plain slider: no captions at its ends, and its knob cell is the range input itself',
+    row('threshold').querySelectorAll('.cap').length === 0 && row('threshold').querySelector('.knob') === slider('threshold')
+  );
+
+  const engineHead = (sec) => doc.querySelector(`#controls .group[data-section="${sec}"][data-group="engine"] .group-head`);
+  const ENGINE_KEYS = {
+    video: LAYOUT.video.groups.find(([g]) => g === 'engine')[1],
+    audio: LAYOUT.audio.groups.find(([g]) => g === 'engine')[1],
+  };
+  const shown = (el) => !!el && el.getClientRects().length > 0;
+  // A gated engine row (comb damp under a modal body, the clear timings
+  // with clear off) stays hidden however the engine folds.
+  const live = (keys) => keys.filter((k) => !row(k).hidden);
+  check(
+    'both engine groups start folded, labelled "engine ▸"',
+    ['video', 'audio'].every(
+      (sec) => text(engineHead(sec)) === 'engine ▸' && engineHead(sec).getAttribute('aria-expanded') === 'false'
+    )
+  );
+  check(
+    'folded engine rows still exist in the DOM (so every param keeps its row), just out of sight',
+    ['video', 'audio'].every((sec) => ENGINE_KEYS[sec].every((k) => !!row(k) && !shown(row(k))))
+  );
+  check('a folded engine writes nothing on boot', !('engineOpen' in store));
+  engineHead('video').click();
+  await sleep(60);
+  check(
+    'clicking the disclosure unfolds the video engine and says so (▾)',
+    text(engineHead('video')) === 'engine ▾' &&
+      live(ENGINE_KEYS.video).every((k) => shown(row(k))) &&
+      ENGINE_KEYS.audio.every((k) => !shown(row(k)))
+  );
+  check(
+    'the open state persists as engineOpen {video, audio}',
+    store.engineOpen?.video === true && store.engineOpen?.audio === false
+  );
+  engineHead('audio').click();
+  await sleep(60);
+  engineHead('video').click();
+  await sleep(60);
+  check(
+    'each engine folds and unfolds on its own, and storage follows',
+    store.engineOpen?.video === false &&
+      store.engineOpen?.audio === true &&
+      live(ENGINE_KEYS.audio).every((k) => shown(row(k))) && live(ENGINE_KEYS.audio).length >= 3 &&
+      ENGINE_KEYS.video.every((k) => !shown(row(k)))
+  );
+  win.chrome.storage.local.set({ engineOpen: { video: true, audio: true } });
+  await sleep(60);
+  check(
+    'an engineOpen change from elsewhere (the other panel window) is followed',
+    text(engineHead('video')) === 'engine ▾' && live(ENGINE_KEYS.video).every((k) => shown(row(k)))
+  );
+
+  // -- the clear-buffer trigger (round 8): a button that fires, not a value --
+  {
+    const kr = row('keyframe');
+    const kb = kr?.querySelector('button.knob');
+    const firstEngineRow = doc.querySelector('#controls .group.engine[data-section="video"] .group-rows > .row');
+    check(
+      'the clear-buffer row heads the Video engine and its knob cell is a "clear" button: no slider, no number field, an empty value cell',
+      firstEngineRow === kr && text(kr.querySelector('label')) === 'clear buffer' &&
+        kb?.tagName === 'BUTTON' && kb.classList.contains('btn') && text(kb) === 'clear' && shown(kb) &&
+        !kr.querySelector('input') && text(kr.querySelector('.value')) === '' && kr.dataset.param === 'keyframe' &&
+        /leave it alone/.test(kr.dataset.hint)
+    );
+    const k0 = store.keyframe ?? 0;
+    kb.click();
+    await sleep(60);
+    const one = store.keyframe === k0 + 1 && kr.classList.contains('flash');
+    kb.click();
+    await sleep(60);
+    check('each click writes the counter up by exactly one, and the row flashes', one && store.keyframe === k0 + 2);
+    fire(kr.querySelector('label'), 'dblclick');
+    fire(kr, 'dblclick');
+    await sleep(60);
+    check('a double-click on the row does nothing: there is nothing to put back', store.keyframe === k0 + 2);
+    win.chrome.storage.local.set({ keyframe: 40 });
+    await sleep(40);
+    kb.click();
+    await sleep(60);
+    check('a counter written elsewhere (the other panel window) is where the next click counts from', store.keyframe === 41);
+    const fbBox = row('feedbackVideo').querySelector('input');
+    fbBox.checked = false;
+    fbBox.dispatchEvent(new win.Event('input', { bubbles: true }));
+    await sleep(60);
+    const hiddenOff = !shown(kr) && kr.hidden && kr.dataset.gate === 'feedback' && kb.disabled;
+    fbBox.checked = true;
+    fbBox.dispatchEvent(new win.Event('input', { bubbles: true }));
+    await sleep(60);
+    check(
+      'feedback off hides it with the feedback knobs (it clears a trail that is not there); feedback on brings it back, live',
+      hiddenOff && shown(kr) && !kr.hidden && !kb.disabled
+    );
+  }
+
+  // -- the audio status line --
+  check(
+    'the audio status line sits under the Audio header, and is empty without chrome.runtime',
+    !win.chrome.runtime &&
+      $('#section-audio #audio-status') !== null &&
+      $('#audio-status').textContent === '' &&
+      !shown($('#audio-status'))
+  );
+
+  // -- MIDI learn hidden until a device is present --
+  const learns = [...doc.querySelectorAll('.learn')];
+  check(
+    'with no MIDI device every ⊙ is hidden — the rows’, the A/B’s and the four chips’ — and the (hidden) status reads "no device"',
+    !doc.body.classList.contains('midi-device') &&
+      learns.length === DEFS.filter((d) => d.section).length + 1 + CHIP_KEYS.length &&
+      CHIP_KEYS.every((k) => !!chip(k).querySelector('.learn')) &&
+      learns.every((el) => !shown(el)) &&
+      /no device|unavailable|denied/i.test($('#midi-status').textContent)
+  );
+  check(
+    'with no MIDI device the whole MIDI block is out of sight (keyboard and mouse are the primary mode)',
+    !shown($('.midi')) && !shown($('#midi-status')) && !shown($('.midi .midi-hint'))
+  );
+  doc.body.classList.add('midi-device');
+  await sleep(30);
+  check('a connected device brings the MIDI block and its learn instruction into view', shown($('.midi')) && shown($('.midi .midi-hint')) && shown($('#midi-status')));
+  check(
+    'a connected device (the midi-device class) brings every visible row’s ⊙ back',
+    learns.filter((el) => shown(el.closest('.row, .ab-row, .chip'))).every((el) => shown(el)) &&
+      shown($('.ab-row .learn')) && CHIP_KEYS.every((k) => shown(chip(k).querySelector('.learn')))
+  );
+  check(
+    'outside the strip there is no MIDI… button: the window and side panel ask at boot',
+    !!$('#midi-connect') && $('#midi-connect').hidden && !shown($('#midi-connect'))
+  );
+  check(
+    'and the tooltips switch still lines up with the rows in that layout',
+    win.getComputedStyle($('#prefs .row.pref')).gridTemplateColumns ===
+      win.getComputedStyle(row('threshold')).gridTemplateColumns
+  );
+  doc.body.classList.remove('midi-device');
+  await sleep(30);
+
+  // -- the A/B --
+  ab.click(); // keyboard-style activation (detail 0): Space/Enter
+  await sleep(90);
+  check(
+    'clicking the A/B latches the piece off, and it says so',
+    store.enabled === false && !ab.classList.contains('on') && text(ab).startsWith('OFF') &&
+      text(ab).includes('untouched')
+  );
+  ab.click();
+  await sleep(90);
+  check('clicking again latches it back on', store.enabled === true && ab.classList.contains('on'));
+
+  pointer(ab, 'pointerdown');
+  await sleep(60);
+  pointer(ab, 'pointerup');
+  await sleep(90);
+  check('a quick press-and-release latches too', store.enabled === false);
+  ab.click();
+  await sleep(90);
+
+  // Round 3: a slow deliberate click (under LATCH_MS = 600) still latches,
+  // even though the flip already showed under the finger.
+  pointer(ab, 'pointerdown');
+  await sleep(400);
+  const slowFlipped = store.enabled === false;
+  pointer(ab, 'pointerup');
+  await sleep(90);
+  check(
+    'a slow 400 ms press latches: the piece stays off after release, with no "holding" face',
+    slowFlipped && store.enabled === false && !ab.classList.contains('held') && text(ab).startsWith('OFF')
+  );
+  ab.click();
+  await sleep(90);
+
+  pointer(ab, 'pointerdown');
+  await sleep(900);
+  check(
+    'held past 600 ms it is a compare: the piece is off while held and the face says "holding … let go"',
+    store.enabled === false && ab.classList.contains('held') && text(ab).includes('holding') && text(ab).includes('let go')
+  );
+  pointer(ab, 'pointerup');
+  await sleep(90);
+  check(
+    'release after a 900 ms hold comes back — no latch',
+    store.enabled === true && ab.classList.contains('on') && !ab.classList.contains('held')
+  );
+
+  pointer(ab, 'pointerdown');
+  await sleep(900);
+  pointer(ab, 'pointerleave');
+  await sleep(90);
+  check('dragging off the A/B mid-hold also comes back', store.enabled === true && !ab.classList.contains('held'));
+
+  pointer(ab, 'pointerdown');
+  await sleep(400);
+  pointer(ab, 'pointerleave');
+  await sleep(90);
+  check('dragging off before the latch decides changes nothing', store.enabled === true);
+
+  ab.click(); // latched off: a hold now bypasses the other way
+  await sleep(90);
+  pointer(ab, 'pointerdown');
+  await sleep(900);
+  const heldOn = store.enabled === true;
+  pointer(ab, 'pointercancel');
+  await sleep(90);
+  check('held from OFF it shows the piece, and cancel returns to OFF', heldOn && store.enabled === false);
+  ab.click();
+  await sleep(90);
+
+  // -- the four chips --
+  for (const key of CHIP_KEYS) {
+    chip(key).querySelector('.chip-toggle').click();
+    await sleep(90);
+    const off = store[key] === false && !chip(key).classList.contains('on');
+    chip(key).querySelector('.chip-toggle').click();
+    await sleep(90);
+    check(
+      `the ${key} chip writes ${key} off and back on`,
+      off && store[key] === true && chip(key).classList.contains('on')
+    );
+  }
+  check(
+    'the text chip has no section to jump to: its caption is a plain label, not a link',
+    chip('textScramble').querySelector('.chip-name').tagName !== 'BUTTON' &&
+      win.getComputedStyle(chip('textScramble').querySelector('.chip-name')).cursor !== 'pointer' &&
+      chip('audioEnabled').querySelector('.chip-name').tagName === 'BUTTON'
+  );
+  win.chrome.storage.local.set({ textScramble: false, audioEnabled: false });
+  await sleep(60);
+  check(
+    'a text or audio change from elsewhere (the shortcut, the other panel) reaches the chips',
+    !chip('textScramble').classList.contains('on') && !chip('audioEnabled').classList.contains('on')
+  );
+  win.chrome.storage.local.set({ textScramble: true, audioEnabled: true });
+  await sleep(60);
+  check(
+    'the A/B governs the chips: they dim while the piece is off',
+    await (async () => {
+      ab.click();
+      await sleep(90);
+      const dim = parseFloat(win.getComputedStyle($('.chips')).opacity) < 1;
+      ab.click();
+      await sleep(90);
+      return dim && store.enabled === true;
+    })()
+  );
+
+  check(
+    'while the piece is OFF a chip still switches, and the strip says "switch ON to see it"',
+    await (async () => {
+      ab.click();
+      await sleep(90);
+      chip('video').querySelector('.chip-toggle').click();
+      await sleep(60);
+      const said = $('#tooltip').classList.contains('say') && text($('#tooltip')) === 'switch ON to see it';
+      const switched = store.video === false;
+      chip('video').querySelector('.chip-toggle').click();
+      await sleep(60);
+      ab.click();
+      await sleep(90);
+      return said && switched && store.video === true && store.enabled === true;
+    })()
+  );
+  check(
+    'a chip caption reads as a link: pointer cursor, underlined on hover',
+    win.getComputedStyle($('.chip-name')).cursor === 'pointer' &&
+      [...doc.styleSheets].some((sh) =>
+        [...sh.cssRules].some((r) => r.selectorText === '.chip-name:hover' && /underline/.test(r.style.textDecoration || r.style.textDecorationLine))
+      )
+  );
+
+  const landing = { audioEnabled: 'section-audio', images: 'group-video-sort' };
+  for (const key of ['audioEnabled', 'images']) {
+    $('#scroll').scrollTo(0, 0);
+    await sleep(60);
+    chip(key).querySelector('.chip-name').click();
+    const head = doc.getElementById(landing[key]);
+    let top = Infinity;
+    let flashed = false;
+    for (let i = 0; i < 50; i++) {
+      await sleep(30);
+      top = head.getBoundingClientRect().top;
+      flashed ||= head.classList.contains('flash');
+      if (flashed && Math.abs(top) < 40) break;
+    }
+    // The header reaches the top when there is enough below it to scroll;
+    // otherwise the scroller goes as far as it can and the header is in view.
+    const scroller = $('#scroll');
+    const scrolledOut = scroller.scrollTop >= scroller.scrollHeight - scroller.clientHeight - 1;
+    check(
+      `clicking the ${key} chip's caption scrolls ${landing[key]} into view and flashes it when it lands`,
+      top >= -2 && (top < 40 || (scrolledOut && top < win.innerHeight)) && flashed
+    );
+    if (key === 'images') {
+      check(
+        'the images jump lands on the SORT caption, and the strip says "images are shaped by SORT"',
+        head.classList.contains('group-head') && /^sort$/i.test(text(head)) && text($('#tooltip')) === 'images are shaped by SORT'
+      );
+    }
+  }
+  $('#scroll').scrollTo(0, 0);
+  await sleep(60);
+
+  // -- the amount view: threshold is shown and played as 1 − threshold --
+  check(
+    'at rest the threshold row reads "amount", and slider and field show 0.95 while storage holds no amount',
+    text(row('threshold').querySelector('label')) === 'amount' &&
+      Number(slider('threshold').value) === 0.95 &&
+      field('threshold').value === '0.95' &&
+      (!('threshold' in store) || store.threshold === 0.05) &&
+      !('amount' in store)
+  );
+  type('threshold', '0.3');
+  await sleep(90);
+  check(
+    'typing 0.3 in the amount field stores threshold 0.7 and sets the slider to 0.3',
+    store.threshold === 0.7 && Number(slider('threshold').value) === 0.3
+  );
+  press(field('threshold'), 'ArrowUp');
+  await sleep(90);
+  check(
+    'ArrowUp on the amount field raises amount: the field reads 0.31, the stored threshold falls to 0.69',
+    field('threshold').value === '0.31' && store.threshold === 0.69 && Number(slider('threshold').value) === 0.31
+  );
+  field('threshold').blur();
+  win.chrome.storage.local.set({ threshold: 0.2 });
+  await sleep(60);
+  check(
+    'a threshold change from elsewhere shows as amount (0.2 → 0.80)',
+    field('threshold').value === '0.80' && Number(slider('threshold').value) === 0.8
+  );
+  slider('threshold').value = '0.9';
+  slider('threshold').dispatchEvent(new win.Event('input', { bubbles: true }));
+  await sleep(90);
+  check(
+    'dragging the amount slider up to 0.9 stores threshold 0.1 and the field follows',
+    store.threshold === 0.1 && field('threshold').value === '0.90'
+  );
+  fire(row('threshold').querySelector('label'), 'dblclick');
+  await sleep(90);
+  check(
+    'double-clicking amount restores the stored default (threshold 0.05) and shows 0.95',
+    store.threshold === DEFAULTS.threshold && field('threshold').value === '0.95' && Number(slider('threshold').value) === 0.95
   );
 
   // -- typed values --
   type('threshold', '0.42');
   await sleep(90);
   check('typing a number moves the knob', Number(slider('threshold').value) === 0.42);
-  check('typing a number reaches storage', store.threshold === 0.42);
+  check('typing a number reaches storage (in the stored sense: amount 0.42 is threshold 0.58)', store.threshold === 0.58);
 
   type('threshold', '9');
   await sleep(90);
   check(
-    'typing above the range clamps to max in field, knob and storage',
-    Number(slider('threshold').value) === 1 && store.threshold === 1
+    'typing above the range clamps to max in field, knob and storage (amount 1 = threshold 0)',
+    Number(slider('threshold').value) === 1 && store.threshold === 0
   );
   press(field('threshold'), 'Enter');
   check('Enter settles the field text at the step precision', field('threshold').value === '1.00');
+  type('threshold', '-3');
+  await sleep(90);
+  check(
+    'typing below the range clamps to min (amount 0 = threshold 1, untouched)',
+    Number(slider('threshold').value) === 0 && store.threshold === 1 && row('threshold').classList.contains('flash')
+  );
+  type('threshold', '1');
+  press(field('threshold'), 'Enter');
+  await sleep(60);
 
   type('driftX', '-99');
   await sleep(90);
@@ -320,7 +1217,7 @@ async function tier2() {
   );
   check(
     'and only that parameter — its neighbours are untouched',
-    store.threshold === 1 && store.passes === 21
+    store.threshold === 0 && store.passes === 21
   );
   check('the restored row acknowledges the double-click', row('decay').classList.contains('flash'));
 
@@ -341,61 +1238,742 @@ async function tier2() {
   await sleep(60);
   check(
     'double-clicking inside a value field does not reset it (text stays selectable)',
-    field('threshold').value === before && store.threshold === 1
+    field('threshold').value === before && store.threshold === 0
   );
 
-  // -- saved defaults --
-  const btnSet = $('#setdefaults');
-  const btnRestore = $('#defaults');
-  const btnClear = $('#cleardefaults');
+  // Finding 8: two quick clicks on a slider thumb are a nudge, not a reset.
+  fire(slider('threshold'), 'dblclick');
+  await sleep(60);
+  check('double-clicking on a slider does not reset the row', store.threshold === 0);
+  fire(row('threshold').querySelector('label'), 'dblclick');
+  await sleep(60);
+  check('double-clicking the label still does', store.threshold === DEFAULTS.threshold);
+  type('threshold', '1');
+  field('threshold').blur();
+  await sleep(60);
 
-  check('"clear saved" stays hidden until a set has been saved', btnClear.hidden);
-
-  btnSet.click();
+  // Typed values that clamp flash the row; in-range ones do not.
+  await sleep(600); // let earlier flashes finish
+  type('flowSpeed', '0.05');
+  await sleep(60);
+  const quietInRange = !row('flowSpeed').classList.contains('flash');
+  type('flowScale', '99');
   await sleep(60);
   check(
-    '"set defaults" captures every live value',
-    !!store.userDefaults &&
-      store.userDefaults.threshold === 1 &&
-      store.userDefaults.passes === 21 &&
-      Object.keys(store.userDefaults).length === DEFS.length
+    'a typed value that clamps flashes its row (and an in-range one does not)',
+    quietInRange && row('flowScale').classList.contains('flash') && store.flowScale === 12
   );
-  check('"clear saved" appears once a set exists', !btnClear.hidden);
+  press(field('flowScale'), 'Enter');
+  await sleep(600);
+  check('the clamp flash clears itself', !row('flowScale').classList.contains('flash'));
+  fire(row('flowScale'), 'dblclick');
+  fire(row('flowSpeed'), 'dblclick');
+  await sleep(60);
 
-  type('threshold', '0.2');
+  // -- the drift pad: driftX and driftY as one 2-D surface --
+  {
+    const padRow = row('driftX');
+    const pad = padRow.querySelector('.pad');
+    const dot = pad.querySelector('.pad-dot');
+    const dX = byKey.driftX;
+    const dY = byKey.driftY;
+    const frac = (def, v) => (v - def.min) / (def.max - def.min);
+    // Where the dot's centre sits, as fractions of the pad's inner box: x
+    // from the left, y from the BOTTOM (up is up).
+    const dotAt = () => {
+      const r = pad.getBoundingClientRect();
+      const d = dot.getBoundingClientRect();
+      return {
+        fx: (d.left + d.width / 2 - r.left - pad.clientLeft) / pad.clientWidth,
+        fy: 1 - (d.top + d.height / 2 - r.top - pad.clientTop) / pad.clientHeight,
+      };
+    };
+    const dotIs = (x, y) => {
+      const { fx, fy } = dotAt();
+      const tol = 1.5 / pad.clientWidth; // within a pixel and a half
+      return Math.abs(fx - frac(dX, x)) <= tol && Math.abs(fy - frac(dY, y)) <= tol;
+    };
+    // A point on the pad's inner box, by fraction (fy from the bottom).
+    const at = (fx, fy) => {
+      const r = pad.getBoundingClientRect();
+      return {
+        clientX: r.left + pad.clientLeft + fx * pad.clientWidth,
+        clientY: r.top + pad.clientTop + (1 - fy) * pad.clientHeight,
+      };
+    };
+    const pairRows = doc.querySelectorAll(
+      '#controls .row[data-key="driftX"], #controls .row[data-key="driftY"], #controls .row[data-keys~="driftX"], #controls .row[data-keys~="driftY"]'
+    );
+    check(
+      'driftX and driftY render as ONE row, labelled drift, in the feedback group between trail and blend',
+      pairRows.length === 1 && padRow === row('driftY') && padRow.classList.contains('pad-row') &&
+        text(padRow.querySelector('label')) === 'drift' &&
+        padRow.closest('.group')?.dataset.group === 'feedback' &&
+        padRow.previousElementSibling === row('decay') && padRow.nextElementSibling === row('feedbackBlend')
+    );
+    const holders = [...pad.querySelectorAll('input[type=range]')];
+    check(
+      'the knob cell is a focusable 2-D surface with a dot; the keys’ state lives in hidden ranges; two fields stand x above y, two ⊙ beside them',
+      pad.getAttribute('role') === 'group' && pad.tabIndex === 0 && !!dot && shown(pad) &&
+        holders.map((h) => h.dataset.for).join() === 'driftX,driftY' && holders.every((h) => !shown(h)) &&
+        [...padRow.querySelectorAll('.pad-field')].map((f) => f.dataset.axis).join() === 'x,y' &&
+        field('driftX').getBoundingClientRect().bottom <= field('driftY').getBoundingClientRect().top + 0.5 &&
+        [...padRow.querySelectorAll('.learn')].map((b) => b.dataset.param).join() === 'driftX,driftY'
+    );
+    {
+      const pr = pad.getBoundingClientRect();
+      const rr = padRow.getBoundingClientRect();
+      const inRow = [...padRow.querySelectorAll('*')]
+        .filter((el) => el.getClientRects().length)
+        .every((el) => {
+          const r = el.getBoundingClientRect();
+          return r.left >= rr.left - 0.5 && r.right <= rr.right + 0.5;
+        });
+      check(
+        `in the column the pad is a ~72 px square and everything in its row stays inside it (${Math.round(pr.width)} × ${Math.round(pr.height)} px)`,
+        Math.abs(pr.width - 72) < 1 && Math.abs(pr.height - 72) < 1 && inRow &&
+          doc.documentElement.scrollWidth <= win.innerWidth && $('#scroll').scrollWidth <= $('#scroll').clientWidth
+      );
+    }
+
+    fire(padRow.querySelector('label'), 'dblclick'); // from the clamp test above: back to the defaults
+    await sleep(90);
+    check(
+      'at the defaults the dot sits where they put it: x a fraction (−0.0025 − min)/(max − min) across, y measured up from the bottom',
+      store.driftX === DEFAULTS.driftX && store.driftY === DEFAULTS.driftY && dotIs(DEFAULTS.driftX, DEFAULTS.driftY)
+    );
+    check(
+      'the cross marks (0, 0): the middle of a symmetric pad',
+      win.getComputedStyle(pad).getPropertyValue('--zx').trim() === '50%' &&
+        win.getComputedStyle(pad).getPropertyValue('--zy').trim() === '50%'
+    );
+
+    const r = pad.getBoundingClientRect();
+    pointer(pad, 'pointerdown', { clientX: r.right - 0.5, clientY: r.top + 0.5 });
+    pointer(pad, 'pointerup', { clientX: r.right - 0.5, clientY: r.top + 0.5 });
+    await sleep(90);
+    check(
+      'a press at the pad’s top-right corner stores driftX 0.01 and driftY 0.01, and the dot and both fields follow',
+      store.driftX === 0.01 && store.driftY === 0.01 && dotIs(0.01, 0.01) &&
+        field('driftX').value === '0.0100' && field('driftY').value === '0.0100'
+    );
+    pointer(pad, 'pointerdown', at(0.5, 0.5));
+    await sleep(60);
+    const atCross = store.driftX === 0 && store.driftY === 0;
+    pointer(pad, 'pointermove', at(0.25, 0.25));
+    await sleep(60);
+    const dragged = store.driftX === -0.005 && store.driftY === -0.005 && dotIs(-0.005, -0.005);
+    pointer(pad, 'pointerup', at(0.25, 0.25));
+    pointer(pad, 'pointermove', at(0.9, 0.9));
+    await sleep(60);
+    check(
+      'a drag follows the pointer (down at the cross = 0, 0; to the lower-left quarter = −0.005, −0.005), and stops at release',
+      atCross && dragged && store.driftX === -0.005 && store.driftY === -0.005
+    );
+
+    pad.focus();
+    press(pad, 'ArrowRight');
+    await sleep(60);
+    const right = store.driftX === -0.0045 && store.driftY === -0.005;
+    press(pad, 'ArrowUp', { shiftKey: true });
+    await sleep(60);
+    check(
+      'arrows on the focused pad nudge their own axis one step (→ moves x only; shift+↑ moves y ten steps)',
+      right && store.driftX === -0.0045 && store.driftY === 0 && dotIs(-0.0045, 0)
+    );
+    pad.blur();
+
+    type('driftY', '-0.008');
+    await sleep(60);
+    check('typing in the y field moves the dot (x stays)', store.driftY === -0.008 && store.driftX === -0.0045 && dotIs(-0.0045, -0.008));
+    field('driftY').blur();
+
+    win.chrome.storage.local.set({ driftX: 0.004 });
+    await sleep(60);
+    check(
+      'a drift change from elsewhere (MIDI, the other window) moves the dot and the x field',
+      dotIs(0.004, -0.008) && field('driftX').value === '0.0040'
+    );
+
+    await sleep(600); // let any flash finish
+    fire(padRow.querySelector('label'), 'dblclick');
+    await sleep(90);
+    check(
+      'double-clicking the name restores BOTH keys to the marked preset, and the dot goes home',
+      store.driftX === DEFAULTS.driftX && store.driftY === DEFAULTS.driftY && dotIs(DEFAULTS.driftX, DEFAULTS.driftY) &&
+        padRow.classList.contains('flash')
+    );
+    type('driftY', '0.005');
+    field('driftY').blur();
+    await sleep(60);
+    fire(field('driftY'), 'dblclick');
+    await sleep(60);
+    const fieldKept = store.driftY === 0.005;
+    fire(pad, 'dblclick');
+    await sleep(60);
+    check(
+      'double-clicking a field keeps its text selectable (no reset); double-clicking the pad resets both',
+      fieldKept && store.driftY === DEFAULTS.driftY
+    );
+
+    const fb = row('feedbackVideo').querySelector('input');
+    fb.checked = false;
+    fb.dispatchEvent(new win.Event('input', { bubbles: true }));
+    await sleep(60);
+    check(
+      'feedback off hides the pad row and disables both keys’ holders and fields',
+      !shown(padRow) && padRow.hidden && padRow.dataset.gate === 'feedback' &&
+        slider('driftX').disabled && slider('driftY').disabled && field('driftX').disabled && field('driftY').disabled
+    );
+    fb.checked = true;
+    fb.dispatchEvent(new win.Event('input', { bubbles: true }));
+    await sleep(60);
+    check('feedback on brings the pad back, live', shown(padRow) && !slider('driftX').disabled && !field('driftY').disabled);
+
+    // Leave a non-default pair for the presets below to capture.
+    pad.focus();
+    press(pad, 'ArrowLeft', { shiftKey: true });
+    press(pad, 'ArrowUp');
+    pad.blur();
+    await sleep(60);
+  }
+
+  // -- sort by (round 8 part 2): the comparison key, a select after amount --
+  {
+    const r = row('sortKey');
+    const sel = r.querySelector('select');
+    check(
+      'the sort by row is a select right after amount in the sort group, showing luma at rest',
+      !!sel && r.previousElementSibling === row('threshold') && r.closest('.group')?.dataset.group === 'sort' &&
+        [...sel.options].map((o) => o.value).join() === 'luma,hue,saturation,red,green,blue' &&
+        sel.value === 'luma' && text(r.querySelector('.value')) === 'luma' && !('sortKey' in store)
+    );
+    sel.value = 'hue';
+    sel.dispatchEvent(new win.Event('input', { bubbles: true }));
+    await sleep(60);
+    check('choosing hue stores sortKey "hue" and the value cell follows', store.sortKey === 'hue' && text(r.querySelector('.value')) === 'hue');
+    fire(r.querySelector('label'), 'dblclick');
+    await sleep(60);
+    check('double-clicking sort by puts luma back', store.sortKey === 'luma' && sel.value === 'luma');
+    win.chrome.storage.local.set({ sortKey: 'saturation' });
+    await sleep(60);
+    check('a sortKey written elsewhere is followed', sel.value === 'saturation' && text(r.querySelector('.value')) === 'saturation');
+    // Leave hue for the presets below to capture.
+    sel.value = 'hue';
+    sel.dispatchEvent(new win.Event('input', { bubbles: true }));
+    await sleep(60);
+  }
+
+  // -- direction (round 8 part 2): the knob, a rotary over a hidden holder --
+  {
+    const r = row('angle');
+    const dial = r.querySelector('.dial');
+    const holder = r.querySelector('input[type=range]');
+    const turn = () => dial.querySelector('.dial-pointer').getAttribute('transform');
+    const learns = r.querySelectorAll('.learn');
+    check(
+      'the direction row is a knob between sort by and flow: a focusable dial (role slider) over a hidden range holder, one typed field, one ⊙',
+      r.classList.contains('knob-row') && text(r.querySelector('label')) === 'direction' &&
+        r.previousElementSibling === row('sortKey') && r.nextElementSibling === row('flowAmount') &&
+        dial?.getAttribute('role') === 'slider' && dial.tabIndex === 0 && shown(dial) &&
+        holder?.hidden && holder.dataset.for === 'angle' && slider('angle') === holder &&
+        !!field('angle') && learns.length === 1 && r.children.length === 4 &&
+        !!dial.querySelector('.dial-zero') && !!dial.querySelector('.dial-ring')
+    );
+    const dr = dial.getBoundingClientRect();
+    const rr = r.getBoundingClientRect();
+    check(
+      `in the column the dial is a ~40 px circle inside its row (${Math.round(dr.width)} × ${Math.round(dr.height)} px)`,
+      Math.abs(dr.width - 40) < 1 && Math.abs(dr.height - 40) < 1 && dr.top >= rr.top - 0.5 && dr.bottom <= rr.bottom + 0.5
+    );
+    check(
+      'at rest it reads 0: the field shows 0, the pointer stands at the top, nothing stored',
+      field('angle').value === '0' && /^rotate\(0 20 20\)$/.test(turn()) && dial.getAttribute('aria-valuenow') === '0' &&
+        !('angle' in store)
+    );
+    // A drag: vertical travel, up = clockwise, 1° per 2 px.
+    const drag = async (dy, opts = {}) => {
+      const b = dial.getBoundingClientRect();
+      const x = b.left + b.width / 2;
+      const y = b.top + b.height / 2;
+      pointer(dial, 'pointerdown', { clientX: x, clientY: y, ...opts });
+      for (let i = 1; i <= 4; i++) pointer(dial, 'pointermove', { clientX: x, clientY: y - (dy * i) / 4, ...opts });
+      pointer(dial, 'pointerup', { clientX: x, clientY: y - dy, ...opts });
+      await sleep(60);
+    };
+    await drag(100);
+    check(
+      `dragging 100 px up turns it 50° clockwise: stored, shown and drawn (${store.angle})`,
+      store.angle === 50 && field('angle').value === '50' && /^rotate\(50 20 20\)$/.test(turn())
+    );
+    await drag(40, { shiftKey: true });
+    check(`shift is fine: 40 px up with shift adds 5° (${store.angle})`, store.angle === 55);
+    await drag(-120);
+    check(`dragging down turns it back, and past 0 it comes round: 55 − 60 → 355 (${store.angle})`, store.angle === 355);
+    type('angle', '359');
+    field('angle').blur();
+    await sleep(60);
+    await drag(4);
+    check(`and past 359 it comes round the other way: 359 + 2 → 1 (${store.angle})`, store.angle === 1);
+    const typed = type('angle', '450');
+    press(typed, 'Enter');
+    await sleep(60);
+    check(
+      `a typed 450 wraps to 90 rather than clamping, and the row flashes (${store.angle})`,
+      store.angle === 90 && field('angle').value === '90' && r.classList.contains('flash') && /^rotate\(90 20 20\)$/.test(turn())
+    );
+    press(type('angle', '-30'), 'Enter');
+    await sleep(60);
+    check(`a typed −30 wraps to 330 (${store.angle})`, store.angle === 330 && field('angle').value === '330');
+    press(type('angle', '359'), 'Enter');
+    await sleep(60);
+    dial.focus();
+    press(dial, 'ArrowUp');
+    await sleep(60);
+    const upWrap = store.angle === 0;
+    press(dial, 'ArrowDown');
+    await sleep(60);
+    const downWrap = store.angle === 359;
+    press(dial, 'ArrowRight', { shiftKey: true });
+    await sleep(60);
+    const shifted = store.angle === 9;
+    dial.blur();
+    check(
+      'on the focused dial the arrows turn it and wrap: ↑ from 359 → 0, ↓ from 0 → 359, shift+→ from 359 → 9',
+      upWrap && downWrap && shifted
+    );
+    press(type('angle', '359'), 'ArrowUp');
+    await sleep(60);
+    check(`the typed field’s ↑ wraps too: 359 → 0 (${store.angle})`, store.angle === 0 && field('angle').value === '0');
+    field('angle').blur();
+    press(type('angle', '200'), 'Enter');
+    await sleep(60);
+    fire(r.querySelector('label'), 'dblclick');
+    await sleep(60);
+    const byName = store.angle === 0 && r.classList.contains('flash');
+    press(type('angle', '200'), 'Enter');
+    await sleep(60);
+    fire(dial, 'dblclick');
+    await sleep(60);
+    check('double-clicking the name, or the dial, puts it back to 0', byName && store.angle === 0 && field('angle').value === '0');
+    win.chrome.storage.local.set({ angle: 270 });
+    await sleep(60);
+    check('an angle written elsewhere is followed: field and pointer', field('angle').value === '270' && /^rotate\(270 20 20\)$/.test(turn()));
+
+    // Flow mode is also the direction's quantizer, so it stays in reach
+    // while the direction is off 0 even with flow at 0; the rest of the
+    // flow's shape still waits for flow.
+    const flowWas = store.flowAmount ?? DEFAULTS.flowAmount;
+    press(type('flowAmount', '0'), 'Enter');
+    await sleep(60);
+    const turnedOpen = !row('flowMode').dataset.gate && row('flowScale').dataset.gate === 'flow';
+    press(type('angle', '0'), 'Enter');
+    await sleep(60);
+    const restClosed = row('flowMode').dataset.gate === 'flow' && row('flowScale').dataset.gate === 'flow';
+    check(
+      'with flow at 0, flow mode stays live while the direction is turned (it picks 45° steps or the glide) and gates again at 0; flow scale waits for flow',
+      turnedOpen && restClosed
+    );
+    press(type('flowAmount', String(flowWas)), 'Enter');
+    await sleep(60);
+    field('flowAmount').blur();
+    // Leave 135 for the presets below to capture.
+    press(type('angle', '135'), 'Enter');
+    field('angle').blur();
+    await sleep(60);
+  }
+
+  // -- presets --
+  const btnDefault = $('#preset-default');
+  const slot = (x) => $(`#presets .slot[data-slot="${x}"]`);
+  const btnSave = $('#preset-save');
+  const btnCancel = $('#preset-cancel');
+  const btnUndo = $('#preset-undo');
+
+  type('threshold', '0.42');
+  type('passes', '30');
+  field('passes').blur();
   await sleep(90);
-  btnRestore.click();
+
+  check('every slot starts empty and looks it', PRESET_SLOTS.every((x) => slot(x).classList.contains('empty')));
+  slot('A').click();
+  await sleep(60);
+  check(
+    'clicking an empty slot does nothing but say so',
+    store.threshold === 0.58 && text(slot('A')) === 'empty' && btnUndo.hidden
+  );
+  await sleep(900);
+
+  btnSave.click();
+  await sleep(30);
+  check(
+    'save… puts the row in a visible save mode (empty slots read "save → A")',
+    $('#presets').classList.contains('saving') &&
+      text(slot('A')) === 'save → A' &&
+      text(slot('C')) === 'save → C' &&
+      !btnCancel.hidden &&
+      btnSave.hidden
+  );
+  press(doc.body, 'Escape');
+  await sleep(30);
+  check(
+    'Escape cancels save mode, and the save button flashes "cancelled"',
+    !$('#presets').classList.contains('saving') && text(slot('A')) === 'A' && !btnSave.hidden && text(btnSave) === 'cancelled'
+  );
+  await sleep(950);
+  check('the "cancelled" flash clears itself', text(btnSave) === 'save…');
+
+  btnSave.click();
+  await sleep(30);
+  pointer($('#controls'), 'pointerdown');
+  await sleep(30);
+  check(
+    'a click elsewhere cancels save mode, also flashing "cancelled"',
+    !$('#presets').classList.contains('saving') && text(btnSave) === 'cancelled'
+  );
+  await sleep(950);
+
+  btnSave.click();
+  await sleep(30);
+  btnCancel.click();
+  await sleep(30);
+  check('Cancel cancels save mode, and nothing was written', !$('#presets').classList.contains('saving') && !store.presets);
+
+  btnSave.click();
+  await sleep(30);
+  slot('A').click();
+  await sleep(60);
+  check(
+    'save mode then a slot writes presets.A with every parameter but the A/B',
+    !!store.presets?.A &&
+      store.presets.A.threshold === 0.58 &&
+      store.presets.A.passes === 30 &&
+      !('enabled' in store.presets.A) &&
+      !('keyframe' in store.presets.A) &&
+      store.presets.A.driftX === -0.0075 &&
+      store.presets.A.driftY === 0.0025 &&
+      store.presets.A.sortKey === 'hue' &&
+      store.presets.A.angle === 135 &&
+      Object.keys(store.presets.A).length === DEFS.length - PRESET_EXCLUDED.length &&
+      store.presets.B === null
+  );
+  check(
+    'a preset stores threshold in the stored sense, never an amount key',
+    !('amount' in store.presets.A) && store.presets.A.threshold === fromView(byKey.threshold, Number(slider('threshold').value))
+  );
+  check(
+    'the slot flashes "saved to A" and the row is back in load mode',
+    text(slot('A')) === 'saved to A' && !$('#presets').classList.contains('saving') && !btnSave.hidden
+  );
+  check(
+    'saving marks the slot as the base (and saving to an empty slot offers no undo)',
+    store.presetBase === 'A' && slot('A').classList.contains('base') && !btnDefault.classList.contains('base') && btnUndo.hidden
+  );
+  await sleep(900);
+  check('a saved slot no longer looks empty', !slot('A').classList.contains('empty'));
+
+  // Saving over a filled slot: "replace A", and undo gives the old A back.
+  type('threshold', '0.55');
+  field('threshold').blur();
+  await sleep(60);
+  btnSave.click();
+  await sleep(30);
+  check(
+    'in save mode a filled slot reads "replace A", an empty one "save → B"',
+    text(slot('A')) === 'replace A' && text(slot('B')) === 'save → B' && /replace/i.test(slot('A').dataset.tip)
+  );
+  check(
+    'save-mode labels fit their buttons, and the row does not overflow',
+    [...$('#presets').children].filter((b) => !b.hidden).every((b) => b.scrollWidth <= b.clientWidth + 1) &&
+      $('#presets').scrollWidth <= $('#presets').clientWidth + 1
+  );
+  slot('A').click();
+  await sleep(60);
+  check(
+    'saving over A writes the new values and offers undo',
+    store.presets.A.threshold === 0.45 && !btnUndo.hidden && /before you saved over it/.test(btnUndo.dataset.tip)
+  );
+  btnUndo.click();
   await sleep(90);
   check(
-    '"restore defaults" comes back to the saved set, not the code defaults',
-    store.threshold === 1 &&
-      Number(slider('threshold').value) === 1 &&
-      field('threshold').value === '1.00'
+    'undo after a save-over puts A’s old contents back and leaves the knobs alone',
+    store.presets.A.threshold === 0.58 && store.presets.A.passes === 30 && store.threshold === 0.45 &&
+      Number(slider('threshold').value) === 0.55 && btnUndo.hidden && store.presetBase === 'A'
+  );
+  await sleep(900);
+
+  // default: every row back to DEFAULTS, the A/B left where it is
+  type('threshold', '0.7');
+  field('threshold').blur();
+  ab.click();
+  await sleep(90);
+  btnDefault.click();
+  await sleep(90);
+  const notRestored = DEFS.filter(
+    (d) => !PRESET_EXCLUDED.includes(d.key) && store[d.key] !== DEFAULTS[d.key]
+  ).map((d) => d.key);
+  check(
+    `"default" restores every row to the compiled defaults (${notRestored.join(', ') || 'all'})`,
+    notRestored.length === 0 &&
+      Number(slider('threshold').value) === toView(byKey.threshold, DEFAULTS.threshold) &&
+      field('passes').value === fmtNumber(byKey.passes, DEFAULTS.passes)
+  );
+  check('"default" leaves the A/B alone', store.enabled === false);
+  check('"default" leaves the clear-buffer counter alone (it is an event, not part of a look)', store.keyframe === 41);
+  check('"default" flashes "restored" and offers undo', text(btnDefault) === 'restored' && !btnUndo.hidden);
+  check(
+    'with the piece OFF, the A/B face says "switch ON to see it", then lets go of it',
+    await (async () => {
+      const said = text(ab).includes('switch ON to see it') && ab.classList.contains('nudge');
+      await sleep(1600);
+      return said && !text(ab).includes('switch ON') && text(ab).includes('page untouched');
+    })()
+  );
+  check('the base is default, and it is marked', store.presetBase === 'default' && btnDefault.classList.contains('base'));
+  ab.click();
+  await sleep(90);
+  check('with the piece ON, a load leaves the A/B face alone', !text(ab).includes('switch ON'));
+  // (the undo window is still open: 10 s from the restore)
+
+  btnUndo.click();
+  await sleep(90);
+  check(
+    'undo after a restore reinstates the values and the base from before it',
+    store.threshold === 0.3 && store.passes === 30 && Number(slider('threshold').value) === 0.7 && btnUndo.hidden &&
+      store.presetBase === 'A'
   );
 
-  type('threshold', '0.2');
+  btnDefault.click();
+  await sleep(90);
+  type('threshold', '0.7');
+  field('threshold').blur();
+  await sleep(60);
+  slot('A').click();
+  await sleep(90);
+  check(
+    'loading A restores its values, flashes "loaded", offers undo',
+    store.threshold === 0.58 && store.passes === 30 && text(slot('A')) === 'loaded' && !btnUndo.hidden
+  );
+  check(
+    'the base follows the load, and A is marked as the base',
+    store.presetBase === 'A' && slot('A').classList.contains('base') && !btnDefault.classList.contains('base')
+  );
+  check('A’s tooltip says it is the base', /base/i.test(slot('A').dataset.hint));
+  btnUndo.click();
+  await sleep(90);
+  check(
+    'undo after a load reinstates the previous values and the previous base',
+    store.threshold === 0.3 && store.presetBase === 'default' && btnDefault.classList.contains('base')
+  );
+  {
+    // A preset that does carry a counter (hand-edited, or from another
+    // build) still never fires or winds it back.
+    const kBefore = store.keyframe;
+    win.chrome.storage.local.set({ presets: { ...store.presets, C: { ...store.presets.A, keyframe: 3 } } });
+    await sleep(40);
+    slot('C').click();
+    await sleep(90);
+    const keptOnLoad = store.keyframe === kBefore && store.threshold === store.presets.C.threshold;
+    btnUndo.click();
+    await sleep(90);
+    win.chrome.storage.local.set({ presets: { ...store.presets, C: null } });
+    await sleep(40);
+    check(
+      'loading a preset never touches the clear-buffer counter, even one that carries it; undo leaves it too',
+      keptOnLoad && store.keyframe === kBefore && store.presetBase === 'default'
+    );
+  }
+
+  slot('A').click();
+  await sleep(90);
+  type('threshold', '0.9');
+  field('threshold').blur();
   await sleep(90);
   fire(row('threshold'), 'dblclick');
   await sleep(90);
-  check('a double-click restores to the saved value too', store.threshold === 1);
+  check('a row double-click returns to the base preset (A)', store.threshold === 0.58 && field('threshold').value === '0.42');
 
-  btnClear.click();
-  await sleep(60);
-  check(
-    '"clear saved" drops the saved set and hides itself',
-    store.userDefaults === null && btnClear.hidden
-  );
-  btnRestore.click();
+  btnDefault.click();
   await sleep(90);
-  check(
-    'with the saved set cleared, restore goes back to the code defaults',
-    store.threshold === DEFAULTS.threshold && store.passes === DEFAULTS.passes
-  );
+  type('threshold', '0.9');
+  field('threshold').blur();
+  await sleep(90);
+  fire(row('threshold'), 'dblclick');
+  await sleep(90);
+  check('with default as the base, a double-click returns to the code default', store.threshold === DEFAULTS.threshold);
 
-  // -- tooltips --
+  slot('A').click(); // a fresh undo window, then let it lapse
+  await sleep(90);
+  const undoShown = !btnUndo.hidden;
+  await sleep(10200);
+  check('undo is offered for ten seconds, then withdrawn', undoShown && btnUndo.hidden);
+  btnDefault.click();
+  await sleep(90);
+
+  // -- a base stored before the rename ("original") reads as default --
+  {
+    const seed = { presetBase: 'original', presets: { A: { threshold: 0.3 }, B: null, C: null } };
+    const f = await bootFrame(`./panel-frame.html?seed=${encodeURIComponent(JSON.stringify(seed))}`);
+    const wd = f.contentWindow.document;
+    check(
+      'a stored presetBase of "original" (from before the rename) marks default as the base',
+      wd.getElementById('preset-default').classList.contains('base') &&
+        !wd.querySelector('.slot[data-slot="A"]').classList.contains('base')
+    );
+    f.remove();
+  }
+
+  // -- migration: a legacy userDefaults becomes slot A and the base --
+  {
+    const legacy = { ...DEFAULTS, threshold: 0.33, passes: 12 };
+    const seed = {
+      userDefaults: legacy,
+      threshold: 0.6,
+      presets: { A: null, B: { threshold: 0.21 }, C: null },
+      engineOpen: { audio: true },
+      keyframe: 7, // a counter left from an earlier session
+    };
+    const f = await bootFrame(`./panel-frame.html?midi=1&seed=${encodeURIComponent(JSON.stringify(seed))}`);
+    const w = f.contentWindow;
+    const s2 = w.__store;
+    check(
+      'a legacy userDefaults migrates into slot A on boot, and becomes the base',
+      s2.presets?.A?.threshold === 0.33 && s2.presets.A.passes === 12 && s2.presetBase === 'A'
+    );
+    check('the legacy key is removed', !('userDefaults' in s2));
+    check('the migration leaves other slots alone', s2.presets.B?.threshold === 0.21);
+    {
+      const wd = w.document;
+      for (let i = 0; i < 20 && !wd.body.classList.contains('midi-device'); i++) await sleep(50);
+      const vis = (el) => !!el && el.getClientRects().length > 0;
+      check(
+        'with a (stubbed) controller connected, the panel (not hosted) asks at boot, once, shows the ⊙ column and names the device',
+        w.__midiAsks === 1 && wd.getElementById('midi-connect').hidden &&
+        wd.body.classList.contains('midi-device') &&
+          vis(wd.querySelector('.row[data-key="threshold"] .learn')) &&
+          vis(wd.querySelector('.ab-row .learn')) &&
+          wd.getElementById('midi-status').textContent === 'harness controller'
+      );
+    }
+    check(
+      'a stored engineOpen is honoured on boot (audio open, video still folded)',
+      w.document.querySelector('.group[data-section="audio"][data-group="engine"] .group-rows').hidden === false &&
+        w.document.querySelector('.group[data-section="video"][data-group="engine"] .group-rows').hidden === true
+    );
+    check(
+      'migration loads nothing: the live values stay as stored (threshold 0.6, shown as amount 0.4)',
+      s2.threshold === 0.6 &&
+        w.document.querySelector('.row[data-key="threshold"] input[type=range]').value === '0.4'
+    );
+    const r2 = w.document.querySelector('.row[data-key="threshold"]');
+    r2.dispatchEvent(new w.MouseEvent('dblclick', { bubbles: true }));
+    await sleep(90);
+    check(
+      'after migration a double-click returns to the old saved value',
+      s2.threshold === 0.33 && w.document.querySelector('.slot[data-slot="A"]').classList.contains('base')
+    );
+    // MIDI sweeps the view: CC 127 is amount 1, threshold 0.
+    {
+      const wd = w.document;
+      const fake = (await w.navigator.requestMIDIAccess()).inputs.get('fake');
+      const cc = (n, v) => fake.onmidimessage({ data: [0xb0, n, v] });
+      wd.querySelector('.row[data-key="threshold"] .learn').click();
+      cc(21, 64);
+      await sleep(60);
+      const bound = s2.midiMap?.[21] === 'threshold';
+      cc(21, 127);
+      await sleep(90);
+      const top = s2.threshold === 0 && wd.querySelector('.row[data-key="threshold"] input.value.num').value === '1.00';
+      cc(21, 0);
+      await sleep(90);
+      check(
+        'a MIDI CC sweeps the amount: 127 stores threshold 0 (amount 1), 0 stores threshold 1 (amount 0)',
+        bound && top && s2.threshold === 1 && wd.querySelector('.row[data-key="threshold"] input[type=range]').value === '0'
+      );
+      // The pad's two ⊙: learning one binds that key alone.
+      const padLearns = [...wd.querySelectorAll('.row.pad-row .learn')];
+      const vis2 = (el) => !!el && el.getClientRects().length > 0;
+      const x0 = s2.driftX ?? DEFAULTS.driftX;
+      padLearns[1].click();
+      cc(22, 64);
+      await sleep(60);
+      cc(22, 127);
+      await sleep(90);
+      check(
+        'with a controller both of the pad’s ⊙ show, and learning y binds driftY alone (CC 127 → 0.01; x untouched)',
+        padLearns.length === 2 && padLearns.every(vis2) &&
+          s2.midiMap[22] === 'driftY' && !Object.values(s2.midiMap).includes('driftX') &&
+          s2.driftY === 0.01 && (s2.driftX ?? DEFAULTS.driftX) === x0 &&
+          padLearns[1].textContent === '22' && padLearns[0].textContent === '⊙'
+      );
+      // A learned trigger fires once per rise through 64: a held button, or a
+      // knob parked high, does not fire on every message.
+      const kRow = wd.querySelector('.row[data-key="keyframe"]');
+      kRow.querySelector('.learn').click();
+      cc(23, 64);
+      await sleep(60);
+      const kBound = s2.midiMap[23] === 'keyframe' && s2.keyframe === 7;
+      cc(23, 127);
+      await sleep(60);
+      const first = s2.keyframe === 8;
+      cc(23, 127);
+      await sleep(60);
+      cc(23, 100);
+      await sleep(60);
+      const held = s2.keyframe === 8;
+      cc(23, 0);
+      await sleep(60);
+      const low = s2.keyframe === 8;
+      cc(23, 127);
+      await sleep(60);
+      check(
+        'MIDI on the clear button counts from the stored counter (7): 127 fires once, 127 again and 100 do not, 0 then 127 fires again',
+        kBound && first && held && low && s2.keyframe === 9 && kRow.querySelector('.learn').textContent === '23'
+      );
+      // The direction knob: a CC sweeps 0–359 once round, 127 → 359.
+      const aRow = wd.querySelector('.row[data-key="angle"]');
+      aRow.querySelector('.learn').click();
+      cc(24, 0);
+      await sleep(60);
+      const aZero = s2.midiMap[24] === 'angle';
+      cc(24, 127);
+      await sleep(90);
+      const aTop = s2.angle === 359 && aRow.querySelector('input.value.num').value === '359';
+      cc(24, 64);
+      await sleep(90);
+      const aMid = s2.angle === 181;
+      cc(24, 0);
+      await sleep(90);
+      check(
+        `MIDI on the direction knob sweeps once round: CC 127 → 359, 64 → 181, 0 → 0 (${s2.angle})`,
+        aZero && aTop && aMid && s2.angle === 0 && aRow.querySelector('.learn').textContent === '24'
+      );
+    }
+    f.remove();
+  }
+
+  // -- tooltips: a bubble beside the hovered control (2026-10-11), nothing at rest --
   const tip = $('#tooltip');
+  const sc = $('#scroll');
+  $('#scroll').scrollTo(0, 0);
+  fire($('#controls'), 'mouseover');
+  await sleep(300);
+  check(
+    'at rest no help shows: the bubble is hidden and the scroller runs to the panel’s bottom edge',
+    tip.hidden && Math.abs(sc.getBoundingClientRect().bottom - win.innerHeight) <= 0.5 && !$('.tips-off')
+  );
+  const geometry = () => ({
+    sh: sc.scrollHeight,
+    ch: sc.clientHeight,
+    st: sc.scrollTop,
+    tops: [...doc.querySelectorAll('.row')].map((r) => r.offsetTop).join(),
+  });
+  const restGeom = geometry();
+  const inside = (r) => r.left >= 0 && r.top >= 0 && r.right <= win.innerWidth + 0.5 && r.bottom <= win.innerHeight + 0.5;
+  const beside = (bubble, host) => bubble.bottom <= host.top + 1 || bubble.top >= host.bottom - 1;
+
   fire(row('threshold'), 'mouseover');
-  await sleep(420);
+  await sleep(520);
   check(
     'hovering a row shows that row’s explanation',
     !tip.hidden && tip.textContent.includes(byKey.threshold.tip.slice(0, 40))
@@ -405,16 +1983,40 @@ async function tier2() {
     tip.textContent.toLowerCase().includes('double-click')
   );
   check(
-    'the tooltip stays inside the panel window',
+    'the tip’s last line is the internal key, muted',
+    tip.lastElementChild?.classList.contains('key') && text(tip.lastElementChild) === 'key: threshold'
+  );
+  check(
+    'the bubble sits beside the hovered row — above or below it, never over it — inside the panel, at most 340 px wide',
     (() => {
-      const r = tip.getBoundingClientRect();
-      return r.left >= 0 && r.top >= 0 && r.right <= win.innerWidth + 1;
+      const b = tip.getBoundingClientRect();
+      const r = row('threshold').getBoundingClientRect();
+      return win.getComputedStyle(tip).position === 'fixed' && inside(b) && beside(b, r) && b.width <= 340.5 &&
+        tip.scrollHeight <= tip.clientHeight + 1;
     })()
   );
+  {
+    const g = geometry();
+    check(
+      'the bubble is an overlay: the scroller’s scrollHeight, height, scroll position and every row’s offsetTop are unchanged',
+      g.sh === restGeom.sh && g.ch === restGeom.ch && g.st === restGeom.st && g.tops === restGeom.tops
+    );
+  }
+  check(
+    'the bubble ignores the pointer, so appearing beside the hovered row cannot steal its hover',
+    win.getComputedStyle(tip).pointerEvents === 'none'
+  );
+  {
+    // Every tip has to fit a bubble that can stand beside a row in the
+    // shortest home (the strip, ~200 px): render each one into the bubble
+    // exactly as the panel does (tip, hint, key) and measure it.
+    const clip = tipsThatClip(doc);
+    check(`every tip fits the bubble’s budget, 340 × ${TIP_MAX_H} (${clip.join(', ') || 'all fit'})`, clip.length === 0);
+  }
 
   fire($('#controls'), 'mouseover');
-  await sleep(60);
-  check('leaving the row hides it again', tip.hidden);
+  await sleep(300);
+  check('leaving the row hides the bubble: nothing at rest', tip.hidden);
 
   fire(field('passes'), 'mouseover');
   await sleep(420);
@@ -422,26 +2024,29 @@ async function tier2() {
     'the value field explains that typed values clamp',
     !tip.hidden && tip.textContent.toLowerCase().includes('clamp')
   );
+  fire($('#controls'), 'mouseover');
+  await sleep(300);
 
   const toggle = $('#tooltips');
   check('tooltips default to on', toggle.checked);
   toggle.checked = false;
   toggle.dispatchEvent(new win.Event('change', { bubbles: true }));
   await sleep(60);
-  check('turning tooltips off hides the current one', tip.hidden);
   fire($('#controls'), 'mouseover');
   fire(row('decay'), 'mouseover');
   await sleep(420);
-  check('and suppresses the next one', tip.hidden);
+  check('turning tooltips off suppresses the next one', tip.hidden);
   check('the tooltip preference persists', store.tooltips === false);
   toggle.checked = true;
   toggle.dispatchEvent(new win.Event('change', { bubbles: true }));
   await sleep(60);
+  fire($('#controls'), 'mouseover');
+  await sleep(300);
 
   // -- everything explains itself --
   const bare = [];
   for (const el of doc.querySelectorAll(
-    'h1, .section, .row, .row input.value.num, .learn, .btn, .midi h2, #midi-status, .midi .hint'
+    'h1, .lede, .keys, .ab, .chip-name, .chip-toggle, #persist-note, .section, .row, .row input.value.num, .pad, .learn, .btn, .midi h2, #midi-status, .midi .hint, .group-head, #audio-status'
   )) {
     if (el.hidden) continue;
     if (!el.dataset.tip || el.dataset.tip.length < 20) bare.push(el.className || el.tagName);
@@ -449,29 +2054,684 @@ async function tier2() {
   check(`every control in the panel carries hover copy (${bare.join(', ') || 'all covered'})`, bare.length === 0);
 
   // -- gating survived the rebuild --
-  const audioToggle = row('audioEnabled').querySelector('input');
-  audioToggle.checked = false;
-  audioToggle.dispatchEvent(new win.Event('input', { bubbles: true }));
+  const setChip = async (k, on) => {
+    if (chip(k).classList.contains('on') !== on) chip(k).querySelector('.chip-toggle').click();
+    await sleep(60);
+  };
+  const groupShown = (sec, gid) => shown(doc.querySelector(`#controls .group[data-section="${sec}"][data-group="${gid}"]`));
+  const offNote = (sec) => doc.querySelector(`#section-${sec} .off-note`);
+  await setChip('audioEnabled', false);
+  check(
+    'audio off: the section hides every group and row, disables the fields, and says which chip brings it back',
+    !shown(row('audioSustain')) && !shown(row('audioMix')) && !shown(row('audioDirect')) && !shown(row('audioFollow')) &&
+      slider('audioSustain').disabled && field('audioSustain').disabled &&
+      slider('audioFollow').disabled && field('audioFollow').disabled &&
+      ['body', 'smear', 'engine'].every((g) => !groupShown('audio', g)) &&
+      shown(offNote('audio')) && text(offNote('audio')) === 'off — switch audio on above' &&
+      shown($('#section-audio h2'))
+  );
+  await setChip('audioEnabled', true);
+  check(
+    'audio on: the groups and rows return and the note goes',
+    shown(row('audioSustain')) && !field('audioSustain').disabled &&
+      shown(row('audioFollow')) && !field('audioFollow').disabled &&
+      ['body', 'smear'].every((g) => groupShown('audio', g)) && !shown(offNote('audio'))
+  );
+
+  // -- gated rows are hidden, not greyed (2026-10-11); the gating switch stays as the header --
+  const gateSays = (k, words) =>
+    !shown(row(k)) && row(k).hidden && row(k).dataset.gate === words && row(k).querySelector('input, select').disabled;
+  const setToggle = async (k, on) => {
+    const el = row(k).querySelector('input');
+    el.checked = on;
+    el.dispatchEvent(new win.Event('input', { bubbles: true }));
+    await sleep(60);
+  };
+  const setSelect = async (k, v) => {
+    const el = row(k).querySelector('select');
+    el.value = v;
+    el.dispatchEvent(new win.Event('input', { bubbles: true }));
+    await sleep(60);
+  };
+  check(
+    'at rest, comb damp (modal body) and the clear timings (clear off) are out of sight, each recording its gate',
+    gateSays('audioCombDamp', 'comb') && gateSays('audioFbClearS', 'clear') && gateSays('audioFbClearMaxS', 'clear')
+  );
+  check('a live row is shown, enabled and carries no gate', shown(row('decay')) && !row('decay').hidden && !('gate' in row('decay').dataset) && !slider('decay').disabled);
+  await setToggle('feedbackVideo', false);
+  check(
+    'feedback off: every feedback knob hides, motion gate and the blend included, and the feedback switch stays as the header',
+    ['motionGate', 'decay', 'driftX', 'driftY', 'resetMinS', 'resetMaxS', 'feedbackBlend', 'feedbackMix'].every((k) => gateSays(k, 'feedback')) &&
+      shown(row('feedbackVideo')) && groupShown('video', 'feedback')
+  );
+  // Round 8 part 3: follow motion sits in where but still reads the trail;
+  // the other three gates read the frame, so they stay.
+  check(
+    'feedback off: in where, follow motion hides (its gate is still feedback) while edges, span and soft barrier stay',
+    gateSays('motionGate', 'feedback') && ['edgeGate', 'span', 'barrierSoft'].every((k) => shown(row(k)) && !row(k).hidden) &&
+      groupShown('video', 'gate') && text(doc.querySelector('#controls .group[data-section="video"][data-group="gate"] .group-head')) === 'where'
+  );
+  await setToggle('feedbackVideo', true);
+  // The clear timings live in the engine: gated by feedback all the same,
+  // and handed back (ungated) when it returns, however the engine folds.
+  const ungated = (k) => !row(k).hidden && !('gate' in row(k).dataset) && !row(k).querySelector('input, select').disabled;
+  check(
+    'feedback on: the knobs unfold beneath the switch, and the clear timings in the engine are handed back',
+    ['decay', 'driftX', 'motionGate', 'feedbackBlend', 'feedbackMix'].every((k) => shown(row(k))) && ['resetMinS', 'resetMaxS'].every(ungated)
+  );
+  type('flowAmount', '0');
+  field('flowAmount').blur();
+  await sleep(60);
+  check('flow at 0: the flow shape knobs hide; flow itself stays', ['flowMode', 'flowScale', 'flowSpeed'].every((k) => gateSays(k, 'flow')) && shown(row('flowAmount')));
+  fire(row('flowAmount'), 'dblclick');
   await sleep(60);
   check(
-    'the audio master still greys out its section, value fields included',
-    row('audioSustain').classList.contains('inert') &&
-      slider('audioSustain').disabled &&
-      field('audioSustain').disabled
+    'flow back up: the shape knobs are ungated again (in the engine, where the fold decides whether they show)',
+    ['flowMode', 'flowScale', 'flowSpeed'].every(ungated)
   );
-  audioToggle.checked = true;
-  audioToggle.dispatchEvent(new win.Event('input', { bubbles: true }));
+  await setToggle('audioFeedback', false);
+  check('smear off: tail, return, wobble and smear clear hide; the smear switch stays', ['audioFbDecay', 'audioFbReturn', 'audioFbWobble', 'audioFbClear'].every((k) => gateSays(k, 'smear')) && shown(row('audioFeedback')));
+  await setToggle('audioFeedback', true);
+  await setSelect('audioBody', 'comb');
+  await setToggle('audioFbClear', true);
+  check('comb and smear clear on: those rows appear', shown(row('audioCombDamp')) && shown(row('audioFbClearS')) && shown(row('audioFbClearMaxS')));
+  await setChip('audioEnabled', false);
+  check('audio off: the outermost switch is the one recorded ("audio")', gateSays('audioCombDamp', 'audio') && gateSays('audioFbClearS', 'audio') && gateSays('audioSustain', 'audio'));
+  await setChip('audioEnabled', true);
+  await setToggle('audioFbClear', false);
+  await setSelect('audioBody', 'modal');
+
+  // Round 3, item 7: the Video rows name the medium switch that would wake them.
+  // The handles in their columns, and the keys of theirs filed in the engine.
+  const SORT = ['threshold', 'sortKey', 'angle', 'flowAmount', 'temperature', 'streak'];
+  const SORT_ENGINE = ['flowMode', 'flowScale', 'flowSpeed'];
+  const FEEDBACK = ['feedbackVideo', 'decay', 'driftX', 'driftY', 'motionGate', 'feedbackBlend', 'feedbackMix'];
+  const FEEDBACK_ENGINE = ['resetMinS', 'resetMaxS'];
+  const WHERE = ['edgeGate', 'span', 'barrierSoft'];
+  chip('video').querySelector('.chip-toggle').click();
   await sleep(60);
   check(
-    'and hands them back',
-    !row('audioSustain').classList.contains('inert') && !field('audioSustain').disabled
+    'video off: the whole feedback group hides, its switch included, and the clear timings in the engine; sort still serves images and the Video header stays',
+    [...FEEDBACK, ...FEEDBACK_ENGINE].every((k) => gateSays(k, 'video')) && !groupShown('video', 'feedback') &&
+      SORT.every((k) => shown(row(k))) && SORT_ENGINE.every(ungated) &&
+      groupShown('video', 'sort') && !shown(offNote('video'))
   );
+  check(
+    'video off (images on): where stays for the stills — edges, span and soft barrier shown, follow motion hidden by the video gate',
+    groupShown('video', 'gate') && WHERE.every((k) => shown(row(k))) && gateSays('motionGate', 'video')
+  );
+  chip('images').querySelector('.chip-toggle').click();
+  await sleep(60);
+  check(
+    'video and images both off: every Video group hides and the section says which chips bring it back',
+    [...SORT, ...SORT_ENGINE, ...WHERE].every((k) => gateSays(k, 'video or images')) && gateSays('motionGate', 'video') &&
+      ['sort', 'feedback', 'gate', 'engine'].every((g) => !groupShown('video', g)) &&
+      shown(offNote('video')) && text(offNote('video')) === 'off — switch video or images on above' &&
+      shown($('#section-video h2'))
+  );
+  chip('video').querySelector('.chip-toggle').click();
+  await sleep(60);
+  check(
+    'video back on (images still off): sort and feedback return, the note goes',
+    [...SORT, ...FEEDBACK, ...WHERE].every((k) => shown(row(k))) && [...SORT_ENGINE, ...FEEDBACK_ENGINE].every(ungated) &&
+      !shown(offNote('video'))
+  );
+  chip('images').querySelector('.chip-toggle').click();
+  await sleep(60);
+  check('the medium gates hand every row back', store.video === true && store.images === true && shown(row('threshold')) && !row('threshold').hidden);
 
   // -- the panel never invents parameters --
   const strays = Object.keys(store).filter(
-    (k) => !(k in DEFAULTS) && !['userDefaults', 'tooltips', 'midiMap'].includes(k)
+    (k) => !(k in DEFAULTS) && !PANEL_ONLY.includes(k)
   );
   check(`the panel writes no key the content scripts do not know (${strays.join(', ') || 'none'})`, strays.length === 0);
+}
+
+// --- Tier 3: the other homes' layouts (design review M9) --------------------
+// The same shipped panel in the shapes the homes give it: the strip
+// unfolded (panel.html?layout=strip, STRIP_HEIGHT tall) and at rest (the
+// rail, RAIL_HEIGHT tall), each at 1280–1920 px, the window dragged wide and tall (the layout follows
+// the shape, round 4b) and Chrome's side panel at its narrowest (~320 px).
+
+// Render every tip into the bubble exactly as the panel does (tip, hint,
+// key) and list the ones that exceed the bubble's budget: 340 px wide (the
+// stylesheet's cap) by TIP_MAX_H tall, the most that can stand beside a row
+// in the shortest home.
+const TIP_MAX_H = 150;
+function tipsThatClip(d) {
+  const tip = d.getElementById('tooltip');
+  const saved = [...tip.childNodes];
+  const savedHidden = tip.hidden;
+  const savedClass = tip.className;
+  tip.hidden = false;
+  tip.className = '';
+  const overflow = [];
+  for (const host of d.querySelectorAll('[data-tip]')) {
+    tip.textContent = '';
+    const body = d.createElement('div');
+    body.textContent = host.dataset.tip;
+    tip.appendChild(body);
+    for (const [cls, t] of [['hint', host.dataset.hint], ['key', host.dataset.param && `key: ${host.dataset.param}`]]) {
+      if (!t) continue;
+      const p = d.createElement('p');
+      p.className = cls;
+      p.textContent = t;
+      tip.appendChild(p);
+    }
+    const r = tip.getBoundingClientRect();
+    if (r.width > 340.5 || r.height > TIP_MAX_H || tip.scrollHeight > tip.clientHeight + 1) {
+      overflow.push(`${host.dataset.param || host.dataset.pref || host.id || host.className || host.tagName} ${Math.round(r.height)}px`);
+    }
+  }
+  tip.replaceChildren(...saved);
+  tip.className = savedClass;
+  tip.hidden = savedHidden;
+  return overflow;
+}
+
+// Every element in the mixer's left cluster (everything in #scroll but the
+// lane and the fold button) that has a box and reaches past the lane's left
+// edge. The containers alone are not enough: their content can overflow
+// them (the prefs select did).
+function clusterCrossing(d) {
+  const laneLeft = d.getElementById('controls').getBoundingClientRect().left;
+  const sel = '#scroll > :not(#controls):not(#strip-fold)';
+  return [...d.querySelectorAll(`${sel}, ${sel} *`)]
+    .filter((el) => el.getClientRects().length && el.getBoundingClientRect().width > 0)
+    .filter((el) => el.getBoundingClientRect().right > laneLeft + 0.5)
+    .map((el) => `${el.id || el.className || el.tagName} ${Math.round(el.getBoundingClientRect().right - laneLeft)}px`);
+}
+
+// Laptop to desktop: the strip is checked at each (John, 2026-10-12: 1280
+// is not a typical laptop).
+const WIDTHS = [1280, 1440, 1512, 1728, 1920];
+// The five effect columns since round 8 part 3 (where joined between
+// feedback and the Audio section): all in view with no sideways scroll from
+// FIT_WIDTH up; below it (1280) the lane may scroll sideways, but every
+// column is still there and nothing is cut vertically.
+const EFFECT_GROUPS = [['video', 'sort'], ['video', 'feedback'], ['video', 'gate'], ['audio', 'body'], ['audio', 'smear']];
+const FIT_WIDTH = 1440;
+
+async function tier3() {
+  tier('tier 3 — the strip and side-panel layouts (M9)');
+
+  // -- the strip, unfolded: panel.html?layout=strip, STRIP_HEIGHT tall, at
+  // laptop-to-desktop widths. The layout checks run at every width; the
+  // behaviour checks (bubble, chip jump, engine, gates) once, at 1280. --
+  const sortWidth = {};
+  for (const width of WIDTHS) {
+    const first = width === WIDTHS[0];
+    const f = await bootFrame('./panel-frame.html?layout=strip', width, STRIP_HEIGHT);
+    const w = f.contentWindow;
+    const d = w.document;
+    const q = (s) => d.querySelector(s);
+    const rect = (el) => el.getBoundingClientRect();
+    const vis = (el) => !!el && el.getClientRects().length > 0;
+    check(`the frame really is ${width} × ${STRIP_HEIGHT}`, w.innerWidth === width && w.innerHeight === STRIP_HEIGHT);
+    check(`at ${width} px the strip’s frame (?layout=strip) is the mixer`, d.documentElement.dataset.layout === 'mixer');
+    const heads = SECTIONS.map((s) => d.getElementById(`section-${s.id}`));
+    const hr = heads.map(rect);
+    check(
+      `at ${width} px the sections sit side by side: same top, each one right of the last`,
+      hr.every((r, i) => i === 0 || (r.left >= hr[i - 1].right && Math.abs(r.top - hr[0].top) < 2))
+    );
+    check(
+      `at ${width} px nothing overflows the strip: the page neither scrolls nor clips`,
+      d.documentElement.scrollWidth <= w.innerWidth &&
+        d.documentElement.scrollHeight <= w.innerHeight &&
+        q('#scroll').scrollWidth <= q('#scroll').clientWidth &&
+        q('#scroll').scrollHeight <= q('#scroll').clientHeight
+    );
+    const c = q('#controls');
+    const cr = rect(c);
+    const groupHead = (sec, g) => q(`#controls .group[data-section="${sec}"][data-group="${g}"] .group-head`);
+    // In the strip a folded engine's disclosure lives in the section header.
+    const engineBtn = (sec) => q(`#section-${sec} .group-head.disclosure`);
+    if (first) {
+      check(
+        'a folded engine costs no column: its disclosure sits in the section header line, beside the title',
+        ['video', 'audio'].every((sec) => vis(engineBtn(sec)) && Math.abs(rect(engineBtn(sec)).top - rect(q(`#section-${sec} h2`)).top) < 6)
+      );
+    }
+    if (width >= FIT_WIDTH) {
+      check(
+        `at ${width} px the five effect groups — sort · feedback · where · body · smear — are all in view with no sideways scroll`,
+        c.scrollWidth <= c.clientWidth + 1 && c.scrollLeft === 0 &&
+          EFFECT_GROUPS.every(([sec, g]) => {
+            const r = rect(groupHead(sec, g));
+            return vis(groupHead(sec, g)) && r.left >= cr.left - 1 && r.right <= cr.right + 1;
+          })
+      );
+    } else {
+      // The trade-off of round 8 part 3: five columns do not fit a 1280
+      // lane, so here the lane scrolls sideways — but every column is laid
+      // out, and the first ones start in view.
+      check(
+        `at ${width} px the five effect groups are all laid out; the lane may scroll sideways (${c.scrollWidth} in ${c.clientWidth} px), sort and feedback start in view`,
+        EFFECT_GROUPS.every(([sec, g]) => vis(groupHead(sec, g))) && c.scrollLeft === 0 &&
+          [['video', 'sort'], ['video', 'feedback']].every(([sec, g]) => rect(groupHead(sec, g)).right <= cr.right + 1)
+      );
+    }
+    check(
+      `at ${width} px each effect group is its own column: feedback right of sort, where right of feedback, body right of where, smear right of body`,
+      EFFECT_GROUPS.every(([sec, g], i) => i === 0 || rect(groupHead(sec, g)).left > rect(groupHead(...EFFECT_GROUPS[i - 1])).right)
+    );
+    check(
+      `at ${width} px the lane never scrolls vertically, and every visible row fits its height (no row cut off)`,
+      c.scrollHeight <= c.clientHeight + 1 &&
+        [...c.querySelectorAll('.section, .row, .group-head')].filter(vis).every((el) => rect(el).top >= cr.top - 1 && rect(el).bottom <= cr.bottom + 1)
+    );
+    {
+      // The drift pad takes two lane cells: trail above it, blend below,
+      // all in the feedback column; then blend amount, and nothing after it
+      // (the next thing in the lane, the where caption, starts a new
+      // column). Caption, switch, trail, pad (2), blend, blend amount: seven
+      // of the eight cells since follow motion moved to where.
+      const pr = q('.row.pad-row');
+      const p = rect(pr);
+      const above = rect(q('.row[data-key="decay"]'));
+      const below = rect(q('.row[data-key="feedbackBlend"]'));
+      const sq = rect(pr.querySelector('.pad'));
+      const fbCol = [...c.querySelectorAll('.section, .row, .group-head, .group-cap')]
+        .filter(vis)
+        .filter((el) => Math.abs(rect(el).left - p.left) < 2 || (rect(el).left < p.left + 1 && rect(el).right > p.left + 1));
+      const last = fbCol.reduce((a, el) => (rect(el).bottom > rect(a).bottom ? el : a), fbCol[0]);
+      check(
+        `at ${width} px the drift pad spans two lane rows (${Math.round(p.height)} px, square ${Math.round(sq.width)} px) between trail and blend, in the same column, and blend amount ends it`,
+        vis(pr) && Math.abs(p.height - 56) < 1 && Math.abs(sq.width - 50) < 1 && Math.abs(sq.height - 50) < 1 &&
+          Math.abs(p.left - above.left) < 1 && Math.abs(p.left - below.left) < 1 &&
+          p.top >= above.bottom - 1 && below.top >= p.bottom - 1 && below.bottom <= cr.bottom + 1 &&
+          sq.top >= p.top - 0.5 && sq.bottom <= p.bottom + 0.5 &&
+          last === q('.row[data-key="feedbackMix"]')
+      );
+      // Every effect column fits its eight lane cells: had one spilled, its
+      // last rows would sit in the next column. So each group's visible rows
+      // share its caption's column.
+      const spilled = EFFECT_GROUPS
+        .filter(([sec, g]) => {
+          const left = rect(groupHead(sec, g)).left;
+          const rows = [...q(`#controls .group[data-section="${sec}"][data-group="${g}"]`).querySelectorAll('.row')].filter(vis);
+          return !rows.length || rows.some((r) => Math.abs(rect(r).left + 4 - left) > 6);
+        })
+        .map(([, g]) => g);
+      check(
+        `at ${width} px each effect column fits its eight lane cells: no row spills into the next column (${spilled.join(', ') || 'none spill'})`,
+        spilled.length === 0
+      );
+    }
+    {
+      // The sort column since round 8 part 2: the Video header, the sort
+      // caption and six rows — amount · sort by · direction · flow · jitter ·
+      // ribbons — exactly the eight lane cells, top to bottom in one column,
+      // with the direction's dial a 24 px circle inside its 28 px row.
+      const sortRows = ['threshold', 'sortKey', 'angle', 'flowAmount', 'temperature', 'streak'].map((k) => q(`.row[data-key="${k}"]`));
+      const cap = groupHead('video', 'sort');
+      const vh = rect(q('#section-video'));
+      const tops = sortRows.map((el) => rect(el).top);
+      const dial = rect(q('.row[data-key="angle"] .dial'));
+      const ar = rect(q('.row[data-key="angle"]'));
+      check(
+        `at ${width} px the sort column is the Video header, the caption and six rows (amount · sort by · direction · flow · jitter · ribbons) in eight cells, the dial ${Math.round(dial.width)} px inside its ${Math.round(ar.height)} px row`,
+        sortRows.every(vis) && sortRows.every((el) => Math.abs(rect(el).left + 4 - rect(cap).left) <= 6) &&
+          Math.abs(vh.left - rect(cap).left + 8) <= 10 && vh.top < rect(cap).top &&
+          tops.every((t, i) => i === 0 || t > tops[i - 1]) && rect(cap).bottom <= tops[0] + 1 &&
+          rect(sortRows[5]).bottom <= cr.bottom + 1 &&
+          Math.abs(dial.width - 24) < 1 && Math.abs(dial.height - 24) < 1 && dial.top >= ar.top - 0.5 && dial.bottom <= ar.bottom + 0.5
+      );
+    }
+    {
+      // The where column (round 8 part 3): its caption, then follow motion,
+      // edges, span and soft barrier, top to bottom in one column — five of
+      // the eight cells.
+      const keys = ['motionGate', 'edgeGate', 'span', 'barrierSoft'];
+      const rows = keys.map((k) => q(`.row[data-key="${k}"]`));
+      const cap = groupHead('video', 'gate');
+      const tops = rows.map((el) => rect(el).top);
+      check(
+        `at ${width} px the where column is its caption and four rows (follow motion · edges · span · soft barrier), in one column`,
+        vis(cap) && cap.textContent === 'where' && rows.every(vis) &&
+          rows.every((el) => Math.abs(rect(el).left + 4 - rect(cap).left) <= 6) &&
+          rect(cap).bottom <= tops[0] + 1 && tops.every((t, i) => i === 0 || t > tops[i - 1]) &&
+          rect(rows[3]).bottom <= cr.bottom + 1
+      );
+    }
+    {
+      // A lane label is one line: the label column is sized to the widest
+      // ("follow motion"), so nothing wraps under its neighbours.
+      const wrapped = [...c.querySelectorAll('.row > label')]
+        .filter(vis)
+        .filter((l) => l.scrollWidth > l.clientWidth + 0.5 || rect(l).height > 18)
+        .map((l) => l.textContent);
+      check(`at ${width} px every lane label sits on one line (${wrapped.join(', ') || 'all do'})`, wrapped.length === 0);
+    }
+    check(
+      `at ${width} px the Audio header and its status line share the column top without colliding with the body caption`,
+      rect(groupHead('audio', 'body')).top >= rect(q('#section-audio')).bottom - 1
+    );
+    check(
+      `at ${width} px the global block is a cluster at the left: A/B, the mediums, the presets and the prefs, all in view`,
+      ['#ab', '.chips', '#presets', '#prefs'].every((s) => {
+        const r = rect(q(s));
+        return r.width > 0 && r.right <= cr.left && r.top >= 0 && r.bottom <= w.innerHeight;
+      }) && !!q('#panelHome') && rect(q('#panelHome')).width > 0 && q('.midi').getClientRects().length === 0
+    );
+    // The guard the prefs overlap escaped (John's screenshot, 2026-10-12):
+    // not only the cluster's containers but everything inside them must
+    // stay left of the lane.
+    const crossing = clusterCrossing(d);
+    check(
+      `at ${width} px nothing in the cluster crosses into the lane (${crossing.join(', ') || 'nothing'})`,
+      crossing.length === 0
+    );
+    sortWidth[width] = rect(q('.row[data-key="threshold"]')).width;
+    if (!first) {
+      f.remove();
+      continue;
+    }
+    const fold = q('#strip-fold');
+    check(
+      'the fold button shows in the strip’s top-right corner, offering to fold (▾)',
+      vis(fold) && fold.textContent === '▾' && rect(fold).right <= w.innerWidth && rect(fold).top < 30 && rect(fold).left > w.innerWidth - 60
+    );
+    check('no help column: the bubble is hidden at rest in the strip too', q('#tooltip').hidden);
+    // Hovering a row in the strip puts the bubble beside it, inside the frame.
+    q('.row[data-key="decay"]').dispatchEvent(new w.MouseEvent('mouseover', { bubbles: true }));
+    await sleep(420);
+    {
+      const tipR = rect(q('#tooltip'));
+      const rowR = rect(q('.row[data-key="decay"]'));
+      check(
+        'in the strip a hovered row’s bubble stays inside the frame and beside the row',
+        !q('#tooltip').hidden && tipR.top >= 0 && tipR.bottom <= w.innerHeight + 0.5 && tipR.left >= 0 && tipR.right <= w.innerWidth + 0.5 &&
+          (tipR.bottom <= rowR.top + 1 || tipR.top >= rowR.bottom - 1)
+      );
+    }
+    c.dispatchEvent(new w.MouseEvent('mouseover', { bubbles: true }));
+    await sleep(320);
+    // The chip captions still jump. At 1280 the lane may scroll sideways
+    // (five columns, round 8 part 3), so the jump brings Audio into view if
+    // it is not, and flashes it where it lands.
+    d.querySelector('.chip[data-key="audioEnabled"] .chip-name').click();
+    let flashed = false;
+    for (let i = 0; i < 60 && !flashed; i++) {
+      await sleep(30);
+      flashed = d.getElementById('section-audio').classList.contains('flash');
+    }
+    {
+      const ah = rect(q('#section-audio'));
+      check(
+        `the audio chip’s caption lands on Audio: its header in the lane’s view (lane scrolled ${Math.round(c.scrollLeft)} px), flashing`,
+        flashed && ah.left >= cr.left - 1 && ah.right <= cr.right + 1 && d.documentElement.scrollLeft === 0
+      );
+    }
+    c.scrollLeft = 0;
+    await sleep(60);
+    engineBtn('video').click();
+    await sleep(60);
+    check(
+      'an unfolded engine adds a captioned column, not height',
+      c.scrollHeight <= c.clientHeight + 1 &&
+        d.documentElement.scrollHeight <= w.innerHeight &&
+        vis(q('#controls .group.engine[data-section="video"] .group-cap')) &&
+        ['passes', 'maxVideos'].every((k) => {
+          const r = d.querySelector(`.row[data-key="${k}"]`).getBoundingClientRect();
+          return r.height > 0 && r.bottom <= cr.bottom + 1;
+        })
+    );
+    engineBtn('video').click();
+    await sleep(60);
+    // Gates hide rows in the strip too, and the column closes up.
+    const fbToggle = d.querySelector('.row[data-key="feedbackVideo"] input');
+    fbToggle.checked = false;
+    fbToggle.dispatchEvent(new w.Event('input', { bubbles: true }));
+    await sleep(60);
+    check(
+      'feedback off in the strip: its column is the switch alone',
+      vis(d.querySelector('.row[data-key="feedbackVideo"]')) && !vis(d.querySelector('.row[data-key="decay"]')) &&
+        c.scrollHeight <= c.clientHeight + 1
+    );
+    fbToggle.checked = true;
+    fbToggle.dispatchEvent(new w.Event('input', { bubbles: true }));
+    await sleep(60);
+    f.remove();
+  }
+  check(
+    `the effect columns spread with the width: the sort column is wider at 1920 px than at 1280 (${WIDTHS.map((x) => Math.round(sortWidth[x])).join(' · ')} px)`,
+    sortWidth[1920] > sortWidth[1280] + 40 && WIDTHS.every((x, i) => i === 0 || sortWidth[x] >= sortWidth[WIDTHS[i - 1]] - 0.5)
+  );
+
+  // -- the same cluster with a MIDI controller: its line joins the cluster
+  // and must wrap inside it, like the prefs --
+  {
+    const f = await bootFrame('./panel-frame.html?layout=strip&midi=1', WIDTHS[0], STRIP_HEIGHT);
+    const w = f.contentWindow;
+    const d = w.document;
+    await sleep(120);
+    const btn = d.getElementById('midi-connect');
+    const crossingBefore = clusterCrossing(d);
+    check(
+      `in the strip nothing asks for MIDI at boot: no request, no device class, and a MIDI… button in the prefs line instead, inside the cluster (${crossingBefore.join(', ') || 'nothing crosses'})`,
+      w.__midiAsks === 0 && !d.body.classList.contains('midi-device') &&
+        !!btn && !btn.hidden && btn.getClientRects().length > 0 && btn.closest('#prefs') === d.getElementById('prefs') &&
+        btn.classList.contains('btn') && btn.classList.contains('subtle') && btn.textContent === 'MIDI…' &&
+        /only when you click/.test(btn.dataset.tip) && crossingBefore.length === 0 &&
+        btn.getBoundingClientRect().bottom <= STRIP_HEIGHT + 0.5
+    );
+    btn.click();
+    for (let i = 0; i < 20 && !d.body.classList.contains('midi-device'); i++) await sleep(50);
+    await sleep(60);
+    btn.click(); // hidden by now; a second click must not ask again
+    await sleep(60);
+    check(
+      'clicking MIDI… asks once: the device class arrives, the status names the controller, and the button steps aside',
+      w.__midiAsks === 1 && d.body.classList.contains('midi-device') && btn.hidden &&
+        d.getElementById('midi-status').textContent === 'harness controller'
+    );
+    const midi = d.querySelector('.midi');
+    const mr = midi.getBoundingClientRect();
+    const crossing = clusterCrossing(d);
+    check(
+      `with a MIDI device the cluster shows its line, inside the strip, and nothing in it crosses into the lane (${crossing.join(', ') || 'nothing'})`,
+      d.body.classList.contains('midi-device') && mr.height > 0 && mr.bottom <= STRIP_HEIGHT + 0.5 && crossing.length === 0
+    );
+    f.remove();
+  }
+  // -- a page that refuses MIDI to frames: the click says so, nothing else changes --
+  {
+    const f = await bootFrame('./panel-frame.html?layout=strip&midi=deny', WIDTHS[0], STRIP_HEIGHT);
+    const w = f.contentWindow;
+    const d = w.document;
+    await sleep(60);
+    const btn = d.getElementById('midi-connect');
+    const before = w.__midiAsks;
+    btn.click();
+    await sleep(120);
+    const said = btn.textContent === 'refused' && btn.classList.contains('done');
+    await sleep(950);
+    check(
+      'refused: MIDI… flashes "refused", stays to be tried again, and the panel stays without a device',
+      before === 0 && w.__midiAsks === 1 && said && !btn.hidden && btn.textContent === 'MIDI…' &&
+        !d.body.classList.contains('midi-device')
+    );
+    f.remove();
+  }
+
+  // -- the strip at rest: the rail, RAIL_HEIGHT tall, at laptop-to-desktop widths --
+  for (const width of WIDTHS) {
+    const first = width === WIDTHS[0];
+    const f = await bootFrame('./panel-frame.html?layout=strip', width, RAIL_HEIGHT);
+    const w = f.contentWindow;
+    const d = w.document;
+    const q = (s) => d.querySelector(s);
+    const rect = (el) => el.getBoundingClientRect();
+    const vis = (el) => !!el && el.getClientRects().length > 0;
+    check(`the frame really is ${width} × ${RAIL_HEIGHT}`, w.innerWidth === width && w.innerHeight === RAIL_HEIGHT);
+    const targets = [
+      '#ab',
+      ...['video', 'images', 'textScramble', 'audioEnabled'].map((k) => `.chip[data-key="${k}"] .chip-toggle`),
+      '#preset-default',
+      ...['A', 'B', 'C'].map((k) => `.btn.slot[data-slot="${k}"]`),
+      '#preset-save',
+      '#strip-fold',
+    ];
+    const missing = targets.filter((s) => !q(s));
+    check(`at ${width} px the rail's targets all exist (${missing.join(', ') || 'all'})`, missing.length === 0);
+    const present = targets.filter((s) => q(s));
+    check(
+      `at ${width} px the rail is one line: the A/B, the four chips, the presets and the fold button, all in view and vertically aligned`,
+      present.every((s) => vis(q(s)) && rect(q(s)).top >= -0.5 && rect(q(s)).bottom <= w.innerHeight + 0.5) &&
+        (() => {
+          const mids = present.map((s) => (rect(q(s)).top + rect(q(s)).bottom) / 2);
+          return Math.max(...mids) - Math.min(...mids) <= 4;
+        })()
+    );
+    const small = present.filter((s) => rect(q(s)).height < 26 - 0.5).map((s) => `${s} ${Math.round(rect(q(s)).height)}px`);
+    check(`at ${width} px every target on the rail is at least 26 px tall (${small.join(', ') || 'all are'})`, small.length === 0);
+    const sc = q('#scroll');
+    const spill = [...sc.querySelectorAll('*')]
+      .filter((el) => el.getClientRects().length && rect(el).width > 0)
+      .filter((el) => rect(el).right > w.innerWidth + 0.5 || rect(el).bottom > w.innerHeight + 0.5 || rect(el).top < -0.5)
+      .map((el) => el.id || el.className || el.tagName);
+    check(
+      `at ${width} px nothing overflows the rail (${spill.slice(0, 4).join(', ') || 'nothing'})`,
+      spill.length === 0 && d.documentElement.scrollWidth <= w.innerWidth && d.documentElement.scrollHeight <= w.innerHeight
+    );
+    check(
+      `at ${width} px the fold button (26 × 26) offers to unfold (▴) at the rail’s right end`,
+      q('#strip-fold').textContent === '▴' && rect(q('#strip-fold')).left > w.innerWidth - 60 &&
+        Math.abs(rect(q('#strip-fold')).width - 26) < 1 && Math.abs(rect(q('#strip-fold')).height - 26) < 1
+    );
+    if (!first) {
+      f.remove();
+      continue;
+    }
+    check(
+      'the rail hides the sections, the prefs, the MIDI block and the A/B’s caption',
+      !vis(q('#controls')) && !vis(q('#prefs')) && !vis(q('.midi')) && !vis(q('.ab .ab-say'))
+    );
+    check('the rail’s empty space says it can be pressed (pointer cursor, a title on the masthead)', w.getComputedStyle(q('#scroll')).cursor === 'pointer' && /unfold/.test(q('.masthead').title));
+    // Click anywhere that is not a control: the panel asks the strip to unfold.
+    const toggles = [];
+    const onMsg = (e) => {
+      if (e.source === w && e.data?.type === 'deflection:strip' && e.data.op === 'toggle') toggles.push(1);
+    };
+    window.addEventListener('message', onMsg);
+    const clickOn = async (el) => {
+      const n = toggles.length;
+      el.dispatchEvent(new w.MouseEvent('click', { bubbles: true, cancelable: true }));
+      await sleep(60);
+      return toggles.length - n;
+    };
+    check('a click on the rail’s background asks the strip to unfold (one toggle)', (await clickOn(q('#scroll'))) === 1);
+    check('a click on the title counts as empty: it unfolds too', (await clickOn(q('h1'))) === 1);
+    check('a click on a chip pill does not unfold (the chip does its own work)', (await clickOn(q('.chip[data-key="images"] .chip-toggle'))) === 0);
+    await clickOn(q('.chip[data-key="images"] .chip-toggle')); // put it back
+    check('a click on a chip name does not unfold either', (await clickOn(q('.chip[data-key="video"] .chip-name'))) === 0);
+    q('#preset-save').click();
+    await sleep(40);
+    q('#scroll').dispatchEvent(new w.PointerEvent('pointerdown', { bubbles: true, pointerId: 1, button: 0, isPrimary: true }));
+    const savedClicks = await clickOn(q('#scroll'));
+    check(
+      'in save mode a press on the background only cancels the save; it does not also unfold',
+      savedClicks === 0 && !q('#presets').classList.contains('saving')
+    );
+    check('the fold button asks once (its own click, not the background’s too)', (await clickOn(q('#strip-fold'))) === 1);
+    window.removeEventListener('message', onMsg);
+    q('#ab').dispatchEvent(new w.MouseEvent('mouseover', { bubbles: true }));
+    await sleep(420);
+    check('no hover help in the rail: there is no room for a bubble', q('#tooltip').hidden);
+    // The A/B still works on the rail.
+    q('#ab').click();
+    await sleep(90);
+    check('the rail’s A/B latches', w.__store.enabled === false && !q('#ab').classList.contains('on'));
+    q('#ab').click();
+    await sleep(90);
+    f.remove();
+  }
+
+  // -- the window: the layout follows its shape (round 4b) --
+  // No ?layout param: wide (≥ 900 px, ≥ 2:1) is the mixer, anything else
+  // the column, and a resize repaints it live — the engine disclosure moves
+  // up into the section header and back down into its group.
+  {
+    const layoutOf = (f) => f.contentWindow.document.documentElement.dataset.layout;
+    const where = (f) => {
+      const d = f.contentWindow.document;
+      const inHead = !!d.querySelector('#section-video .group-head.disclosure');
+      const inGroup = !!d.querySelector('.group.engine[data-section="video"] > .group-head.disclosure');
+      return inHead && !inGroup ? 'head' : inGroup && !inHead ? 'group' : 'both/neither';
+    };
+    const wide = await bootFrame('./panel-frame.html', 1000, 320);
+    check(
+      'a window booted wide (1000 × 320) is the mixer, its engine disclosure in the section header',
+      layoutOf(wide) === 'mixer' && where(wide) === 'head'
+    );
+    wide.remove();
+    const f = await bootFrame('./panel-frame.html', 700, 700);
+    check(
+      'a window booted square (700 × 700) is the column, its engine disclosure heading its group',
+      layoutOf(f) === undefined && where(f) === 'group'
+    );
+    // The media query's change event lands a frame or two after the resize,
+    // later under load: poll for the expected state instead of sleeping.
+    const resize = async (w, h, settled) => {
+      f.style.width = `${w}px`;
+      f.style.height = `${h}px`;
+      const deadline = Date.now() + 2000;
+      while (!settled() && Date.now() < deadline) await sleep(40);
+    };
+    await resize(1000, 320, () => layoutOf(f) === 'mixer' && where(f) === 'head');
+    check(
+      'dragged wide (700 × 700 → 1000 × 320), the same page turns mixer and the disclosure moves up',
+      layoutOf(f) === 'mixer' && where(f) === 'head'
+    );
+    await resize(700, 700, () => layoutOf(f) === undefined && where(f) === 'group');
+    check(
+      'dragged back (→ 700 × 700), it is the column again and the disclosure returns to its group',
+      layoutOf(f) === undefined && where(f) === 'group'
+    );
+    // The disclosure still works wherever it lives: unfold, fold, nothing lost.
+    const disc = f.contentWindow.document.getElementById('group-video-engine');
+    disc.click();
+    await sleep(60);
+    const opened = f.contentWindow.__store.engineOpen?.video === true;
+    disc.click();
+    await sleep(60);
+    check(
+      'after the round trip the disclosure still folds and unfolds its engine',
+      opened && f.contentWindow.__store.engineOpen?.video === false
+    );
+    f.remove();
+  }
+
+  // -- the side panel at its narrowest: 320 px --
+  for (const width of [320, 360, 420]) {
+    const f = await bootFrame('./panel-frame.html', width, 720);
+    const w = f.contentWindow;
+    const d = w.document;
+    const sc = d.getElementById('scroll');
+    const fits = () =>
+      d.documentElement.scrollWidth <= w.innerWidth &&
+      sc.scrollWidth <= sc.clientWidth &&
+      [...sc.querySelectorAll('*')].every((el) => {
+        if (!el.getClientRects().length) return true;
+        const r = el.getBoundingClientRect();
+        return r.right <= sc.getBoundingClientRect().right + 0.5;
+      });
+    const atRest = fits();
+    d.getElementById('preset-default').click(); // brings out undo
+    await sleep(60);
+    d.getElementById('preset-save').click(); // save mode: the widest preset row
+    await sleep(60);
+    const saving = fits();
+    d.getElementById('preset-cancel').click();
+    await sleep(40);
+    const withUndo = fits() && !d.getElementById('preset-undo').hidden;
+    check(`at ${width} px nothing overflows: at rest, in save mode, with undo showing`, atRest && saving && withUndo);
+    const clip = tipsThatClip(d);
+    check(`at ${width} px every tip fits the bubble’s budget (${clip.join(', ') || 'all fit'})`, clip.length === 0);
+    f.remove();
+  }
 }
 
 // --- run --------------------------------------------------------------------
@@ -503,6 +2763,11 @@ async function tier2() {
     await tier2();
   } catch (e) {
     check(`tier 2 crashed (${e.message})`, false);
+  }
+  try {
+    await tier3();
+  } catch (e) {
+    check(`tier 3 crashed (${e.message})`, false);
   }
   const done = document.createElement('div');
   done.id = 'done';

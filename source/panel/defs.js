@@ -3,66 +3,318 @@
 // harness can import the definitions and the pure value helpers without
 // booting the UI.
 //
-// Section membership is John's call (2026-08-20): four sections, and the
-// sort/feedback knobs that video and images genuinely SHARE live under
-// Video — so their tooltips say so rather than the layout lying about it.
-// `enabled` belongs to no section: it is the master switch and kills all
-// four at once, so it sits above the first divider.
+// Section membership is John's call (2026-08-20): the sort knobs that video
+// and images genuinely SHARE live under Video — so their tooltips say so
+// rather than the layout lying about it. The Images section went with image
+// feedback (removed 2026-10-12, John): stills have no knobs of their own.
+// `enabled`, `video`, `images`, `textScramble` and `audioEnabled` belong to
+// no section: they are the global block above the first divider — the A/B
+// (`enabled`) and the four medium chips, which are the only face of their
+// keys (since 2026-10-11; before that text and audio also had a row in their
+// section). Text is an on/off effect with no knobs — its slider went with its
+// section (John, 2026-10-11) — so the sections are Video and Audio.
 
-import { DEFAULTS } from '../content/params.js';
+import { DEFAULTS, FEEDBACK_BLENDS, SORT_BY } from '../content/params.js';
 
 export const SECTIONS = [
   {
     id: 'video',
     title: 'Video',
-    tip: 'Videos — and the sorting and smear grammar they share with images. Every knob under this divider except max videos also shapes what still images do.',
-  },
-  {
-    id: 'images',
-    title: 'Images',
-    tip: 'Still images: whether they animate, and how many at once. The sorting and smear knobs they obey live under Video.',
-  },
-  {
-    id: 'text',
-    title: 'Text',
-    tip: 'Page text: letters rearranged inside their own words, page-wide.',
+    tip: 'Videos, and the sorting they share with images. Sort is what you see, Feedback is the trail it leaves, Where is where the sort may happen, Engine is setup and fine shape, folded away. Still images take every sort knob and the flow’s shape; feedback, its clear timing and max videos are video only.',
   },
   {
     id: 'audio',
     title: 'Audio',
-    tip: 'Sound: a process done to the audio, not a synth the audio drives. The source passes through a fixed resonant body and smears.',
+    tip: 'Sound: a process done to the audio, not a synth the audio drives. The source passes through a fixed resonant body, then a long smear. The line beneath says what is passing through right now.',
+  },
+];
+
+// Groups inside a section (design review M4/M8, 2026-10-12): effect, effect,
+// engine. Since the handles round (John, 2026-10-12) an effect group holds
+// only its handles — three or four controls named for what they do to the
+// picture or the sound — and whatever shapes rather than steers (the flow's
+// shape, the clear rhythm, the body type) is filed in the engine. A row names its group with `group`; rows without one (the audio
+// master, the text rows) sit directly under the section header, above any
+// group. An `engine` group is folded away behind a disclosure; its open
+// state is panel furniture (storage key `engineOpen`), not a parameter.
+export const GROUPS = [
+  {
+    id: 'sort',
+    section: 'video',
+    title: 'sort',
+    tip: 'The visible effect: runs of the picture rearranged into ribbons. How much sorts and by what, which way it climbs, how far the ribbons wander, how much they boil and how far they run — and every image takes these too.',
+  },
+  {
+    id: 'feedback',
+    section: 'video',
+    title: 'feedback',
+    tip: 'The trail: each frame laid over the last, so damage builds, drifts and fades. Its switch, then how long it lingers, which way it slides, and how the trail meets the new frame. Video only.',
+  },
+  {
+    id: 'gate',
+    section: 'video',
+    title: 'where',
+    tip: 'Where the sort may happen. Each gate is a condition both pixels must meet before they trade; they stack.',
+  },
+  {
+    id: 'engine',
+    section: 'video',
+    title: 'engine',
+    collapsible: true,
+    tip: 'Setup and fine shape rather than look: a button that wipes the trail now; how hard the sort works, at what detail, on how many videos; the shape of the flow (while flow is up); how often the trail wipes clean. Folded away until you open it.',
+  },
+  {
+    id: 'body',
+    section: 'audio',
+    title: 'body',
+    tip: 'The apparatus: a fixed resonant object every sound passes through and rings. Mix sets how much of the process you hear at all; body amount is the identity dial; ring time and drive set how it rings.',
+  },
+  {
+    id: 'smear',
+    section: 'audio',
+    title: 'smear',
+    tip: 'A long echo wash laid over the body. Its own switch, then how long it hangs, how loud it sits and how much it warbles.',
+  },
+  {
+    id: 'engine',
+    section: 'audio',
+    title: 'engine',
+    collapsible: true,
+    tip: 'Setup rather than sound: what the body is made of, the dry source inside the process, how many sources, how the body is driven, and whether the smear ever wipes itself. Folded away until you open it.',
   },
 ];
 
 // Appended under every parameter's tooltip — the two gestures that are not
 // discoverable from looking at the row.
-export const ROW_HINT = 'Double-click the row to restore its default.';
-export const NUM_HINT = 'Type a value and press Enter; ↑/↓ steps (shift ×10). Out-of-range values clamp.';
+export const ROW_HINT = 'Double-click the name to put it back to the marked preset.';
+// A trigger row (type: 'trigger') is a button, not a setting: it has nothing
+// to put back, so its hint replaces ROW_HINT.
+export const TRIGGER_HINT = 'A button, not a setting: presets, default and double-click leave it alone.';
+export const NUM_HINT = 'Type + Enter; ↑/↓ steps (shift ×10); out of range clamps.';
 
+// Labels are the player's words (synth vocabulary: wet/dry, decay, gate,
+// ring time); keys are the machine's and never change — storage, MIDI maps
+// and parameters.md all speak in keys, and every tooltip ends with its key.
+// Tips lead with what you see or hear, then the author's precise sentence.
+// Order here is render order within each section and group.
 export const DEFS = [
   {
     key: 'enabled',
     label: 'enabled',
     type: 'toggle',
-    tip: 'Master switch for the whole piece — video, images, text and audio. Off restores every page untouched. Ctrl+Shift+D toggles it without the panel.',
+    tip: 'The whole piece on or off — video, images, text and sound. Click to latch; hold past half a second to compare the page untouched, and let go to come back. Ctrl+Shift+D does the same from any page.',
+  },
+  {
+    key: 'video',
+    label: 'video',
+    type: 'toggle',
+    tip: 'Video on/off. Off shows every video exactly as it arrived while images, text and sound keep bending. The Video section below shapes it.',
+  },
+  {
+    key: 'images',
+    label: 'images',
+    type: 'toggle',
+    tip: 'Images on/off. Off puts every still picture back as it arrived. Images take their look from the sort knobs in the Video section.',
   },
 
-  // --- Video (plus the sort/feedback grammar images share) ---
-  {
-    key: 'feedbackVideo',
-    label: 'video feedback',
-    type: 'toggle',
-    section: 'video',
-    tip: 'Temporal feedback on videos — the resting state. The smear accumulates, drifts, decays, and clears at slow keyframes. Off = straight per-frame pixel sorting.',
-  },
+  // --- Video · sort: the handles ---
   {
     key: 'threshold',
-    label: 'threshold',
+    label: 'amount',
+    min: 0,
+    max: 1,
+    step: 0.01,
+    // Shown and played as amount = 1 − threshold, so more is up; stored,
+    // preset and mapped as threshold.
+    invert: true,
+    section: 'video',
+    group: 'sort',
+    tip: 'How much of the picture is sorted. 0 = untouched; 1 = everything but true black, which always holds as a barrier. The most expressive knob. Stored inverted, as threshold (1 − amount). Shapes images too.',
+  },
+  // The comparison key (round 8 part 2; John: "visually impactful", and the
+  // name is his pick — "sort by" over "sort mode"). Ordering only: the dark
+  // barrier stays on luma, so amount means the same under every key.
+  {
+    key: 'sortKey',
+    label: 'sort by',
+    type: 'select',
+    options: SORT_BY,
+    section: 'video',
+    group: 'sort',
+    tip: 'What decides which pixel climbs. luma = the bright rises; hue = colours stratify into bands; saturation = the vivid rises over the drab; red/green/blue = one channel leads. The dark barrier still holds. Shapes images too.',
+  },
+  // The direction (round 8 part 2): the panel's first KNOB — a rotary, since
+  // an angle is a direction to point, not an amount to push (John's pick;
+  // other knobs deferred). `wrap: true`: past 359 it comes round to 0, and a
+  // typed value wraps rather than clamps (450 → 90). 0–359 rather than
+  // 0–360, so every direction has exactly one value and a full MIDI sweep
+  // (CC 0 → 0, CC 127 → 359) goes once round.
+  {
+    key: 'angle',
+    label: 'direction',
+    type: 'knob',
+    wrap: true,
+    min: 0,
+    max: 359,
+    step: 1,
+    section: 'video',
+    group: 'sort',
+    tip: 'Which way the sort climbs: 0 = up, 90 = right, 180 = down, 270 = left. Turns the flow’s whole pattern too. In facets mode it moves in 45° steps, in paths it glides. Shapes images too.',
+  },
+  {
+    key: 'flowAmount',
+    label: 'flow',
     min: 0,
     max: 1,
     step: 0.01,
     section: 'video',
-    tip: 'Luma above this is eligible for sorting. Near zero corrupts almost everything while true black holds as a barrier; 1 leaves the frame untouched. The single most expressive knob. Also applies to images.',
+    group: 'sort',
+    tip: 'How much the ribbons wander. 0 = straight vertical climbs; up = they curl along a slowly changing current. Sorting follows a morphing curl-noise field, and every video and image draws its own. Shapes images too.',
+  },
+  {
+    key: 'temperature',
+    label: 'jitter',
+    min: 0,
+    max: 0.5,
+    step: 0.005,
+    section: 'video',
+    group: 'sort',
+    tip: 'Random swaps on top of the sort. 0 = clean ribbons; up = grain and shimmer. A fraction of each pass’s decisions is flipped, so ribbons boil at their edges and never settle; dark barriers still hold. Shapes images too.',
+  },
+  {
+    key: 'streak',
+    label: 'ribbons',
+    min: 1,
+    max: 256,
+    step: 1,
+    section: 'video',
+    group: 'sort',
+    tip: 'How far the ribbons run: the distance a pixel can travel in one frame. Short = fine grain; long = streaks across the frame. The longest swap distance, rounded down to a power of two. Shapes images too.',
+  },
+
+  // --- Video · feedback: the switch, then the handles ---
+  {
+    key: 'feedbackVideo',
+    label: 'feedback',
+    type: 'toggle',
+    section: 'video',
+    group: 'feedback',
+    tip: 'A trail: each frame is laid over the last, so damage builds up, drifts and fades. Off = every frame sorted fresh. It wipes clean at slow random moments, timed under engine; clear buffer, under engine, wipes the trail now.',
+  },
+  {
+    key: 'decay',
+    label: 'trail',
+    min: 0.8,
+    max: 0.999,
+    step: 0.001,
+    section: 'video',
+    group: 'feedback',
+    tip: 'How long the trail lingers. Up = longer, so damage piles up before it fades. How much of the trail each frame keeps.',
+  },
+  {
+    key: 'driftX',
+    label: 'drift',
+    pad: 'drift', // played as one 2-D pad with driftY (PADS below); x axis
+    min: -0.01,
+    max: 0.01,
+    step: 0.0005,
+    section: 'video',
+    group: 'feedback',
+    tip: 'The trail slides sideways. Negative = left, positive = right. Measured in fractions of the frame per frame.',
+  },
+  {
+    key: 'driftY',
+    label: 'drift',
+    pad: 'drift', // y axis of the drift pad
+    min: -0.01,
+    max: 0.01,
+    step: 0.0005,
+    section: 'video',
+    group: 'feedback',
+    tip: 'The trail slides up or down. Positive = up; the resting state climbs gently. Fractions of the frame per frame, picture only — it never moves the sound.',
+  },
+  {
+    key: 'feedbackBlend',
+    label: 'blend',
+    type: 'select',
+    options: FEEDBACK_BLENDS,
+    section: 'video',
+    group: 'feedback',
+    tip: 'How the trail meets the new frame. brighter = only where it outshines the frame (hidden over bright motion); mix = a crossfade; screen = it lightens the frame; add = it piles on and burns out. Video only.',
+  },
+  {
+    key: 'feedbackMix',
+    label: 'blend amount',
+    min: 0,
+    max: 1,
+    step: 0.01,
+    section: 'video',
+    group: 'feedback',
+    tip: 'How much of the trail survives against the new frame. 0 = every frame fresh; 1 = the full trail. Video only.',
+  },
+
+  // --- Video · where: the gates (round 8 part 3, John 2026-10-12) ---
+  // Each is a condition both members of a pair must meet before they trade,
+  // computed identically by both, so every pass stays a permutation; they
+  // stack. follow motion moved here from feedback (it still reads the
+  // trail, so it still hides with feedback off); the other three shape
+  // images too. All inert at 0: the resting picture is bit-identical.
+  {
+    key: 'motionGate',
+    label: 'follow motion',
+    min: 0,
+    max: 1,
+    step: 0.01,
+    section: 'video',
+    group: 'gate',
+    tip: 'How closely the sort follows motion. 0 = the whole picture sorts; 1 = only what moves. Pixels trade only where the motion trail clears this, so action smears and stillness heals. Reads the feedback trail.',
+  },
+  {
+    key: 'edgeGate',
+    label: 'edges',
+    min: -1,
+    max: 1,
+    step: 0.01,
+    section: 'video',
+    group: 'gate',
+    tip: 'Where the sort may happen, by the picture’s own edges. Left of centre = only flat regions tear and outlines hold; right = only edges shred and fills hold; centre = everywhere. Stacks with follow motion. Shapes images too.',
+  },
+  {
+    key: 'span',
+    label: 'span',
+    min: 0,
+    max: 512,
+    step: 8,
+    section: 'video',
+    group: 'gate',
+    tip: 'Extra walls every so many pixels along the sort direction. 0 = none. Short = fine banding of small sorted cells; long = whole-frame tears. Ribbons is how far a pixel jumps per frame; span is how far a run may ever reach.',
+  },
+  {
+    key: 'barrierSoft',
+    label: 'soft barrier',
+    min: 0,
+    max: 0.5,
+    step: 0.01,
+    section: 'video',
+    group: 'gate',
+    tip: 'Frays the ends of ribbons: pixels just under the dark barrier trade now and then instead of never. 0 = a hard cut. Shapes images too.',
+  },
+
+  // --- Video · engine: the clear button, setup, the shape of the flow, the clear rhythm ---
+  // A trigger, not a value (round 8, John: "a clear buffer button under the
+  // feedback tab" — a utility, not a headline handle). It sits first in the
+  // engine because the feedback column was full at its eight lane cells
+  // when it came (follow motion has since moved to where); the feedback
+  // switch's tip points here. Stored as a counter the panel
+  // increments (`keyframe`); gated with the feedback keys; excluded from
+  // presets (PRESET_EXCLUDED); a MIDI CC fires it once per rise through 64.
+  {
+    key: 'keyframe',
+    label: 'clear buffer',
+    type: 'trigger',
+    section: 'video',
+    group: 'engine',
+    tip: 'Wipe the trail to a clean frame right now, on every video. The random keyframe clock still runs. Bind a MIDI button to it for a rhythm.',
   },
   {
     key: 'passes',
@@ -71,114 +323,8 @@ export const DEFS = [
     max: 64,
     step: 1,
     section: 'video',
-    tip: 'Sort passes per frame. A full 256→1 stride ladder is 18 passes, so 64 runs about three and a half settling cycles. Also applies to images.',
-  },
-  {
-    key: 'streak',
-    label: 'streak',
-    min: 1,
-    max: 256,
-    step: 1,
-    section: 'video',
-    tip: 'Longest compare-exchange stride, rounded down to a power of two — how far a pixel can travel in one frame. The ribbon-length knob. Also applies to images.',
-  },
-  {
-    key: 'temperature',
-    label: 'temperature',
-    min: 0,
-    max: 0.5,
-    step: 0.005,
-    section: 'video',
-    tip: 'Fraction of pair verdicts inverted per pass: the sort simmers at its equilibrium instead of settling into it, so ribbons boil at their edges and the picture never rests. Barriers still hold. Also applies to images.',
-  },
-  {
-    key: 'flowAmount',
-    label: 'flow amount',
-    min: 0,
-    max: 1,
-    step: 0.01,
-    section: 'video',
-    tip: '0 = the classic vertical grammar, bit for bit. Up = sorting follows a slowly morphing curl-noise field, so ribbons meander along streamlines instead of climbing columns. Every element draws its own seed. Also applies to images.',
-  },
-  {
-    key: 'flowMode',
-    label: 'flow mode',
-    type: 'select',
-    options: ['paths', 'facets'],
-    section: 'video',
-    tip: 'Flow only. facets = 8 fixed sectors: straight runs pooling at anchored seams. paths = 16 sectors with a boundary that dithers per pass, so ribbons round their curves.',
-  },
-  {
-    key: 'flowScale',
-    label: 'flow scale',
-    min: 1,
-    max: 12,
-    step: 0.5,
-    section: 'video',
-    tip: 'Flow only. Noise cells across the frame: higher = tighter, busier swirls; lower = broad sweeping currents.',
-  },
-  {
-    key: 'flowSpeed',
-    label: 'flow speed',
-    min: 0,
-    max: 0.2,
-    step: 0.005,
-    section: 'video',
-    tip: 'Flow only. How fast the field morphs — streamlines re-carve in place rather than marching. 0 = frozen geometry, flow without evolution.',
-  },
-  {
-    key: 'decay',
-    label: 'decay',
-    min: 0.8,
-    max: 0.999,
-    step: 0.001,
-    section: 'video',
-    tip: 'Feedback only. Accumulator retention per frame: higher = the smear lingers longer. Shared with image feedback.',
-  },
-  {
-    key: 'driftX',
-    label: 'drift x',
-    min: -0.01,
-    max: 0.01,
-    step: 0.0005,
-    section: 'video',
-    tip: 'Feedback only. Horizontal smear in UV units per frame; negative drifts leftward. Shared with image feedback.',
-  },
-  {
-    key: 'driftY',
-    label: 'drift y',
-    min: -0.01,
-    max: 0.01,
-    step: 0.0005,
-    section: 'video',
-    tip: 'Feedback only. Vertical smear; positive drifts upward — the resting state climbs gently. Purely visual: the audio wobble this used to drive is now fb wobble. Shared with image feedback.',
-  },
-  {
-    key: 'resetMinS',
-    label: 'reset min s',
-    min: 1,
-    max: 30,
-    step: 1,
-    section: 'video',
-    tip: 'Feedback only. Floor of the keyframe window: the accumulator resets to a clean frame at a random interval in this range. Shared with image feedback.',
-  },
-  {
-    key: 'resetMaxS',
-    label: 'reset max s',
-    min: 2,
-    max: 60,
-    step: 1,
-    section: 'video',
-    tip: 'Feedback only. Ceiling of the keyframe window. Slow by default — damage accumulates for half a minute or more before it clears. Shared with image feedback.',
-  },
-  {
-    key: 'motionGate',
-    label: 'motion gate',
-    min: 0,
-    max: 1,
-    step: 0.01,
-    section: 'video',
-    tip: 'Feedback only. A pair trades only where the motion trail clears this, so damage stays inside what the transmission itself is changing: action smears, stillness holds and heals. Shared with image feedback.',
+    group: 'engine',
+    tip: 'How settled the ribbons get each frame. Fewer = rough and half-formed; more = fully sorted, at more cost to the graphics card. 18 passes complete one full cycle; 64 run about three and a half. Shapes images too.',
   },
   {
     key: 'maxRes',
@@ -187,7 +333,8 @@ export const DEFS = [
     max: 1920,
     step: 160,
     section: 'video',
-    tip: 'Processing resolution cap on the long axis. Lower it on weak GPUs; the output upscales through the overlay. Applies to images too.',
+    group: 'engine',
+    tip: 'The detail the sort works at. Lower it if video stutters; the result is scaled back up to fit. A cap in pixels on the long side. Shapes images too.',
   },
   {
     key: 'maxVideos',
@@ -196,191 +343,112 @@ export const DEFS = [
     max: 16,
     step: 1,
     section: 'video',
-    tip: 'Concurrent video jobs, biggest visible first. Paused videos count — they get a one-shot sorted still, since the frame callback never fires for them.',
-  },
-
-  // --- Images ---
-  {
-    key: 'feedbackImage',
-    label: 'image feedback',
-    type: 'toggle',
-    section: 'images',
-    tip: 'Temporal feedback on images: big stills animate at image fps and accumulate the same smear as video. Off = one-shot sorted stills, the resting state.',
+    group: 'engine',
+    tip: 'How many videos bend at once, biggest on screen first; the rest play untouched. Paused videos count, and each gets one sorted still.',
   },
   {
-    key: 'imageFps',
-    label: 'image fps',
+    key: 'flowMode',
+    label: 'flow mode',
+    type: 'select',
+    options: ['paths', 'facets'],
+    section: 'video',
+    group: 'engine',
+    tip: 'The shape of the current. facets = straight runs pooling at fixed seams; paths = ribbons that round their curves. facets uses 8 fixed directions; paths uses 16 with a boundary that dithers every pass.',
+  },
+  {
+    key: 'flowScale',
+    label: 'flow scale',
+    min: 1,
+    max: 12,
+    step: 0.5,
+    section: 'video',
+    group: 'engine',
+    tip: 'Size of the swirls. Higher = tighter and busier; lower = broad sweeping currents. Counts noise cells across the frame.',
+  },
+  {
+    key: 'flowSpeed',
+    label: 'flow speed',
+    min: 0,
+    max: 0.2,
+    step: 0.005,
+    section: 'video',
+    group: 'engine',
+    tip: 'How fast the current changes. 0 = frozen shapes. The field re-forms in place rather than marching across the frame.',
+  },
+  {
+    key: 'resetMinS',
+    label: 'clear min s',
     min: 1,
     max: 30,
     step: 1,
-    section: 'images',
-    tip: 'Image feedback only. Tick rate for animated images. Straight-sort stills do not animate at all.',
+    section: 'video',
+    group: 'engine',
+    tip: 'Shortest wait, in seconds, before the trail wipes clean. It clears at a random moment between clear min s and clear max s.',
   },
   {
-    key: 'imageAnimCap',
-    label: 'image anim cap',
-    min: 0,
-    max: 24,
+    key: 'resetMaxS',
+    label: 'clear max s',
+    min: 2,
+    max: 60,
     step: 1,
-    section: 'images',
-    tip: 'Image feedback only. How many images may animate at once (at least 200 px a side, biggest visible first); the rest stay stills.',
+    section: 'video',
+    group: 'engine',
+    tip: 'Longest wait, in seconds, before the trail wipes clean. Slow by default: damage builds for half a minute or more before it clears.',
   },
 
-  // --- Text ---
   {
     key: 'textScramble',
-    label: 'text scramble',
+    label: 'text',
     type: 'toggle',
-    section: 'text',
-    tip: 'Letters rearrange inside their own word, page-wide. Anything that is not a letter — space, punctuation, digit, emoji — is a barrier no glyph crosses, so every word keeps its length and the page keeps its shape.',
+    tip: 'Text on/off. Letters rearrange inside their own word, page-wide; anything that is not a letter is a barrier no glyph crosses, so every word keeps its length and the page its shape. Runs under eight characters are left alone, so Home and OK survive.',
   },
-  {
-    key: 'textMin',
-    label: 'text min chars',
-    min: 1,
-    max: 40,
-    step: 1,
-    section: 'text',
-    tip: 'Text only. Shortest run of text that scrambles. At 8 prose and most labels dissolve while the shortest furniture (Home, OK) survives — the navigability dial.',
-  },
-
-  // --- Audio ---
   {
     key: 'audioEnabled',
     label: 'audio',
     type: 'toggle',
-    section: 'audio',
-    tip: 'Audio master. Off ramps every tap to dry — the tap itself is permanent by design and is never undone.',
+    tip: 'Sound on/off. Off = every source plays exactly as it arrived. The Audio section below shapes it. The tap on each source stays in place by design; off routes it around the process.',
   },
+
+  // --- Audio · body (the level first: mix, then the apparatus) ---
   {
     key: 'audioMix',
-    label: 'audio mix',
+    label: 'mix',
     min: 0,
     max: 1,
     step: 0.01,
     section: 'audio',
-    tip: 'Wet/dry in the tap graph, on 30 ms ramps. 0 = the internet as transmitted. Distinct from direct, which lives inside the DSP.',
-  },
-  {
-    key: 'audioBody',
-    label: 'body',
-    type: 'select',
-    options: ['modal', 'comb'],
-    section: 'audio',
-    tip: 'Which apparatus the sound passes through. modal = 48 stretched partials, struck metal. comb = three recirculating lines, exactly harmonic — tube, pipe, spring, and about a tenth of the cost.',
-  },
-  {
-    key: 'audioDirect',
-    label: 'direct',
-    min: 0,
-    max: 1,
-    step: 0.01,
-    section: 'audio',
-    tip: 'Direct signal level inside the DSP. The engine sums its resonant part with this, so the source passes through the apparatus instead of only driving it. 0 = the old synth-like behaviour, kept reachable for comparison.',
+    group: 'body',
+    tip: 'Wet/dry for the whole sound. 0 = the sound exactly as transmitted, 1 = all apparatus. Applied after everything else, on 30 ms ramps — unlike dry (under engine), which lives inside the process.',
   },
   {
     key: 'audioBodyMix',
-    label: 'body mix',
+    label: 'body amount',
     min: 0,
     max: 2,
     step: 0.01,
     section: 'audio',
-    tip: 'The resonant part against the direct path — the identity dial. Up for more fixed voice, down for more of the video.',
+    group: 'body',
+    tip: 'How much of the resonant body you hear against the source. 0 = source only, 2 = all body. The identity dial: up for more of the fixed voice, down for more of the video.',
   },
   {
-    key: 'audioCombDamp',
-    label: 'comb damp',
-    min: 0,
-    max: 0.9,
-    step: 0.01,
-    section: 'audio',
-    tip: 'Comb only. Loop lowpass — the comb’s version of "higher partials die faster". Low = metallic and bright, high = woody and dark.',
-  },
-  {
-    key: 'audioFeedback',
-    label: 'audio fb',
-    type: 'toggle',
-    section: 'audio',
-    tip: 'The smear: the engine’s output recirculates through a 0.35 s delay line, continuously.',
-  },
-  {
-    key: 'audioFbDecay',
-    label: 'fb tail',
-    min: 0.8,
-    max: 0.999,
-    step: 0.001,
-    section: 'audio',
-    tip: 'Audio fb only. The smear’s tail length, and only that. Maps to loop gain 0.5–0.95, the same range as the visual decay knob, so it feels like the same control.',
-  },
-  {
-    key: 'audioFbReturn',
-    label: 'fb return',
+    key: 'audioFollow',
+    label: 'follow',
     min: 0,
     max: 1,
     step: 0.01,
     section: 'audio',
-    tip: 'Audio fb only. How loud the wash sits, as a fraction of the loop gain. Tail and level are two knobs on purpose: merged, the wash settled about twenty times over the direct sound and buried the source. 1 = that old behaviour exactly.',
-  },
-  {
-    key: 'audioFbWobble',
-    label: 'fb wobble',
-    min: 0,
-    max: 0.4,
-    step: 0.005,
-    section: 'audio',
-    tip: 'Audio fb only. Delay wobble depth — tape warble on the echo stack. 0 = a static stack, the resting state. Audio-only since the detangle: performing the video never bends the sound.',
-  },
-  {
-    key: 'audioFbClear',
-    label: 'fb clear',
-    type: 'toggle',
-    section: 'audio',
-    tip: 'Audio fb only. Whether the smear clears on its own rhythm at all. Off is the piece: a loop gain below 1 is already a decay, so unlike the video accumulator the wash never needs wiping.',
-  },
-  {
-    key: 'audioFbClearS',
-    label: 'fb clear s',
-    min: 0,
-    max: 4,
-    step: 0.1,
-    section: 'audio',
-    tip: 'Audio fb clear only. Fade the wash out over about this long before the line wipes. 0 = the original hard cut; the video keyframe stays a hard cut by design.',
-  },
-  {
-    key: 'audioFbClearMinS',
-    label: 'fb clear min s',
-    min: 1,
-    max: 30,
-    step: 1,
-    section: 'audio',
-    tip: 'Audio fb clear only. Floor of the smear’s own keyframe window — decoupled from the visual reset rhythm.',
-  },
-  {
-    key: 'audioFbClearMaxS',
-    label: 'fb clear max s',
-    min: 2,
-    max: 60,
-    step: 1,
-    section: 'audio',
-    tip: 'Audio fb clear only. Ceiling of the smear’s own keyframe window — decoupled from the visual reset rhythm.',
-  },
-  {
-    key: 'audioMaxTaps',
-    label: 'max taps',
-    min: 1,
-    max: 8,
-    step: 1,
-    section: 'audio',
-    tip: 'Concurrent engaged taps, most recently playing first — the audio sibling of max videos. Everything safe gets tapped; beyond the cap, elements play dry.',
+    group: 'body',
+    tip: 'How much the body retunes toward the source’s own pitch. 0 = the fixed chord, every source rings the same metal; 1 = the chord follows what plays, so each video rings its own. Only the pitch moves, within an octave.',
   },
   {
     key: 'audioSustain',
-    label: 'sustain s',
+    label: 'ring time',
     min: 2,
     max: 12,
     step: 0.5,
     section: 'audio',
-    tip: 'T60 at the lowest string (55 Hz), in seconds. Higher modes always die faster — the ring-length knob.',
+    group: 'body',
+    tip: 'How long the body rings after a sound strikes it. Up = longer. Seconds for the lowest note (55 Hz) to fall away by 60 dB; higher notes always die faster.',
   },
   {
     key: 'audioDrive',
@@ -389,7 +457,79 @@ export const DEFS = [
     max: 1,
     step: 0.01,
     section: 'audio',
-    tip: 'Strike force into the resonators. Per-mode caps bound runaway, so drive shapes the attack more than the loudness.',
+    group: 'body',
+    tip: 'How hard the sound strikes the body. Shapes the attack more than the loudness, because every partial is capped.',
+  },
+
+  // --- Audio · smear ---
+  {
+    key: 'audioFeedback',
+    label: 'smear',
+    type: 'toggle',
+    section: 'audio',
+    group: 'smear',
+    tip: 'A long echo wash over the body. Off = the body alone. The output recirculates through a 0.35 s delay line, continuously.',
+  },
+  {
+    key: 'audioFbDecay',
+    label: 'tail',
+    min: 0.8,
+    max: 0.999,
+    step: 0.001,
+    section: 'audio',
+    group: 'smear',
+    tip: 'How long the wash hangs on. Up = longer — tens of seconds at the top. Tail length only, over the same range as the picture’s trail, so the two feel alike.',
+  },
+  {
+    key: 'audioFbReturn',
+    label: 'level',
+    min: 0,
+    max: 1,
+    step: 0.01,
+    section: 'audio',
+    group: 'smear',
+    tip: 'How loud the wash sits under the sound. Up = the wash takes over. A fraction of the loop gain, kept apart from tail on purpose: at 1 the wash settles about twenty times over the sound and buries it.',
+  },
+  {
+    key: 'audioFbWobble',
+    label: 'wobble',
+    min: 0,
+    max: 0.4,
+    step: 0.005,
+    section: 'audio',
+    group: 'smear',
+    tip: 'Tape warble on the echoes. 0 = a steady wash, the resting state. Depth of the delay-time wobble; no picture knob ever moves it.',
+  },
+
+  // --- Audio · engine: what the body is, and setup ---
+  {
+    key: 'audioBody',
+    label: 'body type',
+    type: 'select',
+    options: ['modal', 'comb'],
+    section: 'audio',
+    group: 'engine',
+    tip: 'What the sound rings through. modal = struck metal; comb = tube, pipe or spring. modal is 48 slightly stretched partials; comb is three exactly harmonic delay loops at about a tenth of the cost.',
+  },
+  {
+    key: 'audioDirect',
+    label: 'dry',
+    min: 0,
+    max: 1,
+    step: 0.01,
+    section: 'audio',
+    group: 'engine',
+    tip: 'The untouched source mixed back in. Up = intelligible again, which defeats the piece; kept for comparison. The source’s level inside the process, summed with the body; 0 = only the body is heard, struck by the source.',
+  },
+  {
+    key: 'audioMaxTaps',
+    label: 'max sources',
+    min: 1,
+    max: 8,
+    step: 1,
+    section: 'audio',
+    group: 'engine',
+    tip: 'How many sources sound through the body at once, most recently started first; beyond that they play untouched. Each one is its own processor.',
   },
   {
     key: 'audioExciter',
@@ -397,9 +537,73 @@ export const DEFS = [
     type: 'select',
     options: ['gated', 'continuous'],
     section: 'audio',
-    tip: 'continuous drives the body always — that is the piece. gated opens a 60 ms window on onsets so the body is struck instead.',
+    group: 'engine',
+    tip: 'How the sound reaches the body. continuous = it drives the body all the time — the piece. gated = only onsets strike it, through a 60 ms window.',
+  },
+  {
+    key: 'audioCombDamp',
+    label: 'comb damp',
+    min: 0,
+    max: 0.9,
+    step: 0.01,
+    section: 'audio',
+    group: 'engine',
+    tip: 'Brightness of the comb body. Low = metallic and bright; high = woody and dark. A lowpass inside each loop, so higher partials die faster. Comb only.',
+  },
+  {
+    key: 'audioFbClear',
+    label: 'smear clear',
+    type: 'toggle',
+    section: 'audio',
+    group: 'engine',
+    tip: 'Whether the wash wipes itself clean now and then. Off is the piece: the wash already fades on its own. On = it clears at a random moment between clear min s and clear max s.',
+  },
+  {
+    key: 'audioFbClearS',
+    label: 'clear fade s',
+    min: 0,
+    max: 4,
+    step: 0.1,
+    section: 'audio',
+    group: 'engine',
+    tip: 'How long, in seconds, the wash fades before it wipes. 0 = a hard cut. The picture’s own clear is always a hard cut, by design.',
+  },
+  {
+    key: 'audioFbClearMinS',
+    label: 'clear min s',
+    min: 1,
+    max: 30,
+    step: 1,
+    section: 'audio',
+    group: 'engine',
+    tip: 'Shortest wait, in seconds, before the wash wipes clean. Its own rhythm, separate from the picture’s.',
+  },
+  {
+    key: 'audioFbClearMaxS',
+    label: 'clear max s',
+    min: 2,
+    max: 60,
+    step: 1,
+    section: 'audio',
+    group: 'engine',
+    tip: 'Longest wait, in seconds, before the wash wipes clean. Its own rhythm, separate from the picture’s.',
   },
 ];
+
+// Pads: two numeric keys played as one 2-D surface (handles round,
+// 2026-10-12). Each key keeps its own def, storage, preset slot, MIDI
+// binding and tip (the tips feed the pad's two small fields); a def names
+// its pad with `pad`, and the pad renders where the first of its keys sits
+// in DEFS. x runs left → right from min to max, y bottom → top, so up on the
+// pad is up on the picture.
+export const PADS = {
+  drift: {
+    x: 'driftX',
+    y: 'driftY',
+    label: 'drift',
+    tip: 'Which way the trail slides: push the point and the trail moves that way, faster the further out; at the cross it holds still. Up on the pad is up on the picture.',
+  },
+};
 
 // --- Pure value helpers (shared with the panel harness) ---
 
@@ -426,19 +630,87 @@ export function quantize(def, n) {
 
 export const fmtNumber = (def, v) => Number(v).toFixed(decimals(def.step));
 
+// Where a value lands on its row's grid. A def with `wrap: true` (the
+// direction knob) is a circle: the number snaps to the step and then comes
+// round — the span is max − min + step, so 360 is 0 again and −1 is 359 —
+// instead of clamping at the ends. Every other def clamps (quantize).
+export function settle(def, n) {
+  if (!def.wrap) return quantize(def, n);
+  const step = Number(def.step) || 1;
+  const min = Number(def.min);
+  const span = Number(def.max) - min + step;
+  const snapped = Math.round((Number(n) - min) / step) * step;
+  const v = min + (((snapped % span) + span) % span);
+  return quantize(def, v);
+}
+
+// The view a row shows and edits. A def with `invert: true` is played
+// upside down — the panel shows and takes `max − (v − min)` (for 0–1 that is
+// 1 − v) — so a knob whose stored sense runs against "more" still reads more
+// = up. Everything stored (the key, presets, MIDI maps, DEFAULTS) stays in
+// the stored sense; only what the player sees and types is the view. The
+// mapping is its own inverse. Results are rounded at the step's precision so
+// no float noise reaches a field; quantize and fmtNumber act on the stored
+// grid, which for a range that is a whole number of steps is the view grid
+// mirrored.
+export function toView(def, v) {
+  if (!def.invert) return v;
+  const n = Number(def.max) + Number(def.min) - Number(v);
+  return round(n, decimals(def.step));
+}
+
+export const fromView = toView;
+
 export const fmtValue = (def, v) => {
+  if (def.type === 'trigger') return ''; // a counter, never shown
   if (def.type === 'toggle') return v ? 'on' : 'off';
   if (def.type === 'select') return String(v);
   return fmtNumber(def, v);
 };
 
-// Defaults resolve through John's saved set first, then the code DEFAULTS.
-// "set defaults" writes the saved set; "clear saved" drops it, which is the
-// escape hatch that keeps correction #8 true (edit DEFAULTS in source and
-// the panel can still get back to it).
-export function defaultFor(key, userDefaults) {
-  if (userDefaults && Object.prototype.hasOwnProperty.call(userDefaults, key)) {
-    return userDefaults[key];
+// A row's restore value resolves through the BASE preset first — the slot
+// last loaded (A/B/C), or null when the base is "default" — then the code
+// DEFAULTS. "default" is never stored, so the compiled DEFAULTS are always
+// one click away (correction #8: edit DEFAULTS in source and the panel can
+// still reach them). A partial preset falls through per key.
+export function defaultFor(key, base) {
+  if (base && Object.prototype.hasOwnProperty.call(base, key)) {
+    return base[key];
   }
   return DEFAULTS[key];
 }
+
+// The preset slots, in display order. Stored together under `presets`
+// ({A, B, C}, each a values object or null), with `presetBase` naming the
+// last-loaded one — both outside DEFAULTS, so no content script sees them.
+export const PRESET_SLOTS = ['A', 'B', 'C'];
+
+// Keys a preset neither captures nor loads. The A/B is the comparison
+// gesture, not part of a look: loading a preset (or "default") while the
+// page is switched off must not switch it back on, and a save made mid-hold
+// must not capture the bypass. The clear-buffer counter (`keyframe`) is an
+// event, not a look: loading a preset must never fire it or wind it back.
+export const PRESET_EXCLUDED = ['enabled', 'keyframe'];
+
+// Where the panel lives (design review M9): a panel preference, not a
+// parameter — stored as `panelHome` beside `tooltips`, outside DEFAULTS, so
+// no content script's param filter ever sees it. The service worker reads it
+// to decide what the toolbar icon and Ctrl+Shift+P open; the content script
+// reads it to decide whether to put the strip on the page. A change applies
+// on the next open: a live panel is never moved out from under the player.
+// The window is the default (John, 2026-10-12, after both homes were built:
+// detached, it lays itself out to its own shape); the strip stays one
+// choice away, and the side panel remains for anyone who wants it.
+export const PANEL_HOME = {
+  key: 'panelHome',
+  label: 'panel lives in',
+  default: 'window',
+  options: [
+    ['window', 'window'],
+    ['strip', 'bottom strip'],
+    ['side', 'side panel'],
+  ],
+  tip: 'Where this panel opens: its own window, laid out to the window’s shape (the default), a strip along the bottom of every page that rests as one line and unfolds to a mixer, or docked in Chrome’s side panel. Takes effect the next time the panel opens.',
+  hint: 'A panel preference, not a parameter of the piece — the panel you are using stays where it is.',
+};
+export const PANEL_HOMES = PANEL_HOME.options.map(([value]) => value);

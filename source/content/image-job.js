@@ -6,14 +6,13 @@
 // would fight site lazy-loaders.
 //
 // Straight-sort mode renders once per source/params change (the sort is
-// deterministic, so a still image has a stable still result). Feedback
-// mode animates big on-screen images from the registry's ticker.
+// deterministic, so a still image has a stable still result). Images never
+// animate: there is no image feedback and no image ticker.
 
 import { Overlay, objectFitRect } from './overlay.js';
 import { acquireGL } from '../gl/context.js';
 import { createBundle, destroyBundle } from '../gl/pipeline.js';
-
-const ANIM_MIN_SIZE = 200; // feedback-mode animation tier
+import { sortKeyIndex, angleRadians } from './params.js';
 
 export class ImageJob {
   constructor(img, params, routeStats) {
@@ -24,7 +23,7 @@ export class ImageJob {
     this.overlay = null;
     this.ctx = null;
     this.glc = null;
-    this.bundle = null; // retained only while animating (feedback mode)
+    this.bundle = null; // held only across a draw (kept if one throws mid-way)
     this.source = null; // upload-safe source (the img itself or a detached Image)
     this.route = null; // 'direct' | 'cors' | 'sw'
     this.resolving = false;
@@ -40,7 +39,6 @@ export class ImageJob {
     this.natW = 0;
     this.natH = 0;
     this.fitRect = null;
-    this.nextResetAt = 0;
     this.flowSeed = Math.random() * 1024; // per-content; onLoad rerolls
 
     this.onGLRestore = () => {
@@ -77,13 +75,6 @@ export class ImageJob {
 
   markDirty() {
     this.dirty = true;
-  }
-
-  animEligible() {
-    return (
-      this.img.clientWidth >= ANIM_MIN_SIZE ||
-      this.img.clientHeight >= ANIM_MIN_SIZE
-    );
   }
 
   render() {
@@ -140,6 +131,9 @@ export class ImageJob {
     const p = glc.pipeline;
     p.uploadFrame(b, src);
     p.runReset(b);
+    // The edges gate reads the clean frame's edge map (round 8 part 3):
+    // render it only while the gate is on.
+    if ((params.edgeGate ?? 0) !== 0) p.runEdgePass(b);
     const flowAmount = params.flowAmount ?? 0;
     if (flowAmount > 0) {
       p.runFieldPass(b, {
@@ -153,8 +147,13 @@ export class ImageJob {
     p.runSortPasses(b, params.passes ?? 12, params.threshold ?? 0.55, params.streak ?? 32, {
       temperature: params.temperature ?? 0,
       motionGate: params.motionGate ?? 0,
+      edgeGate: params.edgeGate ?? 0,
+      span: params.span ?? 0,
+      soft: params.barrierSoft ?? 0,
       flow: flowAmount > 0,
       facets: params.flowMode === 'facets',
+      key: sortKeyIndex(params.sortKey),
+      angle: angleRadians(params.angle),
     });
     glc.ensureSize(w, h);
     p.present(b);
@@ -162,64 +161,9 @@ export class ImageJob {
     const { x, y, w: dw, h: dh } = this.fitRect;
     this.ctx.drawImage(glc.canvas, 0, glc.canvas.height - h, w, h, x, y, dw, dh);
 
-    // Stills release GPU resources immediately; animated jobs keep them.
-    if (!params.feedbackImage) {
-      destroyBundle(gl, b);
-      this.bundle = null;
-    }
-  }
-
-  // Feedback-mode animation step, driven by the registry ticker.
-  tick(now) {
-    if (!this.active || this.destroyed || this.abandoned) return;
-    if (!this.params.feedbackImage || !this.rendered || !this.mirrored) return;
-    const glc = this.glc;
-    if (!glc || glc.lost) return;
-
-    try {
-      if (!this.bundle) {
-        this.draw(this.source ?? this.img); // rebuild after toggle/restore
-        return;
-      }
-      const p = glc.pipeline;
-      const b = this.bundle;
-      const params = this.params;
-      if (now >= this.nextResetAt) {
-        p.runReset(b);
-        const minS = params.resetMinS ?? 4;
-        const maxS = Math.max(minS, params.resetMaxS ?? 10);
-        this.nextResetAt = now + 1000 * (minS + Math.random() * (maxS - minS));
-      } else {
-        p.runComposite(b, {
-          driftX: params.driftX ?? 0,
-          driftY: params.driftY ?? 0,
-          decay: params.decay ?? 0.96,
-          threshold: params.threshold ?? 0.55,
-        });
-      }
-      const flowAmount = params.flowAmount ?? 0;
-      if (flowAmount > 0) {
-        p.runFieldPass(b, {
-          amount: flowAmount,
-          scale: params.flowScale ?? 4,
-          speed: params.flowSpeed ?? 0.02,
-          time: now / 1000,
-          seed: this.flowSeed,
-        });
-      }
-      p.runSortPasses(b, params.passes ?? 12, params.threshold ?? 0.55, params.streak ?? 32, {
-        temperature: params.temperature ?? 0,
-        motionGate: params.motionGate ?? 0,
-        flow: flowAmount > 0,
-        facets: params.flowMode === 'facets',
-      });
-      glc.ensureSize(b.w, b.h);
-      p.present(b);
-      const { x, y, w, h } = this.fitRect;
-      this.ctx.drawImage(glc.canvas, 0, glc.canvas.height - b.h, b.w, b.h, x, y, w, h);
-    } catch {
-      /* transient; next tick retries */
-    }
+    // Stills release GPU resources immediately.
+    destroyBundle(gl, b);
+    this.bundle = null;
   }
 
   // Route 2 then route 3. Each fires render() again on success.

@@ -20,15 +20,34 @@ threshold 0.05 so true black still bars the sort, slow 30–60 s
 keyframes — over **straight-sorted image stills**, with **page-wide text
 scrambling ON at textMin 8** (the call the proposal deferred to the
 room: made), plus **the body engine continuously driven + a
-never-clearing audio smear** whose loop gain is its own decay. The two
-visual feedback toggles (`feedbackVideo` on, `feedbackImage` off) share
-every shaping knob; the audio smear is independent of both
-(`audioFeedback`), and since the detangle no visual slider reaches it.
+never-clearing audio smear** whose loop gain is its own decay. Visual
+feedback is video only (`feedbackVideo` on) and owns every shaping knob;
+images are always one-shot sorted stills (image feedback removed
+2026-10-12). The audio smear is independent (`audioFeedback`), and since
+the detangle no visual slider reaches it.
 
 Runs on a kiosk (Mac mini M4) for weeks unattended. Vanilla JS, Manifest V3,
 no build step — "Load unpacked" points at `source/`.
 
 ## Status — everything below is committed and harness-verified
+
+**Handoff, 2026-10-12 (end of the cloud session; John continues locally).**
+Branch `claude/release-packaging-options-w09tf2`, draft PR #1, everything
+pushed. The design-iteration stage is through its first loop: heuristic
+review ×3 rounds, room evidence, and four panel commits (image feedback
+removed; the global block with the A/B, four medium switches and presets;
+Video/Audio regrouped into effect / effect / engine; round-3 fixes), plus
+the two panel-placement prototypes behind `panelHome`. Suites at head:
+panel 211/211, strip 36/36, text 35/35, audio tiers 34/34; the visual
+suite's headless run fails the same 10 starvation checks as the untouched
+base and needs a visible tab (round 6 found those were no WebGL2 under
+`--disable-gpu` and a layout fault in the harness page; it now runs
+headless green). **Nothing on this branch has been exercised
+in a real Chrome yet**, so the first local step is the checklist below, then
+the two decisions John holds (seam on the page; placement default), then
+the effects queue in `design-review.md`. Read `design-review.md` before
+touching the panel again; it carries the reasoning and the open items.
+
 
 | Commit | What landed |
 |---|---|
@@ -65,11 +84,10 @@ critics); body won on John's ears, and the losing timebase engine is tag
 see "The audio engine" in parameters.md.
 
 **John's live-chosen settings are now the DEFAULTS** (2026-08-11; sweet
-spot 2026-08-12): **video feedback on / image feedback off** (decay 0.81,
+spot 2026-08-12): **video feedback on** (images: one-shot stills) (decay 0.81,
 threshold 0.05, driftX −0.0025, driftY +0.0020, reset 30–60 s, flow at
 0.5 in **facets** mode, scale 2.5, speed 0.045, temperature and motion
-gate at 0, text scramble ON at textMin 8, imageFps 6 for when images
-join); audio fb on at fbDecay 0.999 with
+gate at 0, text scramble ON at textMin 8); audio fb on at fbDecay 0.999 with
 **clears off** (`audioFbClear` — his call: the smear's gain < 1 is its own
 decay, continuous sounds nicer; the video keyframe still clears), maxTaps 8,
 body at sustain 12 / drive 1.0 / continuous exciter.
@@ -92,11 +110,19 @@ balance are the open item below. The previous sound is exactly reachable at
   the fixed chord that unified eight hours is largely gone. If it stops
   cohering, the fallback is a fixed transmission colour (a permanent EQ
   signature — resonant peak, notch, band limit) which adds identity at no cost
-  to specificity because it ignores content entirely. Log the verdict here.
+  to specificity because it ignores content entirely. Since round 7
+  `audioFollow` is a third axis on the same question: it buys specificity
+  by retuning the chord to each source, which spends exactly the coherence
+  this item worries about — so judge it in the same long listen. Log the
+  verdict here.
 - **Phase 5 — text mode**: built, harness-verified, and **decided**:
-  `textScramble` defaults ON at `textMin` 8 (John, 2026-08-12 — the call
-  the proposal deferred to the room). The earlier swap design remains tag
-  `text-swap`; the toggle remains for performance and for the kill switch.
+  `textScramble` defaults ON (John, 2026-08-12 — the call the proposal
+  deferred to the room). **The `textMin` slider is gone (John, 2026-10-11,
+  testing the branch: "more of an on/off effect")**: the minimum run length
+  is the constant `TEXT_MIN` = 8 in `text-scramble.js`, the Text section
+  went with it, and the text chip is the whole control. The earlier swap
+  design remains tag `text-swap`; the toggle remains for performance and
+  for the kill switch.
 - **Floated, undecided (John, 2026-08-12): a separate CSS-scramble toggle**
   — deforming the page's own stylesheets as a distinct layer. Not built;
   needs a feasibility read first (cross-origin stylesheets are the
@@ -108,6 +134,330 @@ balance are the open item below. The previous sound is exactly reachable at
   (any audio work will need it to skip the first-gesture wait), `--start-fullscreen` vs
   `--kiosk` decision (popup panel conflicts with `--kiosk`), 72 h + 7-day
   soak, `kiosk-setup.md` written well enough to build the cold spare from.
+- **Packaging — decided (John, 2026-10-12): the standard browser extension
+  stays the release form.** The options were weighed once, in chat, and had
+  never been written down; this is the record so they aren't re-derived.
+  What any host has to supply: the CORS rewrite (`rules/cors-media.json`
+  keeps canvases and audio taps untainted — leave the extension model and
+  this becomes a proxy, i.e. the rejected Proposal A), WebGL2 with float
+  colour buffers, and AudioWorklet on cross-origin media.
+
+  | Form | What it is | Mobile | Cost |
+  |---|---|---|---|
+  | Chrome extension (current) | Web Store or sideload; the kiosk form | no | built |
+  | Firefox port | same MV3 code, manifest tweaks | Android (add-ons) | days |
+  | Safari web extension | Xcode converter wraps `source/` in a Mac/iOS app | iPhone/iPad | days + review |
+  | Electron shell | own Chromium, extension loaded; DNR unsupported → header hook | no | 1–2 weeks |
+  | Tauri / WKWebView app | system webview, injected scripts, own proxy for CORS | iOS/Android | longest; Phase 6 redone |
+
+  The bounded-app case was interface control; John chose to keep the
+  extension and put that effort into the extension's own UI instead. If
+  mobile comes up again, the cheapest probe is the Safari conversion (same
+  source; the open question is the media tap under Safari). Nothing here
+  reopens unprompted.
+- **Next stage — design iteration (John, 2026-10-12).** The work after
+  packaging is the interface. **Primary goal: usability**, as defined by
+  Nielsen's ten heuristics — John's working copy is
+  `~/Reference/Usability Heuristics/nielsen-usability-heuristics.md` (also
+  in Dropbox at the same path), read it before touching the panel. Its
+  framing for this project: the heuristics are lenses, not a checklist;
+  they conflict (status vs minimalism, control vs error prevention,
+  flexibility vs consistency) and the trade-offs are made on purpose and
+  stated; severity outranks count. Hold each panel change against the
+  ten-question pass at the end of that document. Expect the UI work to
+  feed back into the effects themselves — refinements and possibly new
+  layers will surface from designing the controls; log those as they
+  appear rather than folding them silently into panel commits. The
+  CSS-scramble toggle above is in that queue — fourth in the order John
+  accepted after round 5 (open item 6 below).
+
+  **Who the user is (John, 2026-10-12): the stranger, not John.** The
+  panel was built for John tuning a preset he could leave on a kiosk and
+  forget. That framing is retired. The piece is now **an instrument, and
+  the interactivity is integral to it**: the person who installed it from
+  the store, or walked up at an art crawl, is meant to play it, with no
+  mental model of sort passes or resonators. John's expert surface stays
+  reachable but is the second user. Method, in order: (1) a Nielsen
+  heuristic evaluation by several independent reviewers against the
+  shipped panel, findings ranked by severity, logged in
+  `documentation/design-review.md`; (2) a think-aloud test with real
+  people on a fixed task list — John already holds first-hand observations
+  from two art crawls, which go into that round as evidence that outranks
+  the heuristics; (3) merge both into one ranked list, fix the painful
+  items first, re-run the heuristic pass on the revised panel. The panel
+  harness stays the regression net throughout. **Rounds 1 and 2 are done
+  (2026-10-12)** and live in `design-review.md` with the order of work.
+  Decisions taken there: **`feedbackImage` is removed** (John: pointless,
+  always off); the user avatar is synth-literate, so instrument vocabulary
+  is the target language; the four medium toggles and a large A/B get the
+  top of the panel; Video and Audio each regroup into effect / effect /
+  engine; a whole-video toggle is added. The feedback composite's
+  brighter-wins rule is now an open effects question (M5), as is a
+  source-following audio apparatus (M8). Comb body and gated exciter are
+  removal candidates pending a deliberate A/B, John's call.
+  **Global block redesign landed (M1, M2, M3, M7):** title line with the
+  shortcuts, a large A/B on `enabled` (click latches, hold bypasses), four
+  medium chips (new params `video`/`images`, gated in `registry.rebalance()`),
+  presets original · A · B · C behind a save mode with ten-second undo,
+  toolbar badge/title; the legacy `userDefaults` migrates to preset slot A.
+  **M6 landed 2026-10-12:** image feedback is gone — its toggle, the image
+  animation ticker and the two knobs only it read, the panel's Images
+  section, and the visual suite's two ticker checks. Images are one-shot
+  sorted stills; git history keeps the old path.
+  **M4 + M8 UI landed 2026-10-12:** Video regrouped into sort · feedback ·
+  engine and Audio into body · smear · engine (engines folded, `engineOpen`),
+  labels in synth vocabulary with keys unchanged, an audio status line fed
+  by `deflection:stats` messages, plus round-1 findings 6–10 (tips lead with
+  what you see/hear and end with the key, in a bottom strip; inert rows name
+  their gate; ⊙ hidden until a MIDI device; slider out of the double-click;
+  clamps flash). The effects questions (M4's distortion handle, M5, M8's
+  source-following apparatus) stay open.
+  **Round 3 fixes landed 2026-10-12** (three heuristic reviewers): the A/B
+  latches on any press under 600 ms and only a longer hold compares;
+  *original* is now *default* under a PRESETS caption, base marked by a dot;
+  the help strip rests at one line and grows over the rows on hover without
+  reflow; mix leads the audio body, dry moved to the engine; save mode says
+  *replace A*, a save-over can be undone, saving marks the base, cancelling
+  flashes; loads and chips while OFF say *switch ON to see it*; chip jumps
+  flash where they land (images → SORT); Video rows read *needs video* /
+  *needs video or images*; the MIDI learn line hides with no device.
+
+  **M9 decided (John, testing the branch in real Chrome, 2026-10-11): the
+  strip.** "I prefer the bottom strip to the separate webpage approach."
+  It was the default `panelHome` until 2026-10-12, when John made the
+  responsive window the default (Round 8); strip and side panel remain. The strip
+  rests as a **transport line** — a 28 px rail carrying the A/B, the four
+  chips and the presets — and unfolds to a 208 px **mixer** with the four
+  effect columns (sort · feedback · body · smear) in view at 1280 px with no
+  sideways scroll (since round 8 part 3 five, with where, in view from
+  1440; the lane scrolls sideways at 1280) (both John's asks: the key gesture always one click
+  away; video and audio controls at hand without horizontal scrolling; the
+  strip free to grow taller). John's picks among the rest options: the
+  transport line over fold-to-tab and over always-open-translucent. See
+  [parameters.md](parameters.md#where-the-panel-lives-panelhome-the-window-by-default-john-2026-10-12)
+  for the housing, what is verified and what still needs a real Chrome.
+  Strip suite: `test/harness/strip.html` (41 checks).
+
+  **Round 4 — John's own testing (2026-10-11), landed the same day**, each
+  its own commit, logged in `design-review.md`: the `textMin` slider
+  removed (text is a switch; the Text section went with it, the chips are
+  the four masters); gated rows hidden rather than greyed (the gating
+  switch stays as the header of what it hides; a switched-off medium's
+  section says which chip brings it back); the help column replaced by a
+  hover bubble beside the control, nothing at rest, and the MIDI block
+  hidden until a controller connects (MIDI is a feature; keyboard and
+  mouse are the primary mode); the strip as above. Also a dependency-free
+  headless runner for the pure-DOM suites (`node test/headless.mjs`).
+
+  **Round 4b (2026-10-12) — John on the strip at his own width** (YouTube,
+  ~2000 px), four commits, logged in design-review.md: (1) **the layout
+  follows the shape** — the layout value renamed `strip` → `mixer`; the
+  strip's frame is always the mixer (or the rail), and every other home is
+  the mixer at ≥ 900 px wide and 2:1, else the column, re-laid live with
+  the engine disclosures moving between the title line and the group; (2)
+  **the window remembers its size and place** (`panelBounds`, validated,
+  saved when it settles in the normal state; `panelWindowId` also kept in
+  `chrome.storage.session`, so after the worker sleeps a drag still counts
+  and a second open focuses the window); (3) **the rail is a control
+  surface** — 40 px (was 28), targets ≥ 26 px, a click anywhere off a
+  control unfolds it, the `CORRUPTION ▴` tab back above its right end; (4)
+  **the mixer uses the width** — 240 px (was 208), 28 px rows, columns that
+  spread from 220 to 340 px, verified at 1280, 1440, 1512, 1728 and 1920;
+  the cluster 260 px with the prefs and MIDI lines wrapping (the *panel
+  lives in* / *flow scale* overlap fixed) and a guard that checks every
+  descendant of the cluster against the lane. John's calls: keep covering
+  the page (pushing it up was possible and declined); the default home
+  deferred until both homes are judged on real use (the strip stays the
+  default in code); the rail ~40 px with large targets. Suites (headless):
+  panel 299/299, strip 52/52, text 35/35, audio 34/34 unchanged.
+
+  **Round 5 — handles (2026-10-12).** John's call, over the other
+  candidates for the next step (the feedback blend, the source-following
+  audio body, an intensity macro): **handles first** — answer his round-4
+  note that the controls were made easier to navigate but not simplified
+  or given more hold, using the round-4 table in design-review.md. Four
+  commits, logged in design-review.md round 5: (1) `1acd69b` **threshold
+  reads as amount** — the row shows and plays 1 − threshold, through a def
+  flag (`invert: true`) and the pure `toView`/`fromView` helpers; slider,
+  typed field, arrows and MIDI speak amount, storage/presets/maps keep
+  `threshold`; (2) `8ae1306` **the drift pad** — `driftX`/`driftY` played as
+  one 2-D surface (`pad: 'drift'`, `PADS`), drag or arrows, up is up, two
+  typed fields and two ⊙, spanning two lane rows in the mixer; (3) `b7b1d34` **the
+  regroup and rename** — each effect column holds only its handles, named
+  for the result: sort = amount · flow · jitter · ribbons (`streak`,
+  promoted); feedback = feedback · trail (`decay`) · drift pad · follow
+  motion (`motionGate`); body = mix · body amount · ring time · drive;
+  smear = smear · tail · level (`audioFbReturn`) · wobble. Demoted to the
+  engines: the flow's shape (flow mode/scale/speed, still gated on flow),
+  the clear rhythm (clear min/max s, still gated on feedback) and body
+  type; the mixer's label column 88 → 98 px for *follow motion*; (4) the
+  docs (parameters.md, this file, design-review.md, CLAUDE.md). Storage
+  keys, `DEFAULTS`, presets and MIDI maps unchanged throughout.
+  Trade-offs: the flow's shape and the clear rhythm are a fold away
+  (recognition costs a click) so each column reads as three or four
+  handles named for what they do (minimalism; match with the real world);
+  amount puts the number in step with the direction at the cost of the
+  value cell diverging from the stored key (the tip's key line keeps it
+  honest); the pad is a control form the stranger has not met here, kept
+  legible by its cross, its two fields and per-axis learn. The effect
+  columns fit eight lane cells (sort 6, feedback 6, body 7, smear 5); the
+  engines are 8 and 9 rows, so an unfolded engine spills into a second
+  column and the lane scrolls sideways only then. Suites (headless):
+  panel 348/348 (299 before the round: 312 after amount, 335 after the
+  pad), strip 52/52, text 35/35.
+
+  **Round 6 — the feedback blend (M5, 2026-10-12).** The first of the
+  layers John accepted after the handles. Design review M5: feedback kept
+  history only where history × decay outshone the frame, so the trail was
+  invisible over bright moving footage. Two params — `feedbackBlend`
+  (*blend*: brighter · mix · screen · add, `FEEDBACK_BLENDS`, the shader's
+  `uBlend` order) and `feedbackMix` (*blend amount*, 0–1) — and a branch in
+  the composite: brighter = `max(decayed, incoming)` as before, mix = a
+  crossfade with history (the amount is the crossfade), screen, add
+  (clamped); for brighter/screen/add the amount lerps incoming → rule. The
+  mask still reads the kept value (the dark barrier holds in every rule)
+  and the alpha motion trail never reads the blend. Defaults brighter and
+  1: the shader evaluates the original `max()` and skips the lerp, so the
+  resting picture is unchanged. The rows sit after follow motion, filling
+  the feedback column's eight lane cells exactly; both hide with feedback
+  off; not in the registry's image `effectKeys` (video only). Trade-offs:
+  add burns to white (on still footage at trail 0.81 any channel above
+  ~0.19 saturates — blend amount is the leash); mix at 1 is history
+  alone, a freeze-fade-snap pulse rather than a crossfade; the feedback
+  column is now full. Three commits: `8d0ecc6` **the visual suite runs
+  headless** — SwiftShader flags in `test/headless.mjs` give headless
+  Chrome WebGL2, and `index.html` puts the video grid above the status
+  lines, which had pushed the videos out of the viewport as tier 0 grew
+  (the "starvation" failures were that layout fault plus no WebGL2 under
+  `--disable-gpu`): the untouched head goes from 48/52 (12/35 without
+  SwiftShader) to 54/54 headless in ~25 s; `a860383` **the blend**, with
+  six tier-0 checks on the read-back accumulator (rest = brighter at 1 =
+  `max()`, amount 0 a wire in every rule, add > screen > brighter > mix
+  on mid-grey, alpha identical across rules and amounts, determinism);
+  and these docs. Suites (headless): visual 60/60, panel 349/349, strip
+  52/52, text 35/35, audio 34/34. **Next layer: the source-following
+  audio body (M8).**
+
+  **Round 7 — the source-following body (M8, 2026-10-12).** The second
+  layer John accepted after the handles. Design review M8: the body is a
+  fixed chord, so every source excites the same metal and the piece sounds
+  the same all night; re-admitting the direct signal was the only way to
+  make videos differ. One param, `audioFollow` (*follow*, 0–1, rest 0),
+  after body amount in the body column (now exactly its eight lane cells).
+  A pure `PitchFollower` in `dsp.js` (2048-pt Hann FFT every 1024 samples,
+  peak in 55–1000 Hz, gated at 8× the band median and −55 dBFS, a
+  subharmonic check rather than HPS, ~300 ms log smoothing, ~1 s hold)
+  feeds the shell, which folds the pitch into the chord's lowest octave
+  (`hz/55` into [1, 2), sticky by a semitone so a voice near 110 Hz does
+  not flip the chord across the edge), applies `r^follow` and glides on
+  log(ratio) (~200 ms), home when unsure. Both engines take
+  `setTuning(ratio)` per block past 0.2 %: modal moves only its pole angles
+  (ring, gains and state kept); the comb re-derives delay and loop gain
+  (`CombLine.setFreq`). At follow 0 nothing runs and the sound is the fixed
+  chord bit for bit (verified against the pre-follow worklet). Still a
+  process: follow 1 at body amount 0 is a wire. Measured on 220 vs 330 Hz
+  plucks: spectral correlation on the body alone 0.029 → 0.017 (modal),
+  0.178 → 0.151 (comb); in the shipped mix 0.171 → 0.159 (modal; the comb's
+  resonant part is too quiet there to resolve); the moved chord's new
+  string ×950 (modal body); envelope correlation with each source 0.94.
+  Trade-off: specificity against the fixed chord's coherence — the risk
+  the A/B names. Two commits: `52e5c49` the layer (audio 55/55, 34 before;
+  panel 350/350) and these docs. Suites (headless): audio 55/55, panel
+  350/350, strip 52/52, text 35/35. **Next layer: the performance ramp.**
+
+  **Round 8 — the visual round, part 1 (John's notes, 2026-10-12).** Three
+  decided changes, logged in design-review.md: (1) `8549d0a` **the window
+  is the default home** — `PANEL_HOME.default`, the service worker's
+  `DEFAULT_HOME` and `initStrip`'s default all read `window` (window first
+  in *panel lives in*), and the harness checks the three agree; the strip
+  stays opt-in because of the two problems it showed on real pages; (2)
+  `febc6c1` **the strip asks for MIDI only on demand** — hosted, the panel
+  no longer calls `requestMIDIAccess()` on load (every site's permissions
+  policy answered with a console violation or a prompt); a **MIDI…** button
+  in the mixer's prefs line asks once, steps aside when granted, flashes
+  *refused* when the page says no; the window and side panel still ask at
+  boot; (3) **clear buffer** — a new param `keyframe`, a counter rather
+  than a value, and the panel's first **trigger** row (`type: 'trigger'`):
+  first in the Video engine (the feedback column is full at eight cells;
+  the feedback switch's tip points to it), a **clear** button that writes
+  the counter up by one, gated with feedback, excluded from presets, a
+  MIDI CC firing it once per rise through 64; each video job answers a
+  larger counter by taking the keyframe branch on its next tick
+  (`lastKeyframe` taken from the params it is built with, so a stored
+  counter never fires on load; `resets` counts every keyframe for the
+  harness). Suites (headless): panel 365/365
+  (350 before), strip 52/52, text 35/35, visual 62/62 (60 before), audio
+  55/55. (4) **the boot guard** — the "frame error" John reported was
+  *Unsafe attempt to load URL chrome-extension://…/content/main.js from
+  frame with URL https://www.youtube.com/* at `bootstrap.js`'s `import()`
+  (and `strip.js` from `main.js`): the import ran in a **prerendered**
+  document (YouTube prerenders likely navigations) or a context
+  **invalidated** by an extension reload, neither of which may load
+  extension resources. `bootstrap.js` is now an async IIFE that awaits a
+  one-shot `prerenderingchange` while `document.prerendering` is true and
+  returns quietly without `chrome.runtime.id`; `main.js` checks the id
+  before the strip's import. The visual suite pins it statically and by
+  running the real `bootstrap.js` against stand-ins for both conditions.
+  Visual 68/68 (+6).
+
+  **Round 8, part 2 — sort by and direction (John: "visually impactful").**
+  Two new sort handles, logged in design-review.md: (1) `97e9bca` **sort
+  by** (`sortKey`: luma · hue · saturation · red · green · blue; John's
+  name) — `uKey` and `key()` in the sort shader decide the ORDER, the
+  barrier stays on luma, key 0 is the same expression (bit-identical); a
+  select after amount; (2) **direction** (`angle`, 0–359° clockwise from
+  up, wrapping) — `uAngle` added to the field's angle before it is
+  quantized (flow on: the whole pattern turns), or one shared direction
+  through the mode's quantizer (flow off: facets 45° steps, paths glides);
+  0 bit-identical; played on the panel's first **knob** (`type: 'knob'`,
+  `wrap: true`, `settle` in defs.js; a dial over a hidden range holder).
+  The sort column is now exactly eight cells. `flowMode` stays in reach
+  with flow at 0 once the direction is off 0 (it is the direction's
+  quantizer). Suites (headless): visual 84/84 (68 before), panel 392/392
+  (365 before), strip 52/52, text 35/35.
+
+  **Round 8, part 3 — where: edges, span, soft barrier (John: follow
+  motion is the gate he likes; an automatic mask that stacks with it —
+  edges, "sounds fun" — plus a span cap and a soft barrier he will judge
+  by eye).** Logged in design-review.md: (1) `5bf4ae0` a new Video group
+  **where** (`gate`, after feedback, before the engine) holding **follow
+  motion** (moved from feedback; still gated by it) and three new params,
+  all 0 at rest (bit-identical): `edgeGate`, `span`, `barrierSoft`, in
+  `SORT_KEYS` (they shape images too) and `effectKeys`; the mixer gains a
+  fifth effect column, so the rule is now **five columns in view with no
+  sideways scroll from 1440 up, the lane scrolling sideways at 1280**
+  (min column 220 → 204 px); (2) `c2d530f` **edges** — `edge.js`, Sobel on
+  the CLEAN upload into an R8 `bundle.edge` (`runEdgePass`, only while the
+  gate is off 0), sampled on unit 2 as `uEdge`: g > 0 both members (and the
+  midpoint) ≥ g, g < 0 both ≤ 1 + g; (3) `1f066f5` **span** — walls along the
+  brick's projection, cells N·|v| long measured from the frame's first
+  corner along v; (4) `0632ac4` **soft barrier** — the luma barrier as a band
+  with one draw per pair per pass (the temperature's hash family, other
+  constants), shared by both members and the midpoint; not floored at
+  black (at the resting threshold a wide band lets black trade —
+  flagged for John's eye); `runSortPasses` gained `opts.seed` so tier 0
+  can replay jitter and the soft draw. Suites (headless): visual 99/99 (84
+  before), panel 399/399 (392 before), strip 52/52, text 35/35.
+
+  **Open items John holds (2026-10-11; (2) reinstated 2026-10-12; revised
+  after round 5):** (1) the in-page first-run mark, the remaining half of
+  the seam; (2) ~~which home is the default~~ — decided 2026-10-12: the
+  window; the strip stayed opt-in because of the two problems it showed on
+  real pages (the per-site MIDI request on load, now on demand, and a frame error
+  since read and fixed — the boot guard, round 8); (3) ~~threshold shown inverted as an *amount*~~ — done, round 5;
+  (4) an intensity macro; (5) headline knobs that ship at the rail (ring
+  time, drive, tail); (6) **the next layers, in the order John accepted
+  (2026-10-12): ~~the feedback blend (M5)~~ — done, round 6;
+  ~~the source-following audio body (M8)~~ — done, round 7; the
+  performance ramp next, then the CSS-scramble toggle (which needs its
+  feasibility read first)**; whether brighter stays the resting blend is
+  his to judge on real footage; (7) the comb body / gated exciter A/B,
+  and with it the long-session coherence listen, now with follow as a
+  third axis (how far up follow can go before the night stops cohering); (8) the controls themselves — the handles half answered by
+  round 5; the question of *which* controls a player needs *when* rides
+  with (4) and (5); (9) the outside-the-box forms — a keyboard-summoned
+  overlay that survives fullscreen, and handles on the media itself —
+  logged, not scheduled.
 
 For a full technical description of both pipelines — the GL sort/composite
 path and the resonant-body audio path, with the reasoning behind each —
@@ -119,21 +469,22 @@ see [how-it-works.md](how-it-works.md).
 source/
 ├── manifest.json                  # MV3; DNR ruleset ENABLED (browser-wide ACAO on image/media)
 ├── rules/cors-media.json
-├── background/service-worker.js   # panel window mgmt, image-fetch base64 fallback (route 3)
+├── background/service-worker.js   # opens the panel in its home (window / side panel / strip), remembers the window's bounds, image-fetch base64 fallback (route 3)
 ├── content/
 │   ├── bootstrap.js               # classic script → dynamic import (content scripts can't be modules)
 │   ├── main.js                    # boot, params flow, tiny-iframe early-exit
 │   ├── params.js                  # DEFAULTS; chrome.storage.local is the single source of truth
-│   ├── registry.js                # discovery (video/img/audio), caps, sweep, image ticker, audio ranking
+│   ├── registry.js                # discovery (video/img/audio), caps, sweep, audio ranking
 │   ├── video-job.js               # rVFC → GL pipeline; DRM gate; black-output probe; governor
-│   ├── image-job.js               # 3-route CORS; one-shot stills; feedback-mode animation
+│   ├── image-job.js               # 3-route CORS; one-shot stills
 │   ├── audio-job.js               # playback-driven tap lifecycle; safety gate; bypass semantics
 │   ├── text-scramble.js           # optional text mode: letters rearranged inside words (off)
+│   ├── strip.js                   # the panel as an in-page bottom strip: 40 px rail + tab, 240 px mixer (iframe of panel.html?layout=strip)
 │   ├── overlay.js                 # sibling canvas; object-fit/position replication
 │   └── metrics.js                 # FrameGovernor (rVFC presentedFrames deltas)
 ├── gl/  context.js · pipeline.js · shaders/{common,passthrough,composite,sort}.js
 ├── audio/ graph.js · worklet.js · dsp.js · fft.js   # worklet = body engine + smear layer
-└── panel/ panel.html · panel.js · panel.css · midi.js  # extension page, popup window
+└── panel/ panel.html · panel.js · panel.css · midi.js  # one page for every home; layout follows its shape (rail / mixer / column)
     └── defs.js                    # the control table (sections, ranges, hover copy)
                                    # + the pure value helpers, shared with its harness
 ```
@@ -179,13 +530,12 @@ Design invariants that hold everywhere:
    in-session test pane — see Dev workflow).
 7. **Chrome heuristic-caches old-mtime modules for hours** — always test
    through `test/serve.py` (sends no-store), never a plain http.server.
-8. **Stored params beat code defaults**: after changing DEFAULTS, hit
-   "restore defaults" in the panel or the old values persist from storage.
-   Since 2026-08-20 there is a layer in front of that: if John has pressed
-   "set defaults", the saved snapshot (`userDefaults`) is what "restore
-   defaults" and every double-click return to, and it also outranks a
-   changed `DEFAULTS`. Press **"clear saved" first**, then "restore
-   defaults", to reach freshly edited code defaults.
+8. **Stored params beat code defaults**: after changing DEFAULTS, press
+   **default** in the panel's preset row or the old values persist from
+   storage. "default" (labelled "original" until round 3) is never stored,
+   so it always reaches freshly edited code defaults. (Until 2026-10-12 a saved "set defaults" snapshot,
+   `userDefaults`, stood in front of them; it now migrates to preset slot A.
+   A row double-click returns to the last-loaded preset, `presetBase`.)
 9. **An effect must be a process done to the audio, not a synth the audio
    drives.** The engine used to output `sum(modes)` — the input never appeared
    in the output — while the visual side is a permutation with harness-asserted
@@ -209,12 +559,29 @@ Design invariants that hold everywhere:
 ```bash
 python3 test/serve.py        # :8437, no-store + ACAO (mimics the DNR rule)
 python3 test/serve.py 8439   # second origin for the image CORS-route test
+node test/headless.mjs panel strip text   # the pure-DOM suites in headless Chrome
+HARNESS_SHOT_DIR=/tmp/shots HARNESS_VIEWPORT=1512x982 node test/headless.mjs strip
 ```
+
+`test/headless.mjs` (2026-10-11) drives Google Chrome headless over the
+DevTools protocol with no dependencies, waits for each suite's COMPLETE
+line and prints the failures; exit code 1 on any failure. A headless page
+counts as visible, so the panel, strip, text and audio (tiers 1–2) suites
+run deterministically there — unlike a background tab in the app's browser
+pane, which throttles timers, skips transitions and reports `hidden`, and
+fails a dozen checks for nothing. The visual suite still needs a real,
+visible tab. The runner also takes screenshots, for looking at a layout
+without a visible tab: with `HARNESS_SHOT_DIR` set it saves `<page>.png`
+after each suite, at `HARNESS_VIEWPORT` (default 1400x900); for a page that
+is not a suite (`panel-frame.html` at 1000x320, say) `HARNESS_NO_SUITE=1`
+waits `HARNESS_WAIT_MS` (default 1500) and shoots.
 
 - Visual/lifecycle suite: `http://localhost:8437/test/harness/index.html`
   (32 checks; +2 more with the :8439 server up for the cross-origin image
-  route). **Must run in a visible tab** — hidden tabs starve frames and
-  produce false timeouts (documented in harness header). Last full run
+  route). Runs headless since round 6: `node test/headless.mjs index`
+  (SwiftShader WebGL2, ~25 s, 60/60 at round 6). A *hidden* tab still
+  starves frames and produces false timeouts (documented in harness
+  header), so in a browser it needs a visible tab. Last full run
   **50/50 (2026-08-20, embedded pane, visible)**; 32/32 at 2026-08-12
   before the tier-0 additions. Two latent test bugs fixed
   that day: the disable check iterated `j.video` over image jobs (TypeError
@@ -255,14 +622,97 @@ python3 test/serve.py 8439   # second origin for the image CORS-route test
 
 ## John's manual checklist (needs real Chrome; not yet all exercised)
 
+- **The strip on YouTube at your width (opt-in since the window became
+  the default).** Load unpacked from `source/` at the branch head, set
+  `panel lives in` to `bottom strip` and reload the page. **The
+  rail:** 40 px along the bottom with the `CORRUPTION ▴` tab standing above
+  its right end; a click on the title or a gap unfolds it, a click on a
+  chip or a preset does only that; the tab folds and unfolds without taking
+  focus from the player; the A/B, chips, presets and ▴ easy to hit; the A/B
+  latches on a click and compares while held past 600 ms; the four chips
+  drop their medium; Ctrl+Shift+P folds and unfolds; fullscreen hides the
+  strip and the tab. **The mixer:** sort · feedback · body · smear spread
+  across your width with no sideways scroll; the prefs line (*panel lives
+  in*, tooltips) wraps inside the cluster and never runs into *flow scale*;
+  `engine ▸` on a title line unfolds a captioned column; hovering a row
+  shows a bubble beside it (none on the rail); switching feedback or smear
+  off folds its knobs away under the switch; the audio status line under
+  AUDIO names sources on a playing video (the stats plumbing content
+  script → service worker → panel is untested outside the harness); the
+  toolbar badge reads ON and clears on Ctrl+Shift+D; how badly the rail
+  and the mixer sit over the player's own controls. **On YouTube with the
+  strip, no MIDI prompt or console violation until MIDI… is clicked**
+  (DevTools console open from the load); then click it with a controller
+  plugged in: does the page allow it (the MIDI line names the device), or
+  does it flash *refused*?
+- **The window (the default) and the side panel.** With nothing stored (or
+  `panel lives in` set back to `window`), Ctrl+Shift+P: it opens as the
+  column at 400 × 720. Drag it wide (≥ 900 px
+  and at least 2:1): it becomes the mixer, and tall again the column, the
+  `engine ▸` disclosures moving with it. Close it and reopen: the same place
+  and shape. Leave it a minute (the service worker sleeps) and click the
+  icon: it focuses the window rather than opening a second. Then `side`,
+  close, Ctrl+Shift+P: the column; does the side panel open, does a second
+  icon click close it, does MIDI work there without a new prompt?
+- **A strict-CSP site (github.com)** with the strip as home: if the page's
+  Content Security Policy refuses the extension's iframe, the strip should
+  remove itself within 8 s, leave the page as it was, and the icon and
+  shortcut then open the window.
+- **MIDI** in every home: the ⊙ column must appear only when a controller
+  is present; learn and bind one knob per home. In the mixer at 1280 wide,
+  judge the known squeeze (the ⊙ column narrows the lane's sliders to
+  ~30 px and truncates the selects).
 - Visual suite re-run in real Chrome (the embedded pane starves rVFC and
-  can't adjudicate it — verified identical at baseline).
+  can't adjudicate it — verified identical at baseline; headless Chrome
+  runs it green since round 6, on SwiftShader rather than your GPU).
+- **The boot guard (Errors page stays empty).** At chrome://extensions,
+  open CORRUPTION's **Errors** and clear them. Then, without touching the
+  extensions page again, reload a YouTube tab, play a video, click through
+  to two or three suggested videos (the navigations YouTube prerenders) —
+  the piece should bend each as usual. Back on the Errors page the list
+  should still be empty: no *Unsafe attempt to load URL … content/main.js*
+  or *… strip.js*. (Reloading the extension under an open tab and then
+  using that tab is the other case; it should stay quiet too.)
+- **Sort by and direction** on real footage. Sort by: hue on a colourful
+  video (colour bands stratify), saturation on a talking head (the vivid
+  rises over a grey set), red/green/blue on the same frame; then amount
+  low — the dark barrier should hold alike under every key. Direction:
+  flow at 0, turn the knob slowly — facets jumps in 45° steps, paths
+  glides; 90 sends the bright to the right edge, 180 hangs it from the
+  bottom. Flow back to 0.5: the swirls' whole pattern turns. In the mixer,
+  is the 24 px knob readable, is drag-up = clockwise right, and is 2 px per
+  degree the right rate? A MIDI knob on it should sweep once round.
+- **Where: edges, span, soft barrier** on real footage. Edges right
+  (0.3–0.6): outlines and texture shred, skin, sky and walls hold; left
+  (−0.3 to −0.7): fills tear, outlines stay drawn; then follow motion up
+  too — only moving edges go. Span 16–48: fine banding in cells along the
+  sort direction (turn the direction knob; the walls turn with it); 256+:
+  whole-frame tears. Soft barrier with amount ~0.5: ribbon ends fray and
+  shimmer; at the resting amount past ~0.05 it dissolves the black
+  barrier itself — keep, or floor the band at black? The mixer at 1512:
+  five columns in view; at 1280 the lane scrolls sideways.
+- **Clear buffer** on a playing video with feedback on: unfold the Video
+  engine, click **clear** — the trail wipes to a clean frame at once on
+  every video on the page, and builds again; bind a MIDI button to it and
+  tap a rhythm (a held button fires once). Reload the page: nothing clears
+  on load.
+- **The feedback blend** on a bright moving video: feedback on, switch
+  blend to screen and then add, and ride blend amount — the trail should
+  read over light material where brighter hid it; add should burn toward
+  white with blend amount as the leash, and true black should still hold;
+  try mix below 1 (an echo) and at 1 (a freeze-fade pulse).
+- **The source-following body:** follow at 1 on a talking head, then on a
+  music video — does each ring its own? The chord should settle on the
+  voice and hold through pauses, sit on the music's tonal centre or bass,
+  glide rather than click, and go home on noise or dense mixes. Then ride
+  body amount up (where follow is heard most) and leave it running across
+  several videos: does the night still cohere?
 - Audio plumbing: page mute/volume through the chain; a cross-origin-audio
   site stays untouched w/ console log; MIDI sweep.
 - Visual: fullscreen/theater tracking, 5× SPA navigation canvas-leak check,
   DRM trailer untouched, 30-min GPU-memory flatness (rides Phase 6 soak).
 - Text mode — **the aesthetic call is the only thing left**: flip
-  `textScramble` on and browse, and ride `textMin` up and down. The grammar
+  `textScramble` on and browse (its reach is fixed at 8 since 2026-10-11). The grammar
   is covered by the synthetic suite, and the write mechanism was checked
   against live YouTube (zero childList mutations from a `nodeValue` write,
   no Polymer revert within 2 s — see site-notes). What remains for real

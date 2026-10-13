@@ -24,8 +24,6 @@ export class Registry {
     this.sweepTimer = 0;
     this.imageDirtyTimer = 0;
     this.textDirtyTimer = 0;
-    this.imageTicker = 0;
-    this.imageTickerFps = 0;
 
     this.io = new IntersectionObserver(
       (entries) => {
@@ -139,7 +137,6 @@ export class Registry {
     const now = performance.now();
     for (const job of this.jobs.values()) job.checkHealth(now);
     this.syncAll();
-    this.ensureImageTicker();
     // Page-wide, so it rides the sweep rather than the 100 ms scan: text
     // arrives readable and dissolves a moment later, and a busy feed never
     // pays for a full document walk more than once every 2 s.
@@ -159,7 +156,6 @@ export class Registry {
       for (const job of this.jobs.values()) job.suspend();
       for (const job of this.audioJobs.values()) job.suspend();
       this.text.restoreAll(); // the kill switch puts the captions back too
-      this.ensureImageTicker();
       return;
     }
 
@@ -171,10 +167,17 @@ export class Registry {
       (job.kind === 'image' ? images : videos).push([area, job]);
     }
 
+    // The per-medium switches gate here, at the same point the master does:
+    // a switched-off medium's jobs suspend (overlay dropped, original shown)
+    // and the next rebalance with the switch back on reactivates them.
+    // Audio and text answer to their own keys (audioEnabled, textScramble).
+    const videoOn = this.params.video !== false;
+    const imagesOn = this.params.images !== false;
+
     videos.sort((a, b) => b[0] - a[0]);
     let slots = Math.max(1, this.params.maxVideos ?? 8);
     for (const [area, job] of videos) {
-      if (area > 0 && slots > 0) {
+      if (videoOn && area > 0 && slots > 0) {
         job.activate();
         if (job.active) slots--;
       } else {
@@ -183,10 +186,10 @@ export class Registry {
     }
 
     for (const [area, job] of images) {
-      if (area > 0) job.activate();
+      if (!imagesOn) job.suspend();
+      else if (area > 0) job.activate();
     }
 
-    this.ensureImageTicker();
     this.rebalanceAudio();
   }
 
@@ -212,11 +215,11 @@ export class Registry {
 
     // The text toggle answers immediately rather than on the next sweep.
     // (rebalance() has already restored everything if `enabled` went off.)
-    if ('textScramble' in changed || 'textMin' in changed) {
-      // A different textMin means a different set of text is eligible, so the
-      // page is restored first and re-scrambled against the new reach —
-      // debounced like the image path, because the panel drags at ~30 Hz and
-      // this walks the whole document.
+    if ('textScramble' in changed) {
+      // Restore first, then re-scramble if the mode is on — debounced like the
+      // image path, because a panel can flip the chip quickly and a pass
+      // walks the whole document. (The reach is a constant since 2026-10-11;
+      // there is no textMin to follow any more.)
       clearTimeout(this.textDirtyTimer);
       this.textDirtyTimer = setTimeout(() => {
         this.text.restoreAll();
@@ -225,7 +228,7 @@ export class Registry {
     }
     // feedbackVideo is absent by design: it shapes the rVFC path only, and
     // re-rendering every still because the video toggle moved would be waste.
-    const effectKeys = ['threshold', 'passes', 'streak', 'temperature', 'flowAmount', 'flowMode', 'flowScale', 'flowSpeed', 'feedbackImage', 'maxRes'];
+    const effectKeys = ['threshold', 'sortKey', 'angle', 'passes', 'streak', 'temperature', 'edgeGate', 'span', 'barrierSoft', 'flowAmount', 'flowMode', 'flowScale', 'flowSpeed', 'maxRes'];
     if (Object.keys(changed).some((k) => effectKeys.includes(k))) {
       clearTimeout(this.imageDirtyTimer);
       this.imageDirtyTimer = setTimeout(() => {
@@ -239,41 +242,6 @@ export class Registry {
 
   refresh() {
     this.rebalance();
-  }
-
-  // Image feedback animates big on-screen images at imageFps; straight-sort
-  // stills need no ticker at all. Rides its own toggle — the video one is
-  // irrelevant here.
-  ensureImageTicker() {
-    const want = this.params.enabled && this.params.feedbackImage;
-    const fps = Math.min(30, Math.max(1, this.params.imageFps ?? 12));
-    if (!want) {
-      if (this.imageTicker) {
-        clearInterval(this.imageTicker);
-        this.imageTicker = 0;
-      }
-      return;
-    }
-    if (this.imageTicker && this.imageTickerFps === fps) return;
-    if (this.imageTicker) clearInterval(this.imageTicker);
-    this.imageTickerFps = fps;
-    this.imageTicker = setInterval(() => this.tickImages(), 1000 / fps);
-  }
-
-  tickImages() {
-    const cap = this.params.imageAnimCap ?? 12;
-    if (cap <= 0) return;
-    const ranked = [];
-    for (const [el, job] of this.jobs) {
-      if (job.kind !== 'image' || job.abandoned || !job.active) continue;
-      const area = this.visibleArea.get(el) ?? 0;
-      if (area > 0 && job.animEligible()) ranked.push([area, job]);
-    }
-    ranked.sort((a, b) => b[0] - a[0]);
-    const now = performance.now();
-    for (let i = 0; i < ranked.length && i < cap; i++) {
-      ranked[i][1].tick(now);
-    }
   }
 
   stats() {

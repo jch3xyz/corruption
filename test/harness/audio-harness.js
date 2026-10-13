@@ -22,8 +22,13 @@ import {
   CombLine,
   combDelaySamples,
   combLoopGain,
+  PitchFollower,
+  foldToChord,
+  foldSticky,
+  followRatio,
 } from '../../source/audio/dsp.js';
 import { acquireAudio, tapSafety, workletParams } from '../../source/audio/graph.js';
+import { DEFAULTS } from '../../source/content/params.js';
 import { AudioJob } from '../../source/content/audio-job.js';
 
 const status = document.getElementById('status');
@@ -139,6 +144,170 @@ function tier1() {
         wp.wobble === 0.2 &&
         wp.clearMinS === 5 &&
         wp.clearMaxS === 9
+    );
+  }
+
+  // The same rule, made exhaustive, with the follow knob in the surface:
+  // perturbing ANY non-audio stored key leaves the worklet's params exactly
+  // as they were, and the follow knob arrives as `follow`, 0 at rest.
+  {
+    const base = JSON.stringify(workletParams(DEFAULTS));
+    const moved = Object.keys(DEFAULTS)
+      .filter((k) => !k.startsWith('audio'))
+      .filter((k) => {
+        const v = DEFAULTS[k];
+        const nudged = typeof v === 'number' ? v + 0.37 : typeof v === 'boolean' ? !v : `${v}-x`;
+        return JSON.stringify(workletParams({ ...DEFAULTS, [k]: nudged })) !== base;
+      });
+    const wp = workletParams({ ...DEFAULTS, audioFollow: 0.6 });
+    check(
+      `detangle, exhaustive: no visual key moves the worklet surface, follow included (${moved.join(', ') || 'none move'})`,
+      moved.length === 0 && wp.follow === 0.6 && workletParams(DEFAULTS).follow === 0 &&
+        DEFAULTS.audioFollow === 0 && workletParams({}).follow === 0
+    );
+  }
+}
+
+// --- Tier 1c: the source-following body, as pure DSP (design review M8) ----
+
+// Feed a follower in 128-sample quanta, as the worklet does.
+function follow(gen, seconds, sr = 48000, pf = new PitchFollower(sr)) {
+  const n = Math.round(seconds * sr);
+  const block = new Float32Array(128);
+  for (let i0 = 0; i0 < n; i0 += 128) {
+    for (let j = 0; j < 128; j++) block[j] = gen((i0 + j) / sr);
+    pf.push(block);
+  }
+  return pf;
+}
+const sineAt = (f, a = 0.3) => (t) => a * Math.sin(2 * Math.PI * f * t);
+// Harmonic tone; `amps` are the partials' levels, fundamental first.
+const harmonicAt = (f, amps) => (t) =>
+  amps.reduce((v, a, h) => v + a * Math.sin(2 * Math.PI * f * (h + 1) * t), 0);
+
+function tier1Follow() {
+  const sr = 48000;
+  const near = (got, want, tol) => Math.abs(got - want) <= tol * want;
+
+  {
+    const pf = follow(sineAt(220), 1);
+    check(`follower: a 220 Hz sine reads ${pf.hz.toFixed(1)} Hz (± 2 %)`, near(pf.hz, 220, 0.02));
+  }
+  {
+    // The 2nd harmonic is the strongest partial, the 3rd next: a plain peak
+    // picker says 220. The subharmonic check finds 110 under it.
+    const pf = follow(harmonicAt(110, [0.1, 0.3, 0.2]), 1);
+    check(
+      `follower: 110 Hz under a stronger 2nd and 3rd harmonic reads the fundamental, ${pf.hz.toFixed(1)} Hz (not 220)`,
+      near(pf.hz, 110, 0.02)
+    );
+    const pf3 = follow(harmonicAt(110, [0.1, 0.15, 0.3]), 1);
+    check(
+      `follower: 110 Hz under a dominant 3rd harmonic reads ${pf3.hz.toFixed(1)} Hz (not 330 — that would be a fifth off after the fold)`,
+      near(pf3.hz, 110, 0.02)
+    );
+  }
+  {
+    const noise = follow(() => 0.3 * (rand() * 2 - 1), 2);
+    const silence = follow(() => 0, 1);
+    const faint = follow(sineAt(220, 1e-4), 1); // −83 dBFS: under the presence floor
+    check(
+      `follower: white noise, silence and a tone under −55 dBFS all read unsure (${noise.hz}, ${silence.hz}, ${faint.hz})`,
+      noise.hz === 0 && silence.hz === 0 && faint.hz === 0 && noise.confidence === 0
+    );
+  }
+  {
+    // Hold: a pause between words keeps the chord where it is; a real
+    // silence lets it go home.
+    const pf = follow(sineAt(330), 1);
+    follow(() => 0, 0.5, sr, pf);
+    const held = pf.hz;
+    follow(() => 0, 0.7, sr, pf);
+    check(
+      `follower: holds the last pitch through a 0.5 s pause (${held.toFixed(1)} Hz), lets go after ~1 s (${pf.hz})`,
+      near(held, 330, 0.02) && pf.hz === 0
+    );
+  }
+  {
+    let threw = false;
+    let finite = true;
+    try {
+      const pf = new PitchFollower(sr);
+      const odd = new Float32Array(77);
+      for (let i = 0; i < 400; i++) {
+        for (let j = 0; j < odd.length; j++) odd[j] = j % 13 === 0 ? NaN : j % 17 === 0 ? Infinity : 0.3 * Math.sin(j);
+        pf.push(odd);
+        if (!Number.isFinite(pf.hz) || !Number.isFinite(pf.confidence)) finite = false;
+      }
+      pf.push(null);
+      pf.push(new Float32Array(0));
+    } catch {
+      threw = true;
+    }
+    check('follower: NaN/Inf, odd block sizes and empty input never throw, never go non-finite', !threw && finite);
+  }
+
+  // The fold: the chord's lowest note lands on the source's pitch class.
+  {
+    const cases = [[220, 1], [330, 1.5], [55, 1], [110, 1], [54, 108 / 55], [82.5, 1.5], [0, 1], [NaN, 1], [-5, 1]];
+    const bad = cases.filter(([hz, r]) => Math.abs(foldToChord(hz) - r) > 1e-12).map(([hz]) => hz);
+    check(`fold: 220→1, 330→1.5, 55→1, 110→1, 54→${(108 / 55).toFixed(3)}, nonsense→1 (${bad.join(', ') || 'all right'})`, bad.length === 0);
+    const inRange = [41, 60, 97, 133, 250, 499, 777, 999].every((hz) => {
+      const r = foldToChord(hz);
+      return r >= 1 && r < 2;
+    });
+    check('fold: every pitch lands in [1, 2)', inRange);
+  }
+  {
+    // Sticky: a voice wandering 108 → 112 Hz straddles the 110 Hz fold edge.
+    // A plain fold would throw the chord most of an octave (1.96 → 1.02).
+    const a = foldSticky(108, null);
+    const b = foldSticky(112, a.octave);
+    const c = foldSticky(125, b.octave); // well past the edge: refolds
+    check(
+      `fold, sticky: 108 → 112 Hz stays in its octave (${a.ratio.toFixed(3)} → ${b.ratio.toFixed(3)}), 125 Hz refolds (${c.ratio.toFixed(3)})`,
+      Math.abs(b.ratio - 112 / 55) < 1e-12 && b.octave === a.octave && Math.abs(c.ratio - 125 / 110) < 1e-12
+    );
+  }
+  {
+    const anyPitch = [1, 1.2, 1.5, 1.99, 0.97, 2.1];
+    check(
+      'follow 0 is exactly the fixed chord for any pitch; follow 1 is the fold; ½ is the geometric mean',
+      anyPitch.every((r) => followRatio(r, 0) === 1) && followRatio(1.5, 1) === 1.5 &&
+        Math.abs(followRatio(1.5, 0.5) - Math.sqrt(1.5)) < 1e-12 && followRatio(NaN, 1) === 1 && followRatio(1.5, NaN) === 1
+    );
+  }
+
+  // The retuned tables: only the pitches move.
+  {
+    const a = modeTable(sr, 6);
+    const one = modeTable(sr, 6, 1);
+    const b = modeTable(sr, 6, 1.5);
+    const same = a.length === one.length && a.every((m, i) => m.f === one[i].f && m.t60 === one[i].t60 && m.amp === one[i].amp);
+    const moved = a.length === b.length && a.every((m, i) => Math.abs(b[i].f - 1.5 * m.f) < 1e-9 && b[i].t60 === m.t60 && b[i].amp === m.amp);
+    check('mode table: ratio 1 is the fixed table bit for bit; ratio 1.5 moves every pitch ×1.5 and keeps every ring', same && moved);
+  }
+  {
+    const f0 = BODY_FUNDAMENTALS[0];
+    const line = new CombLine(sr, f0, 8, 0.2, f0 / 2);
+    line.setFreq(f0 * 1.5);
+    const N = 1 << 14;
+    const ir = new Float32Array(N);
+    for (let i = 0; i < N; i++) ir[i] = line.step(i === 0 ? 1 : 0);
+    const want = combDelaySamples(sr, f0 * 1.5);
+    let bestLag = 0;
+    let best = -Infinity;
+    for (let lag = Math.round(want) - 60; lag <= Math.round(want) + 60; lag++) {
+      let v = 0;
+      for (let i = 0; i < N - lag; i++) v += ir[i] * ir[i + lag];
+      if (v > best) {
+        best = v;
+        bestLag = lag;
+      }
+    }
+    check(
+      `comb: a retuned line rings at its new period (${bestLag} ≈ ${want.toFixed(1)}), loop gain re-derived (${line.g.toFixed(4)} = ${combLoopGain(sr, f0 * 1.5, 8).toFixed(4)})`,
+      Math.abs(bestLag - want) <= 2 && line.g === combLoopGain(sr, f0 * 1.5, 8)
     );
   }
 }
@@ -485,6 +654,7 @@ async function tier2() {
   }
 
   await tier2Specificity();
+  await tier2Follow();
 }
 
 // --- Tier 2b: does the source survive? --------------------------------------
@@ -707,6 +877,149 @@ async function tier2Specificity() {
   }
 }
 
+// --- Tier 2c: the source-following body through the worklet (M8) -----------
+//
+// The finding: every source excites the same fixed chord, so the piece sounds
+// the same all night. These pin that follow 0 IS the fixed chord, that the
+// direct path is still a wire with the chord moving, and that at follow 1 two
+// sources a fifth apart come out more unlike each other than they do through
+// the fixed chord — while each still follows its own source.
+
+// Plucked harmonic notes, four a second: sharp onsets strike every mode, so
+// the body's own ring (not just the source's partials) is in the spectrum.
+const plucks = (f0, amp = 0.25) => (data) => {
+  for (let i = 0; i < data.length; i++) {
+    const t = i / SR;
+    const tn = t % 0.25;
+    const env = Math.min(1, tn / 0.002) * Math.exp(-tn / 0.08);
+    let v = 0;
+    for (const [h, a] of [[1, 1], [2, 0.5], [3, 0.33]]) v += a * Math.sin(2 * Math.PI * f0 * h * t);
+    data[i] = amp * env * v / 1.83;
+  }
+};
+
+// Averaged magnitude spectrum (8192-pt Hann frames, 50 % overlap).
+function spectrumOf(buf, skipS) {
+  const N = 8192;
+  const fft = createFFT(N);
+  const re = new Float32Array(N);
+  const im = new Float32Array(N);
+  const acc = new Float64Array(N / 2);
+  let frames = 0;
+  for (let off = Math.round(skipS * SR); off + N <= buf.length; off += N / 2) {
+    for (let i = 0; i < N; i++) {
+      re[i] = buf[off + i] * (0.5 - 0.5 * Math.cos((2 * Math.PI * i) / N));
+      im[i] = 0;
+    }
+    fft.forward(re, im);
+    for (let k = 0; k < N / 2; k++) acc[k] += Math.hypot(re[k], im[k]);
+    frames++;
+  }
+  for (let k = 0; k < N / 2; k++) acc[k] /= frames || 1;
+  return { mag: acc, binHz: SR / N };
+}
+
+const bandOf = (spec, lo, hi) =>
+  spec.mag.subarray(Math.round(lo / spec.binHz), Math.round(hi / spec.binHz));
+
+// Power within a bin of partials `hs` of f0 — stretched for the modal bank,
+// exact for the comb. The odd partials of 123.75 Hz (1 and 3) are the ones
+// the fixed chord has nothing near: its even ones coincide with the 82.5 Hz
+// string (247.5 = 3 × 82.5, 495 = 6 × 82.5), which the ×1.5 chord shares.
+function partialPower(spec, f0, hs, stretched) {
+  let p = 0;
+  for (const h of hs) {
+    const f = h * f0 * (stretched ? Math.sqrt(1 + BODY_STRETCH * h * h) : 1);
+    const b = Math.round(f / spec.binHz);
+    for (let x = b - 1; x <= b + 1; x++) p += spec.mag[x] ** 2;
+  }
+  return p;
+}
+
+async function tier2Follow() {
+  const DEF = { direct: 1, bodyMix: 1, sustain: 12, drive: 1, exciter: 'continuous',
+    fb: true, fbDecay: 0.999, fbReturn: 0.25, wobble: 0, fbClear: false };
+
+  // (a) Bit-identity at rest: follow 0 and follow absent are the same render,
+  // sample for sample, on a pitched source the follower would lock onto.
+  for (const body of ENGINES) {
+    try {
+      const absent = await renderThrough({ ...DEF, body }, plucks(220), 1.5);
+      const zero = await renderThrough({ ...DEF, body, follow: 0 }, plucks(220), 1.5);
+      let same = absent.out.length === zero.out.length;
+      for (let i = 0; same && i < zero.out.length; i++) if (absent.out[i] !== zero.out[i]) same = false;
+      check(`${body}: follow 0 is bit-identical to no follow at all`, same && rmsOf(zero.out, 0.5 * SR, SR) > 1e-3);
+    } catch (e) {
+      check(`${body} follow bit-identity render (${e.message})`, false);
+    }
+  }
+
+  // (b) Conservation with the chord moving: the direct path is still a wire.
+  for (const body of ENGINES) {
+    try {
+      const { out, input } = await renderThrough(
+        { ...BODY, body, direct: 1, bodyMix: 0, fb: false, follow: 1 },
+        plucks(330, 0.05),
+        2
+      );
+      const a = out.subarray(Math.round(0.5 * SR));
+      const b = input.subarray(Math.round(0.5 * SR));
+      const c = correlation(a, b);
+      const ratio = rmsOf(out, 0.5 * SR, SR) / (rmsOf(input, 0.5 * SR, SR) || 1e-12);
+      check(
+        `${body}: follow 1, bodyMix 0 → still a wire (corr ${c.toFixed(4)}, level ${ratio.toFixed(3)})`,
+        c > 0.999 && ratio > 0.9 && ratio < 1.1
+      );
+    } catch (e) {
+      check(`${body} follow conservation render (${e.message})`, false);
+    }
+  }
+
+  // (c) Specificity and (d) the chord moved. Measured two ways: in the mix at
+  // the shipped defaults, and on the body alone (direct 0), which is the part
+  // M8 is about — the identity the apparatus adds. 220 Hz folds to ratio 1
+  // (its chord does not move) and 330 Hz to 1.5, so the whole difference is
+  // the 330 Hz source's chord rising a fifth onto {82.5, 123.75, 206.25}.
+  // In the mix the comb's resonant part is too quiet for the spectral
+  // measure to resolve (measured 2026-10-12: 0.193 → 0.194), so the mix
+  // assertions are on the modal bank, the shipped engine; the comb is held
+  // to the body-alone measures, where the move is unmistakable.
+  for (const body of ENGINES) {
+    try {
+      const r = {};
+      for (const [mix, extra] of [['mix', {}], ['alone', { direct: 0 }]]) {
+        for (const fl of [0, 1]) {
+          for (const f0 of [220, 330]) {
+            r[`${mix}:${fl}:${f0}`] = await renderThrough({ ...DEF, ...extra, body, follow: fl }, plucks(f0), 2);
+          }
+        }
+      }
+      const SKIP = 1; // the follower locks and the glide lands inside the first second
+      const spec = (key) => spectrumOf(r[key].out, SKIP);
+      const sc = (mix, fl) =>
+        correlation(bandOf(spec(`${mix}:${fl}:220`), 40, 2500), bandOf(spec(`${mix}:${fl}:330`), 40, 2500));
+      const [m0, m1, b0, b1] = [sc('mix', 0), sc('mix', 1), sc('alone', 0), sc('alone', 1)];
+      const env = (key) => correlation(envelopeOf(r[key].input, SKIP), envelopeOf(r[key].out, SKIP));
+      const e220 = env('mix:1:220');
+      const e330 = env('mix:1:330');
+      const modal = body === 'modal';
+      check(
+        `${body}: follow 1 makes two sources a fifth apart less alike (spectral corr, body alone ${b0.toFixed(3)} → ${b1.toFixed(3)}, in the mix ${m0.toFixed(3)} → ${m1.toFixed(3)}); each still follows its own source at defaults (env corr ${e220.toFixed(2)}, ${e330.toFixed(2)} ≥ 0.7)`,
+        b1 < b0 && (!modal || m1 < m0) && e220 >= 0.7 && e330 >= 0.7
+      );
+      const pp = (key) => partialPower(spec(key), 82.5 * 1.5, [1, 3], modal);
+      const ga = pp('alone:1:330') / (pp('alone:0:330') || 1e-30);
+      const gm = pp('mix:1:330') / (pp('mix:0:330') || 1e-30);
+      check(
+        `${body}: the chord moved — on the 330 Hz source, energy at 123.75 Hz and its 3rd partial ×${ga.toFixed(1)} at follow 1 over follow 0 on the body alone, ×${gm.toFixed(2)} in the mix`,
+        ga > 3 && (!modal || gm > 1.2)
+      );
+    } catch (e) {
+      check(`${body} follow specificity render (${e.message})`, false);
+    }
+  }
+}
+
 // --- Tier 3: live tap (button = autoplay gesture) ----------------------------
 
 function wavUrl(freq = 440, seconds = 2, sr = 22050) {
@@ -836,6 +1149,7 @@ async function tier3() {
   try {
     tier1();
     tier1Comb();
+    tier1Follow();
   } catch (e) {
     check(`tier 1 crashed (${e.message})`, false);
   }

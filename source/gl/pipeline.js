@@ -12,6 +12,7 @@ import { FRAG_PASSTHROUGH } from './shaders/passthrough.js';
 import { FRAG_COMPOSITE } from './shaders/composite.js';
 import { FRAG_SORT } from './shaders/sort.js';
 import { FRAG_FIELD } from './shaders/field.js';
+import { FRAG_EDGE } from './shaders/edge.js';
 
 export function createPipeline(gl) {
   // Fullscreen triangle.
@@ -39,6 +40,8 @@ export function createPipeline(gl) {
     'uDrift',
     'uDecay',
     'uThreshold',
+    'uBlend',
+    'uMix',
   ]);
   const sort = buildProgram(gl, VERT_FULLSCREEN, FRAG_SORT, [
     'uTex',
@@ -52,7 +55,14 @@ export function createPipeline(gl) {
     'uTemp',
     'uMotionGate',
     'uSeed',
+    'uKey',
+    'uAngle',
+    'uEdge',
+    'uEdgeGate',
+    'uSpan',
+    'uSoft',
   ]);
+  const edge = buildProgram(gl, VERT_FULLSCREEN, FRAG_EDGE, ['uFrame', 'uTexel']);
   const field = buildProgram(gl, VERT_FULLSCREEN, FRAG_FIELD, [
     'uProcSize',
     'uScale',
@@ -131,7 +141,10 @@ export function createPipeline(gl) {
     // accumulator (the proposal's shader), motion trail written to alpha
     // against the clean previous frame. The prev snapshot happens AFTER
     // the draw so the composite always sees the frame before this one.
-    runComposite(bundle, { driftX, driftY, decay, threshold }) {
+    // blend: 0 brighter · 1 mix · 2 screen · 3 add (FEEDBACK_BLENDS order);
+    // mix: how much of the trail survives. The defaults (0, 1) are the
+    // original brighter-wins composite, bit for bit.
+    runComposite(bundle, { driftX, driftY, decay, threshold, blend = 0, mix = 1 }) {
       const write = bindWrite(bundle);
       gl.useProgram(composite.handle);
       gl.activeTexture(gl.TEXTURE0);
@@ -146,6 +159,8 @@ export function createPipeline(gl) {
       gl.uniform2f(composite.uniforms.uDrift, driftX, driftY);
       gl.uniform1f(composite.uniforms.uDecay, decay);
       gl.uniform1f(composite.uniforms.uThreshold, threshold);
+      gl.uniform1i(composite.uniforms.uBlend, blend | 0);
+      gl.uniform1f(composite.uniforms.uMix, mix);
       drawQuad();
       bundle.read = write;
       gl.activeTexture(gl.TEXTURE0);
@@ -172,6 +187,21 @@ export function createPipeline(gl) {
       drawQuad();
     },
 
+    // The edge map for the edges gate (round 8 part 3): Sobel on the CLEAN
+    // uploaded frame (frameTex — the raw upload in both the reset and the
+    // composite paths), never on the sorted buffer. Call once per frame or
+    // still, after the upload, whenever edgeGate is not 0.
+    runEdgePass(bundle) {
+      gl.bindFramebuffer(gl.FRAMEBUFFER, bundle.edge.fbo);
+      gl.viewport(0, 0, bundle.w, bundle.h);
+      gl.useProgram(edge.handle);
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, bundle.frameTex);
+      gl.uniform1i(edge.uniforms.uFrame, 0);
+      gl.uniform2f(edge.uniforms.uTexel, 1 / bundle.w, 1 / bundle.h);
+      drawQuad();
+    },
+
     runSortPasses(bundle, passes, threshold, streak, opts = {}) {
       if (passes <= 0) return;
       let top = 1;
@@ -185,13 +215,37 @@ export function createPipeline(gl) {
       gl.uniform1f(sort.uniforms.uMotionGate, opts.motionGate ?? 0);
       gl.uniform1f(sort.uniforms.uUseFlow, opts.flow ? 1 : 0);
       gl.uniform1f(sort.uniforms.uFacets, opts.facets ? 1 : 0);
+      // The ordering key (SORT_BY order in params.js); absent = 0 = luma.
+      gl.uniform1i(sort.uniforms.uKey, opts.key | 0);
+      // The direction, radians, clockwise on screen from "up"; 0 = the
+      // classic columns (flow off) or the field untouched (flow on).
+      gl.uniform1f(sort.uniforms.uAngle, opts.angle || 0);
       gl.uniform1i(sort.uniforms.uTex, 0);
       // Always bound (every bundle owns one) so samplers stay complete;
       // never sampled unless uUseFlow is on.
       gl.uniform1i(sort.uniforms.uField, 1);
       gl.activeTexture(gl.TEXTURE1);
       gl.bindTexture(gl.TEXTURE_2D, bundle.field.tex);
+      // The edges gate (round 8 part 3): > 0 both members (and the midpoint)
+      // must be at least this edgy, < 0 at most 1 + it; 0 = off. The edge
+      // map is likewise always bound and only sampled when the gate is on.
+      gl.uniform1f(sort.uniforms.uEdgeGate, opts.edgeGate || 0);
+      // Span walls (round 8 part 3): pixels along the sort direction, whole
+      // numbers; 0 = none.
+      gl.uniform1f(sort.uniforms.uSpan, Math.max(0, Math.floor(opts.span || 0)));
+      // The soft barrier (round 8 part 3): how far under threshold the band
+      // reaches; 0 = the hard cut.
+      gl.uniform1f(sort.uniforms.uSoft, Math.max(0, opts.soft || 0));
+      gl.uniform1i(sort.uniforms.uEdge, 2);
+      gl.activeTexture(gl.TEXTURE2);
+      gl.bindTexture(gl.TEXTURE_2D, bundle.edge.tex);
       gl.activeTexture(gl.TEXTURE0);
+      // The per-pass seed (temperature, soft barrier): the shared counter,
+      // or — when opts.seed is an integer — a sequence starting from it, so
+      // a caller (tier 0) can replay the exact draws. The counter does not
+      // advance for a seeded call.
+      const seeded = Number.isInteger(opts.seed);
+      const base = seeded ? opts.seed : sortSeed;
       for (let i = 0; i < passes; i++) {
         const [stride, parity] = schedule[i % schedule.length];
         const write = bindWrite(bundle);
@@ -202,11 +256,11 @@ export function createPipeline(gl) {
         // the pass index WITHIN this call (not the global seed) so
         // identical calls stay bit-identical — tier 0 asserts that.
         gl.uniform1f(sort.uniforms.uSectorJitter, ((i * 0.6180339887498949) % 1) - 0.5);
-        sortSeed = (sortSeed + 1) & 0x7fffffff;
-        gl.uniform1i(sort.uniforms.uSeed, sortSeed);
+        gl.uniform1i(sort.uniforms.uSeed, (base + i + 1) & 0x7fffffff);
         drawQuad();
         bundle.read = write;
       }
+      if (!seeded) sortSeed = (sortSeed + passes) & 0x7fffffff;
     },
 
     // Draw the current accumulator to the default framebuffer (bottom-left
@@ -276,8 +330,22 @@ export function createBundle(gl, srcW, srcH, w, h) {
     );
     return { tex, fbo };
   })();
+  // The edge map (round 8 part 3): one R8 texel per accumulator texel, the
+  // clean frame's Sobel magnitude. Rendered only while the edges gate is on.
+  const edge = (() => {
+    const tex = createTex(gl, gl.R8, w, h);
+    const fbo = target();
+    gl.framebufferTexture2D(
+      gl.FRAMEBUFFER,
+      gl.COLOR_ATTACHMENT0,
+      gl.TEXTURE_2D,
+      tex,
+      0
+    );
+    return { tex, fbo };
+  })();
   gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-  return { srcW, srcH, w, h, frameTex, accum, prev, field: fieldT, fieldW, fieldH, read: 0 };
+  return { srcW, srcH, w, h, frameTex, accum, prev, field: fieldT, fieldW, fieldH, edge, read: 0 };
 }
 
 export function destroyBundle(gl, bundle) {
@@ -290,6 +358,8 @@ export function destroyBundle(gl, bundle) {
   gl.deleteFramebuffer(bundle.prev.fbo);
   gl.deleteTexture(bundle.field.tex);
   gl.deleteFramebuffer(bundle.field.fbo);
+  gl.deleteTexture(bundle.edge.tex);
+  gl.deleteFramebuffer(bundle.edge.fbo);
 }
 
 function createTex(gl, internalFormat, w, h) {

@@ -72,8 +72,15 @@ values; `paramsChanged(changed)` exists purely for side effects (re-ranking,
 still invalidation, pushing params to worklets).
 
 Consequence worth knowing: **stored values beat code defaults.** After editing
-`DEFAULTS`, the panel's "restore defaults" is required or the old values
-persist from storage.
+`DEFAULTS`, press the panel's **default** preset or the old values persist
+from storage. Presets (`presets`, slots A/B/C) and the double-click base
+(`presetBase`) live in storage outside `DEFAULTS`; "default" is never
+stored, so it always means the code as it stands.
+
+The registry gates jobs in `rebalance()`: `enabled` off suspends every job
+(and restores text); with it on, `video: false` suspends the video jobs and
+`images: false` the image jobs at the same point, each reactivating on the
+next rebalance once switched back. Audio and text answer to their own keys.
 
 Web MIDI maps one CC per parameter, learned in the panel and persisted under a
 `midiMap` key that is deliberately *not* in `DEFAULTS` (which is what keeps it
@@ -108,6 +115,9 @@ black. The harness guards this specifically.
 frameTex   RGBA8    native video size      ← texSubImage2D target
 accum[0]   RGBA16F  processing resolution  ┐ ping-pong pair,
 accum[1]   RGBA16F  processing resolution  ┘ each with an FBO
+prev       RGBA8    processing resolution  the clean previous frame (motion trail)
+field      RG8      ¼ processing res       the flow field's directions
+edge       R8       processing resolution  the clean frame's edge map (edges gate)
 ```
 
 Allocated once via `texStorage2D` and reused every frame — **the rVFC path
@@ -129,7 +139,10 @@ uploadFrame(bundle, source)            texSubImage2D — throws SecurityError if
    └── feedback:       runComposite()  incoming vs drifted, decayed accumulator
                        runReset()      …except at a keyframe, which clears the damage
    │
-runSortPasses(bundle, passes, threshold, streak)    K compare-exchange passes, ping-ponging
+runEdgePass(bundle)                    only while edgeGate ≠ 0: Sobel on frameTex → edge
+runFieldPass(bundle, …)                only while flowAmount > 0: the flow field
+   │
+runSortPasses(bundle, passes, threshold, streak, opts)    K compare-exchange passes, ping-ponging
    │
 present(bundle)                        → default framebuffer, bottom-left region, flipped
    │
@@ -143,22 +156,64 @@ happens in the same task as the `present` — nothing composites in between.
 accumulator, then sort *on* the accumulator, so sort progress genuinely
 accumulates across frames rather than restarting each frame.
 
+The edge pass reads `frameTex` — the raw upload, which both paths leave
+untouched (`runReset` copies it, `runComposite` reads it) — never the
+accumulator: the edge map must describe the picture as transmitted, not
+the ribbons already sorted into it. Stills (2.9) run the same sequence once
+with `runReset`.
+
 ### 2.4 The composite shader (temporal feedback)
 
 ```glsl
 vec4 incoming = texture(uFrame, vUV);
 vec4 history  = texture(uAccum, vUV + uDrift);
 vec3 prev     = texture(uPrev, vUV).rgb;
-vec3 kept     = max(history.rgb * uDecay, incoming.rgb);
+vec3 decayed  = history.rgb * uDecay;
+vec3 kept     = max(decayed, incoming.rgb);                 // brighter (uBlend 0)
+if (uBlend == 1) {
+  kept = mix(incoming.rgb, decayed, uMix);                  // mix: the crossfade
+} else {
+  if (uBlend == 2) kept = 1.0 - (1.0 - incoming.rgb) * (1.0 - decayed);  // screen
+  else if (uBlend == 3) kept = clamp(incoming.rgb + decayed, 0.0, 1.0);  // add
+  if (uMix < 1.0) kept = mix(incoming.rgb, kept, uMix);
+}
 float mask    = step(uThreshold, luma(kept));
 float motion  = clamp(distance(incoming.rgb, prev) * 3.0, 0.0, 1.0);
 outColor = vec4(mix(incoming.rgb, kept, mask), max(motion, history.a * 0.90));
 ```
 
-Four behaviors fall out of those five lines: history **drifts** (sampling the
+Four behaviors fall out of those lines: history **drifts** (sampling the
 accumulator at an offset UV), **decays** (multiplied by `uDecay` each frame),
-**wins where it is brighter** than the incoming frame, and **is confined** to
-regions clearing the luma threshold.
+**meets the incoming frame by a blend rule**, and **is confined** to regions
+clearing the luma threshold.
+
+**The blend** (`feedbackBlend` → `uBlend`, `feedbackMix` → `uMix`; design
+review M5) is how the decayed history meets the new frame:
+
+| Rule | `kept` | What you see |
+|---|---|---|
+| brighter (0, the resting state) | `max(decayed, incoming)` | the trail only where it outshines the frame — codec-faithful, hidden over bright motion |
+| mix (1) | `mix(incoming, decayed, amount)` | a straight crossfade with history, the video-feedback classic |
+| screen (2) | `1 − (1 − incoming)(1 − decayed)` | the trail lightens the frame, over light material too, without clipping |
+| add (3) | `clamp(incoming + decayed, 0, 1)` | the trail piles on and burns to white |
+
+For brighter, screen and add the amount then lerps from the incoming frame
+(0: every frame fresh) to the full rule (1); for mix the amount *is* the
+crossfade. **Brighter-wins stays the default for the reason it was built:**
+real codec corruption persists because a damaged reference frame keeps
+being referenced, and the damage shows where the new picture does not
+overwrite it — in the dark. That makes the trail subtle over bright moving
+footage, which is exactly what the room found (M5); the other rules trade
+that fidelity for a trail that shows everywhere. At brighter and amount 1
+the shader evaluates the original `max()` and skips the lerp, so the
+resting state is the pre-blend expression, unchanged (tier 0 checks it
+against `max(decayed, incoming)` on the read-back accumulator). The branch
+is `if/else` on a uniform `int` — uniform control flow, no `switch` — which
+compiles under ANGLE (verified on its SwiftShader backend headless). Two edges to know: **add burns** — on still
+footage at decay 0.81 any channel above ~0.19 converges to white, since
+`k = i + 0.81k` saturates; **mix at 1 is history alone**, so the frame
+enters only where the decayed trail falls under the barrier, and the
+picture freezes, fades and snaps back (~1/3 s at decay 0.81).
 
 The masking term is a deliberate deviation from the original proposal, and the
 reason is instructive. Masking on `luma(incoming)` discards history the instant
@@ -166,6 +221,8 @@ a bright object moves off a pixel, so no smear ever outlives its source —
 which defeats the entire point. Masking on `kept` lets smear persist over
 newly-dark regions, decay on its own schedule, and self-clear once it falls
 below threshold. The harness's trail test exists to catch a regression here.
+The mask reads `kept` after the blend, so true black stays a barrier in every
+rule.
 
 Because texture *v* grows toward the video's bottom, **positive `driftY` makes
 trails climb upward**.
@@ -175,7 +232,8 @@ The alpha channel carries a **motion trail** for the sort pass's motion gate:
 reference is `uPrev` — a clean RGBA8 copy of the last frame, snapshotted into
 the bundle after every composite/reset — never the accumulator, because the
 accumulator holds *sorted* material and diffing against it would measure our
-own damage and read the whole frame as motion. Alpha never reaches the screen
+own damage and read the whole frame as motion. The blend never touches alpha:
+the trail is the same in every rule at every amount. Alpha never reaches the screen
 (the shared context is `alpha: false`), and it swaps along with its pixel, so
 motion tags travel with their material.
 
@@ -208,7 +266,17 @@ Three properties define the look:
    confined inside bright spans and dark material holds the image together. At
    strides > 1 the span midpoint is also checked, so a long stride can't
    teleport a pixel across a dark gap.
-2. **Bright rises toward smaller *y***, i.e. the video's top. Fixed direction.
+2. **The higher key rises toward smaller *y***, i.e. the video's top — at
+   `angle` 0, the resting state (the direction turns it; below). The key is **luma** at rest — bright rises — and `sortKey`
+   (*sort by*, round 8 part 2) swaps it for hue, saturation or one channel:
+   `float key(vec3 c)` on `uKey`, plain if-chains on the int. Only the
+   *ordering* reads the key (`lUpper < lLower` compares keys); the barrier
+   tests — both members and the span midpoint — still read `luma()`, so
+   amount means the same under every key and a dark but vivid pixel still
+   walls the sort off under hue. The permutation argument is untouched:
+   both members compute the same pair of keys and the same refusals. Key 0
+   is the very same `luma()` expression, so the resting picture is
+   bit-identical, and equal keys never trade.
 3. **The stride ladder** is what produces ribbons rather than mush:
 
 The pairing axis itself became a parameter with the **flow field**
@@ -247,6 +315,24 @@ input), which is what keeps the harness byte-reproducible. At `flowAmount 0` the
 vertical grammar — harness-pinned, along with global pixel conservation
 at full flow.
 
+**The direction** (`angle`, round 8 part 2) turns the whole sort.
+`uAngle` (radians) is applied *after* the field: `fieldDir` quantizes
+`atan(d.y, d.x) + uAngle`, so with flow on the entire streamline pattern
+turns at any flow amount, and both members of a pair still compute the
+same turned direction, so the partner check is unchanged. With flow off
+every pixel shares one direction, `quantizeDir(π/2 + uAngle)`, through the
+same quantizer the mode uses: **facets** has 8 fixed sectors, so the sort
+turns in 45° steps; **paths** has 16 sectors under the per-pass jitter, so
+the single direction dithers between neighbouring sectors from pass to pass
+and the average climb follows the true angle — the paths grammar applied to
+the whole frame (measured on a white square: 29° for 30, 58° for 60). One
+shared `v` per pass needs no partner check: the brick pairing is symmetric
+for any common `v`. At 0 with flow off `v` stays exactly (0, 1), so the
+resting picture is bit-identical. The sense: the higher key seeks the
+smaller projection along `v`, and texel *y* grows toward the video's
+bottom, so a growing angle turns the climb clockwise on screen — 0 up, 90
+right, 180 down, 270 left, pinned by the harness.
+
 Two per-pair gates extend the grammar (John, 2026-08-12), both exactly inert
 at 0 and both preserving the symmetric-swap/permutation property:
 
@@ -260,6 +346,55 @@ at 0 and both preserving the symmetric-swap/permutation property:
   containment strict: a hot pixel cannot drag cold material into the churn,
   so the damage boundary IS the motion boundary. Harness-pinned: with the
   gate up, a moving band sorts while pixels outside it stay byte-identical.
+
+Three more gates came with the panel's **where** group (round 8 part 3,
+John 2026-10-12: follow motion is the gate he likes; edges, span and a soft
+barrier stack with it). The rule is the one every gate above keeps: a
+condition **both members must meet, computed identically by both**, so a
+refusal is symmetric and every pass stays a permutation. They stack — a
+pair trades only where every gate that is up lets it — and each is exactly
+inert at 0, so the resting picture is bit-identical (all harness-pinned).
+
+- **`edgeGate`** (*edges*, −1…1) — an automatic mask from the picture's own
+  outlines. A per-frame **edge map** (`edge.js`, an R8 texture at processing
+  resolution) is rendered from the **clean** frame, `frameTex`, never from
+  the sorted buffer — the same reason the motion trail diffs against the
+  clean previous frame: measuring our own damage would light every ribbon
+  up as an edge and the gate would feed on itself. Sobel on luma, normalised
+  by the kernel weight (÷ 8) and amplified ×4, clamped: a hard black/white
+  edge reads 1 (any step of half the luma range saturates), a gradient of
+  1/32 per pixel about 0.12, flat colour 0. With g > 0 a pair trades only
+  where both members (and the span midpoint) read at least g — outlines
+  shred and fills hold; with g < 0 only where they read at most 1 + g — flat
+  regions tear and outlines hold. The pass runs only while the gate is off
+  0, and the sort samples the map only then.
+- **`span`** — walls along the sort direction, every `span` pixels. Cells
+  are cut along the brick's own projection `t = dot(p, v)`; the partner's
+  is `t ± s·|v|²`, and a pair trades only inside one cell, so no run ever
+  reaches past it (ribbons is how far a pixel moves per frame; span is how
+  far a run may ever reach). The cell is `span·|v|` projection units long,
+  so it is pixels along `v` for diagonals and knight moves too, and `t` is
+  measured from the frame's first corner along `v`, so cells start at a
+  frame edge in every direction — without that a negative-going `v` would
+  put a wall one pixel in from the edge, and a span longer than the frame
+  would not be "no wall". Cells are contiguous along the projection, so the
+  midpoint needs no check of its own.
+- **`barrierSoft`** (*soft barrier*) — the luma barrier as a band. At or
+  above the threshold a member passes; more than `barrierSoft` under it,
+  never; in between it passes when the pair's draw falls under
+  `(l − (threshold − soft)) / soft`, so the odds rise toward the threshold
+  and ribbon ends fray instead of cutting clean. **One draw per pair per
+  pass**, from the temperature's hash family (upper member + pass seed)
+  with different constants, so it is independent of the temperature's
+  draw; the same draw judges self, other and the midpoint. At 0 the old
+  comparisons run in their own branch. The band is not floored at black:
+  at the resting threshold (0.05) a band wider than 0.05 reaches below 0,
+  and black itself then trades with odds `(soft − threshold) / soft`.
+
+The per-pass seed both draws use is a counter shared across calls, so a
+hot sort is not replayable by default; `runSortPasses` takes `opts.seed`
+to start the sequence from a given value, which is how tier 0 pins
+determinism for jitter and the soft barrier.
 
 
 ```
@@ -346,11 +481,10 @@ ever swaps between two black rectangles.
 ### 2.9 Images specifically
 
 Straight-sort mode is deterministic, so a still image gets **one** render per
-source/params change and immediately releases its GPU bundle. Image feedback
-(`feedbackImage` — its own toggle since 2026-08-12, split from the video
-toggle `feedbackVideo`; the two share every shaping knob) animates images
-≥200 px from a registry-owned ticker at `imageFps`, capped at `imageAnimCap`
-biggest-visible — those jobs retain their bundles.
+source/params change and immediately releases its GPU bundle. Images never
+animate: image feedback and its registry-owned animation ticker were removed
+2026-10-12 (John's call, design review M6 — git history keeps them). The
+feedback knobs shape video only.
 
 ### 2.10 The text mode (optional, off by default)
 
@@ -365,10 +499,12 @@ anyway.
 This supersedes the proposal's recommendation (swap captions between
 cards; that version is complete at tag `text-swap`) by John's call. The
 proposal's objection to scrambling — an unreadable interface is an
-unnavigable one — is answered by **`textMin`** rather than by containment:
-only runs of at least that many characters are eligible, interface labels
-are short, and prose is long. Form *values* aren't text nodes at all, so
-search keeps working at any setting.
+unnavigable one — is answered by a **minimum run length** rather than by
+containment: only runs of at least `TEXT_MIN` (8) characters are eligible,
+interface labels are short, and prose is long. It was the `textMin` slider
+until 2026-10-11, when John retired it as a knob (the mode is on/off) and
+his setting became the constant. Form *values* aren't text nodes at all, so
+search keeps working regardless.
 
 Hard exclusions, which are data-integrity rather than aesthetics:
 `script`/`style`/`noscript` (a page's CSS is live text — scrambling it
@@ -533,6 +669,89 @@ disperses near Nyquist and does nothing across 55–1500 Hz. So the comb engine
 (§3.3b) is a peer with a different character, not a modal bank with a bug.
 Don't re-try allpass stretch on it.
 
+#### Following the source (`audioFollow`, design review M8)
+
+The one permanent voice has a cost the room named: every source excites the
+same chord, so the piece sounds the same all night, and the only way to make
+one video differ from the next was to let the direct signal back in — which
+defeats the point once it is intelligible. So something in the apparatus has
+to follow the source, without the source becoming a control signal for a
+synth. The answer that landed (round 7, 2026-10-12) is the body's *tuning*
+tracking the source's dominant pitch, by an amount the player sets.
+
+```
+hz      = PitchFollower(mono)                 0 when unsure
+r       = hz / 55 · 2^−k,  r ∈ [1, 2)          the octave fold (sticky by a semitone)
+target  = r^follow                             geometric: follow 0 → exactly 1
+ratio  += (target − ratio) on log, τ ≈ 200 ms  per block; unsure → target 1
+f_mode  = ratio · k · f₀ · √(1 + 4e-4·k²)      every mode, both engines
+```
+
+**The follower** (`PitchFollower` in `dsp.js` — pure, chrome-free, tier-1
+tested like the onset detector) keeps a 2048-sample ring of the mono feed
+and every 1024 samples takes a Hann-windowed FFT, finds the strongest local
+peak between 55 and 1000 Hz and interpolates it on the log magnitude (a Hann
+main lobe is near-Gaussian, so the log-parabola is the accurate form). Two
+gates make it say *unsure* rather than guess: the peak must stand 8× over
+the band's median magnitude, and the window must be above −55 dBFS, the
+shell's presence floor. White noise never passes the first (0 confident
+blocks in 60 s measured); silence and a −83 dBFS tone never pass the second.
+When a voice's or a horn's 2nd or 3rd harmonic outweighs its fundamental,
+a subharmonic check takes the lowest of peak/3, peak/2 that is itself a
+peak at ≥ 0.1 of the main one. A harmonic product spectrum was the obvious
+alternative and was not used: it scores a plain sine no higher at its own
+pitch than an octave below, so it would fail the simplest case. The /2 case
+barely matters after the fold; the /3 case would put the chord a fifth off,
+so it does. The reading is smoothed with a one-pole on log2(Hz) (~300 ms)
+and the last confident value is held through ~1 s of unsure blocks before
+the follower lets go.
+
+**The fold** puts the source's pitch class on the chord's lowest note. Two
+side effects are deliberate: octave errors cost nothing (110 and 220 Hz land
+on the same ratio), and the chord moves at most an octave, so it stays in
+the register it was voiced for. The fold is *sticky*: a male voice lives
+around 110 Hz, exactly on the fold's edge, and a plain fold would throw the
+chord most of an octave (108 Hz → 1.96, 112 Hz → 1.02) every time the voice
+crossed it. With the previous octave remembered, the ratio may stray a
+semitone past either edge before it refolds.
+
+**Retuning** happens per block, never per sample, and only once the glided
+ratio has moved 0.2 % since the last retune (or to land exactly on 1, so the
+resting chord is the same doubles as ever). In the modal bank only the pole
+angles move: `a1 = 2r·cos(2π·f·ratio/sr)`; the radii `r`, and with them each
+mode's T60, the gains and the `y1/y2` state are untouched, so a ringing
+partial glides to its new pitch instead of clicking. `modeTable` takes the
+ratio as an optional third argument and computes the damping law on the
+untuned frequency, which is the same statement: following the source moves
+the pitches and nothing else. The comb (§3.3b) re-derives each line's delay
+and loop gain (`CombLine.setFreq`); its read is already fractional, so there
+is no whole-sample rounding, and its rings are allocated for half the base
+pitch so retuning can never read past them.
+
+**Why this is still a process, not a synth.** Nothing about the output sum
+changes: it is still `direct·x + bodyMix·resonant`, the source still passes
+through untouched, and with `bodyMix` 0 the apparatus is still a wire at
+follow 1 (harness-asserted, both engines). The source does become a control
+signal here — but for *where the body rings*, not for what is heard. That is
+the line between this and the rejected designs: `audio-v1` re-sorted the
+source's spectrum and `audio-bakeoff` re-read it in time; this leaves the
+signal alone and moves the object it passes through.
+
+**What it costs and buys.** At follow 0 the follower is never built and no
+retune runs, so the resting state costs nothing and is bit-identical to the
+fixed chord (verified sample for sample against the pre-follow worklet). At
+follow 1, two plucked sources a fifth apart (220 and 330 Hz) come out less
+alike: spectral correlation on the body alone 0.029 → 0.017 (modal) and
+0.178 → 0.151 (comb), energy on the moved chord's new 123.75 Hz string ×950
+(modal) — while each output keeps envelope correlation 0.94 with its own
+source. In the shipped mix the body is quiet beside the direct path, so the
+difference there is modest (0.171 → 0.159). And the pair is conservative:
+220 Hz folds to ratio 1, and 330 Hz to 1.5, whose root is the fixed chord's
+own 82.5 Hz string. The open question is the old one from §3.3's
+correction: whether eight hours still cohere as one apparatus when the
+apparatus retunes to every video. The fallback is unchanged — a fixed
+transmission colour, which adds identity without following anything.
+
 ### 3.3b The comb engine
 
 Three recirculating lines on the same fundamentals, added as a peer 2026-08-13
@@ -654,9 +873,9 @@ with the next sound. The harness asserts bit-exact zeros on silent input.
 source/
 ├── content/bootstrap.js   classic script → dynamic import (content scripts can't be modules)
 │   ├── main.js            boot, params flow, tiny-iframe early-exit
-│   ├── registry.js        discovery, ranking, caps, sweep, image ticker
+│   ├── registry.js        discovery, ranking, caps, sweep
 │   ├── video-job.js       rVFC loop, DRM gate, CORS mirror, black probe, governor
-│   ├── image-job.js       3-route CORS resolution, one-shot stills, animation
+│   ├── image-job.js       3-route CORS resolution, one-shot stills
 │   ├── audio-job.js       playback-driven tap lifecycle, safety gate, bypass
 │   ├── text-scramble.js   optional text mode: letters rearranged inside words, page-wide
 │   ├── overlay.js         sibling canvas, object-fit replication
