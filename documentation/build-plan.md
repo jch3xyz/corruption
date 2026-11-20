@@ -127,6 +127,23 @@ balance are the open item below. The previous sound is exactly reachable at
   — deforming the page's own stylesheets as a distinct layer. Not built;
   needs a feasibility read first (cross-origin stylesheets are the
   question). Log the verdict here when it's taken up.
+- **Floated, potential feature (John, 2026-11-20): collaborative corrupted
+  browsing over WebRTC.** Several people in one corrupted session at once,
+  sharing the instrument rather than each playing alone. John's framing:
+  it is the antithesis of a medium structured to produce social
+  atomization, so it extends the piece's argument rather than adding a
+  feature. **More ideas likely live in this direction** (the social side of
+  the piece); log them beside this one as they come. Not built, no design
+  yet. Questions for when it is taken up, recorded so they are not
+  re-derived: what is shared (the panel's parameter state and the A/B, so
+  everyone bends their own copy of the same page in step; the URL and
+  scroll, i.e. co-browsing; or one player's corrupted output streamed to
+  the others); WebRTC still needs a signaling channel, which means the
+  first server this project has ever had (or a manual offer/answer copy,
+  or a third-party signaling service), against the no-server,
+  give-it-away extension; and consent, since a shared session crosses the
+  instrumented-terminal line the proposal draws in its signage section.
+  Log the verdict here when it's taken up.
 - **Phase 6 — kiosk hardening + soak**: not started. Chrome for Testing at a
   pinned version (branded Chrome ≥137 removed `--load-extension`), template
   profile restored nightly via launchd (doubles as the consent-signage
@@ -457,7 +474,9 @@ balance are the open item below. The previous sound is exactly reachable at
   round 5; the question of *which* controls a player needs *when* rides
   with (4) and (5); (9) the outside-the-box forms — a keyboard-summoned
   overlay that survives fullscreen, and handles on the media itself —
-  logged, not scheduled.
+  logged, not scheduled; (10) collaborative corrupted browsing over WebRTC
+  and the social direction it opens (John, 2026-11-20) — floated, logged
+  above under Status, not scheduled.
 
 For a full technical description of both pipelines — the GL sort/composite
 path and the resonant-body audio path, with the reasoning behind each —
